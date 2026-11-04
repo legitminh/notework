@@ -9,6 +9,7 @@ export interface Source {
   storage?: 'local' | 'browser';
   uri?: string;
   drawingScope?: string;
+  parent?: string;
 }
 export interface WorkspaceData {
   sources: Source[];
@@ -26,12 +27,13 @@ export interface StateNode {
   kind: 'file' | 'directory';
   drawing?: boolean;
   drawingScope?: string;
+  parent?: string;
   storage: 'local' | 'browser';
   uri: string;
 }
 export const emptyWorkspace = (): WorkspaceData => ({ sources: [], rootIds: [], links: {}, hidden: {} });
 export const nodeId = (sourceId: string, path: string[] = []) => JSON.stringify([sourceId, ...path]);
-export const parentId = (node: StateNode) => node.path.length ? nodeId(node.sourceId, node.path.slice(0, -1)) : (node.drawingScope?.startsWith('[') ? node.drawingScope : ROOT);
+export const parentId = (node: StateNode) => node.path.length ? nodeId(node.sourceId, node.path.slice(0, -1)) : node.parent ?? (node.drawingScope?.startsWith('[') ? node.drawingScope : ROOT);
 
 export class Workspace {
   readonly known = new Map<string, StateNode>();
@@ -54,7 +56,7 @@ export class Workspace {
     const node: StateNode = {
       id: nodeId(sourceId, path), sourceId, path, name: handle.name, kind: handle.kind,
       drawing: this.drawings.has(nodeId(sourceId, path)),
-      drawingScope: source.drawingScope,
+      drawingScope: source.drawingScope, parent: source.parent,
       storage: source.storage ?? 'local',
       uri: source.uri! + (path.length ? '/' + path.map(encodeURIComponent).join('/') : '')
     };
@@ -201,7 +203,18 @@ export class Workspace {
 
   label(node: StateNode) {
     const source = this.data.sources.find((source) => source.id === node.sourceId);
-    return [source?.handle.name, ...node.path].join('/');
+    const names = [source?.handle.name, ...node.path];
+    const seen = new Set([node.id]);
+    let parent = source?.parent;
+    while (parent && !seen.has(parent)) {
+      seen.add(parent);
+      const [id, ...path] = JSON.parse(parent) as string[];
+      const ancestor = this.data.sources.find((item) => item.id === id);
+      if (!ancestor) break;
+      names.unshift(ancestor.handle.name, ...path);
+      parent = ancestor.parent;
+    }
+    return names.join('/');
   }
 
   async children(id: string): Promise<StateNode[]> {
@@ -218,7 +231,7 @@ export class Workspace {
         else if (!(error instanceof HiddenResource)) throw error;
       }
     }
-    for (const source of this.data.sources.filter((source) => source.drawingScope === id)) {
+    for (const source of this.data.sources.filter((source) => (source.parent ?? source.drawingScope) === id)) {
       try { children.push(await this.node(nodeId(source.id))); }
       catch (error) { if (!isMissing(error)) throw error; }
     }
@@ -244,7 +257,7 @@ export class Workspace {
     return { nodes: [...nodes.values()], errors };
   }
 
-  async connect(handle: LocalHandle, from: string | null = ROOT, location?: { id: string; uri: string; storage: 'browser'; drawingScope?: string }): Promise<StateNode> {
+  async connect(handle: LocalHandle, from: string | null = ROOT, location?: { id: string; uri: string; storage: 'browser'; drawingScope?: string; parent?: string }): Promise<StateNode> {
     let node: StateNode | undefined;
     // Canonicalize picker selections inside existing grants to prevent duplicate states/cycles.
     for (const source of this.data.sources) {
@@ -260,7 +273,7 @@ export class Workspace {
     }
     if (!node) {
       const id = location?.id ?? crypto.randomUUID();
-      this.data.sources.push({ id, handle, drawingScope: location?.drawingScope, storage: location?.storage ?? 'local', uri: location?.uri ?? `notework-local://${id}/${encodeURIComponent(handle.name)}` });
+      this.data.sources.push({ id, handle, drawingScope: location?.drawingScope, parent: location?.parent, storage: location?.storage ?? 'local', uri: location?.uri ?? `notework-local://${id}/${encodeURIComponent(handle.name)}` });
       node = this.remember(id, [], handle);
     }
     if (from !== null) this.link(from, node.id);

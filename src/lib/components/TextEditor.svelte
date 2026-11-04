@@ -26,20 +26,16 @@
   import { wikiDisplay } from '../wiki-display';
   import { findWikiTarget, prepareWikiSave, validFilename, wikiCatalog, wikiScore, wikiToken, wikiTokens } from '../wiki';
 
-  let { workspace, node, wrapLines, vimMode, onExit, onMissing, onRename, onOpenLink }: {
+  let { workspace, node, wrapLines, vimMode, onExit, onMissing, onOpenLink }: {
     workspace: Workspace; node: StateNode;
     wrapLines: boolean;
     vimMode: boolean;
     onExit: () => void;
     onOpenLink: (id: string) => Promise<void>;
     onMissing: () => void;
-    onRename: (name: string, file: LocalFile) => Promise<void>;
   } = $props();
   let container: HTMLDivElement;
   let exitDialog: HTMLDialogElement;
-  let renameDialog: HTMLDialogElement;
-  let renameName = $state('');
-  let renameError = $state('');
   let nextLink = $state<string>();
   let followingLink = false;
   const catalogController = new AbortController();
@@ -130,24 +126,6 @@
     catch { matches = true; }
     if (validFilename(query) && !matches) options.push(option(`create: ${query}`, query, undefined, true));
     return options.length ? { from: match.from + 2, options, filter: false } : null;
-  }
-
-  function askRename() {
-    error = '';
-    if (dirty) { error = 'Save your edits before renaming this file.'; return; }
-    renameName = node.name;
-    renameError = '';
-    renameDialog.showModal();
-  }
-
-  async function rename() {
-    if (saving) return;
-    saving = true; renameError = '';
-    try {
-      await onRename(renameName, handle);
-      if (active) renameDialog.close();
-    } catch (cause) { renameError = storageError(cause); }
-    finally { saving = false; }
   }
 
   function insertDrawing() {
@@ -307,7 +285,7 @@
     if (vimMode && key === 'f' && event.ctrlKey) return;
     event.preventDefault();
     event.stopImmediatePropagation();
-    if (event.repeat || exitDialog.open || renameDialog.open) return;
+    if (event.repeat || exitDialog.open) return;
     if (key === 'b') insertDrawing();
     else if (key === 'escape') requestExit();
     else if (key === 's') void save();
@@ -427,7 +405,6 @@
     <button type="button" aria-keyshortcuts="Control+S" onclick={() => save()} disabled={loading || saving}>Save<span class="shortcut-hint" aria-hidden="true">Ctrl+S</span></button>
     <button type="button" aria-keyshortcuts={vimMode ? undefined : 'Control+F'} aria-label="Find and replace" onclick={find} disabled={loading}><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="10" cy="10" r="6" /><path d="m14.5 14.5 5 5" /></svg>{#if !vimMode}<span class="shortcut-hint" aria-hidden="true">Ctrl+F</span>{/if}</button>
     <button type="button" onclick={insertDrawing} disabled={loading || saving} aria-keyshortcuts="Meta+B">Brush<span class="shortcut-hint" aria-hidden="true">Command+B</span></button>
-    <button type="button" onclick={askRename} disabled={loading || saving}>Rename</button>
     <button type="button" onclick={exportText} disabled={loading}>Export</button>
   </div>
   {/if}
@@ -455,18 +432,4 @@
     <button type="button" onclick={finishExit} disabled={saving}>Don’t save</button>
     <button type="button" onclick={() => exitDialog.close()} disabled={saving}>Cancel</button>
   </div>
-</dialog>
-
-
-<dialog class="local-picker editor-exit" bind:this={renameDialog} aria-labelledby="rename-title"
-  oncancel={(event) => { if (saving) event.preventDefault(); }}>
-  <h2 id="rename-title">Rename file</h2>
-  <form onsubmit={(event) => { event.preventDefault(); void rename(); }}>
-    <label class="field">file name <input bind:value={renameName} required maxlength="255" /></label>
-    {#if renameError}<p class="notice" role="alert">{renameError}</p>{/if}
-    <div class="editor-controls">
-      <button type="submit" disabled={saving}>Rename and update links</button>
-      <button type="button" onclick={() => renameDialog.close()} disabled={saving}>Cancel</button>
-    </div>
-  </form>
 </dialog>

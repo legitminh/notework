@@ -15,7 +15,7 @@ New browser documents work in browsers with OPFS support. Connecting existing ma
 
 ## Navigation and selection
 
-Every state starts with **search**, a divider, then **app settings** at home or **..** elsewhere, followed by its outgoing state buttons. The state display sits underneath. Root's display starts empty. There is no Configure button.
+Every state starts with **search**, a divider, then **app settings** at home or **configure folder/file** and **..** elsewhere, followed by its outgoing state buttons. The state display sits underneath. Home is the virtual root folder: its children can come from different machine sources and browser storage. Home and other folders share the same creation screen.
 
 In app settings, **add existing folder/file** opens one local chooser. Drop mixed files/folders and the app identifies their handles automatically. Or use **browse location…**, grant read access to a folder in the OS dialog, and select files or folders inside it. Browser APIs do not provide one mixed native OS picker. The browsing location is temporary; only confirmed item handles are remembered. Cancelling adds nothing.
 
@@ -41,7 +41,7 @@ The editor virtualizes its viewport and streams text reads/writes instead of ren
 
 Type `[[` in the editor to see matching files. Use the arrow keys and Enter to pick a file or **create: filename**. You can also type the link directly. Save creates any new targets beside the source file and makes the links available as outgoing navigation buttons. Removing a link and saving removes its transition. Discarding edits creates no files or transitions.
 
-Use **Rename** in the editor after saving your edits. It renames the file and rewrites saved Notework links to it, including their navigation targets. For machine files, grant write access to the containing folder. Creating siblings and updating machine-file backlinks may prompt for write permission.
+Use **Configure file → rename** or **Configure folder → rename** in navigation mode. Folder rename updates descendant paths, resource URIs, graph transitions, and saved links to those descendants. SVG directive filenames are updated when the drawing is renamed. The editor toolbar is reserved for editing. For machine files, grant write access to the containing folder. Creating siblings and updating machine-file backlinks may prompt for write permission.
 
 ## Drawings
 
@@ -49,14 +49,20 @@ Use **Brush** (Command+B) while editing text to insert a movable `\svgpage[filen
 
 Drawings for browser notes are SVG files in the same OPFS folder. For a machine note, the drawing lives in OPFS and is listed beside the note if the parent folder is in the graph. Notework does not create an SVG on the machine. The editor offers up to 16 min-box units of extra space beneath the drawing and saves only the area used.
 
+## Create files and folders
+
+Home and folders share a **create new file/folder** action in their state display. Home is a virtual parent that holds items from multiple sources, with no filesystem folder of its own. App settings manages connected sources and preferences. The separate creation screen accepts a name and previews the path for each available type: folder, text file, or SVG drawing. Choose a creation action to open the new state in navigation mode. Existing names are rejected without changing their contents.
+
+New assets live in OPFS. Inside browser folders, they are physical children. Inside selected machine folders, they are browser-backed children in Notework’s graph; the machine folder is not changed. The available actions come from `src/lib/asset-types.ts`; adding a supported type there adds its creation action and initializer.
+
 ## Graph and storage
 
-IndexedDB stores source handles, resource locations, root edges, and directed-link metadata. Files/folders are identified by a source ID and a path inside that source. Folder edges are resolved lazily from the live filesystem. Each node has an app-managed resource URI:
+IndexedDB stores machine source handles, resource locations, root edges, and directed-link metadata. Browser resources are stored as OPFS paths and types, then reopened from those paths on startup; their handles are never structured-cloned or stored in IndexedDB. Older handle-based browser records are migrated on the next save. Files/folders are identified by a source ID and a path inside that source. Folder edges are resolved lazily from the live filesystem. Each node has an app-managed resource URI:
 
 - `notework-local://SOURCE_ID/name/path` identifies a user-selected machine handle. It is an opaque app identifier, not an invented `file://` path; browsers do not expose arbitrary absolute machine paths.
 - `opfs://notework/documents/DOCUMENT_ID/name` identifies an app-created document in browser-owned OPFS storage.
 
-**Create document** in app settings creates an empty resource in OPFS before committing its graph node. Failed metadata commits roll the new resource back. Existing machine files are tracked by handle, never copied into browser storage. Text classification reads bytes locally to hide binary resources; neither these reads nor editor saves upload anything.
+Creating a resource at home allocates its contents in OPFS before committing a child node under the virtual root. Failed metadata commits roll the new resource back. Existing machine files are tracked by handle, never copied into browser storage. Text classification reads bytes locally to hide binary resources; neither these reads nor editor saves upload anything.
 
 Missing resources are checked on startup, navigation/refresh, window focus, and every five seconds while the app is visible. Confirmed missing files/folders, descendants, incoming/outgoing edges, root shortcuts, and caches are pruned and the cleaned graph is saved. If the active resource disappears, navigation returns home. A denied permission or quota error does not count as deletion. OS changes between checks can only be discovered at the next check.
 
@@ -102,3 +108,10 @@ CHROME_PATH='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' pnpm 
 ```
 
 Browser tests use real filesystem handles in isolated browser-private storage. OS dialogs, drop events, and permission responses are simulated; native OS picker dialogs require a manual check. Coverage includes navigation, search/shortcuts, mixed selection, source-only observation with zero uploads, graph cleanup, text validation/encodings, safe writes, two-space indentation/brackets, explicit save/reload, large files, quota errors, and offline PWA editing. `pnpm build` writes a static site to `build/`; `pnpm preview` serves it locally.
+
+WebKit storage regression (uses a temporary persistent profile, because ephemeral WebKit contexts cannot open OPFS):
+
+```sh
+pnpm exec playwright install webkit
+PLAYWRIGHT_PRODUCTION=1 pnpm exec playwright test tests/webkit.spec.ts --browser=webkit
+```

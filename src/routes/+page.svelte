@@ -5,15 +5,18 @@
   import { Keyflow, Document, ThemeToggle, min_box, state_viewport, lockstep_scrolling } from '@legitminh/keyflow';
   import Action from '../lib/components/Action.svelte';
   import SearchPanel from '../lib/components/SearchPanel.svelte';
+  import CreateAsset from '../lib/components/CreateAsset.svelte';
+  import { createAsset } from '../lib/create-asset';
+  import type { AssetType } from '../lib/asset-types';
   import TextEditor from '../lib/components/TextEditor.svelte';
   import StandaloneDrawing from '../lib/components/StandaloneDrawing.svelte';
-  import { renameWikiFile } from '../lib/wiki';
+  import { renameResource } from '../lib/rename-resource';
   import LocalPicker from '../lib/components/LocalPicker.svelte';
   import { Workspace, ROOT, nodeId, parentId, type StateNode } from '../lib/workspace';
   import { loadWorkspace, saveWorkspace } from '../lib/persistence';
-  import { createBrowserDocument, deleteBrowserResource, supportsBrowserDocuments, storageInfo, storageError } from '../lib/browser-documents';
+  import { deleteBrowserResource, supportsBrowserDocuments, storageInfo, storageError } from '../lib/browser-documents';
   import { HiddenResource } from '../lib/text-resource';
-  import { supportsFilesystem, explainError, isMissing, type LocalHandle, type LocalFile } from '../lib/filesystem';
+  import { supportsFilesystem, explainError, isMissing, type LocalHandle } from '../lib/filesystem';
 
   let workspace = $state.raw(new Workspace());
   let current = $state.raw<StateNode | null>(null);
@@ -27,16 +30,20 @@
   let picking = $state(false);
   let supported = $state(true);
   let browserDocuments = $state(false);
-  let documentName = $state('untitled.txt');
   let capacity = $state<{ usage: number; quota: number; persistent: boolean }>();
   let storageStatus = $state('');
   let editing = $state(false);
+  let creating = $state(false);
   let wrapLines = $state(true);
   let vimMode = $state(false);
   let graphRevision = $state(0);
   let message = $state('');
   let storageMessage = $state('');
   let panelElement = $state<HTMLDivElement>();
+  let renameDialog: HTMLDialogElement;
+  let renameName = $state('');
+  let renameError = $state('');
+  let renameTarget = $state.raw<StateNode | null>(null);
   let deleteDialog: HTMLDialogElement;
   let deleteTarget = $state.raw<StateNode | null>(null);
   const resourceType = $derived(current?.kind === 'directory' ? 'folder' : 'file');
@@ -136,7 +143,7 @@
         finally { if (pendingHistory === id) pendingHistory = undefined; }
       }
       if (version !== navigationVersion) return;
-      current = node;
+      current = node; creating = false;
       await refresh();
       if (version !== navigationVersion) return;
       await tick();
@@ -164,14 +171,27 @@
     if (currentId !== id) throw new Error(message || 'The linked file could not be opened.');
   }
 
-  async function renameCurrent(name: string, file: LocalFile) {
+  function askRename() {
     if (!current || busy) return;
-    busy = true;
+    renameTarget = current;
+    renameName = current.name;
+    renameError = '';
+    renameDialog.showModal();
+  }
+
+  async function renameCurrent() {
+    if (!current || !renameTarget || current.id !== renameTarget.id || busy) return;
+    busy = true; renameError = '';
     refreshVersion++;
     try {
-      current = await renameWikiFile(workspace, current, file, name);
+      const result = await renameResource(workspace, renameTarget, renameName);
+      current = result.node;
       await goto(location.pathname, { state: { notework: current.id }, shallow: true, replace: true, reset: false });
-    } finally { busy = false; }
+      renameDialog.close();
+      await refresh();
+      message = result.warning;
+    } catch (error) { renameError = storageError(error); }
+    finally { busy = false; }
   }
 
   async function exitEditor() {
@@ -214,7 +234,7 @@
 
   async function missingCurrent() {
     if (current) workspace.forget(current.id);
-    editing = false;
+    editing = false; creating = false;
     current = null; panel = null; edges = []; children = [];
     await goto(location.pathname, { state: { notework: ROOT }, shallow: true, replace: true, reset: false });
     await persist();
@@ -234,25 +254,24 @@
     } catch (error) { storageStatus = storageError(error); }
   }
 
-  async function createDocument() {
-    if (busy || loading || !browserDocuments) return;
+  async function startCreating() {
+    if ((current && current.kind !== 'directory') || busy) return;
+    message = ''; panel = null; creating = true;
+    await tick();
+    state_viewport.viewport?.scrollTo({ top: 0 });
+  }
+
+  async function createAtFolder(name: string, type: AssetType) {
+    if ((current && current.kind !== 'directory') || busy || !browserDocuments) return;
+    const parent = current;
     busy = true; message = '';
-    const previous = structuredClone(workspace.data);
-    let created: Awaited<ReturnType<typeof createBrowserDocument>> | undefined;
     try {
-      created = await createBrowserDocument(documentName);
-      const node = await workspace.connect(created.handle, ROOT, created);
-      await saveWorkspace(workspace.data);
+      const node = await createAsset(workspace, parent, name, type);
       permissions[node.sourceId] = 'granted';
-      storageMessage = '';
-      await refresh();
       await navigate(node.id);
       void updateStorage();
-    } catch (error) {
-      workspace = new Workspace(previous);
-      if (created) await created.discard().catch(() => {});
-      message = storageError(error);
-    } finally { busy = false; }
+    } catch (error) { message = storageError(error); }
+    finally { busy = false; }
   }
 
   async function reconnect(sourceId: string) {
@@ -318,13 +337,17 @@
 <Keyflow options={{ storagePrefix: 'notework:keyflow:', minBox: 40, lockstep: false }}>
   <Document>
     <main class="app" aria-label="notework" aria-busy={loading}>
-      {#if editing && current}
+      {#if creating && (!current || current.kind === 'directory')}
+        <CreateAsset path={current ? workspace.label(current) : 'home'} machineFolder={current?.storage === 'local'}
+          {busy} supported={browserDocuments} error={message} onCreate={createAtFolder}
+          onCancel={() => { creating = false; message = ''; }} />
+      {:else if editing && current}
         {#key current.uri}
           {#if current.drawing}
             <StandaloneDrawing {workspace} node={current} onExit={exitEditor} onMissing={() => { void missingCurrent(); }} />
           {:else}
             <TextEditor {workspace} node={current} {wrapLines} {vimMode} onExit={exitEditor}
-              onMissing={() => { void missingCurrent(); }} onRename={renameCurrent} onOpenLink={openLinkedFile} />
+              onMissing={() => { void missingCurrent(); }} onOpenLink={openLinkedFile} />
           {/if}
         {/key}
       {:else}
@@ -361,6 +384,7 @@
         {:else if panel === 'configure' && current}
           <section class="panel" aria-labelledby="configure-heading">
             <h2 id="configure-heading">configure {resourceType}</h2>
+            <Action label="rename" onSelect={askRename} disabled={busy} />
             <Action label={`delete this ${resourceType}`} onSelect={confirmDelete}
               disabled={busy || current.storage !== 'browser'} />
             {#if current.storage !== 'browser'}
@@ -373,12 +397,6 @@
             <p class="muted">Choose which files and folders are directly reachable from home. Files stay on your computer.</p>
             <Action label="add existing folder/file" onSelect={() => { picking = true; }} disabled={!supported || busy} />
 
-            <h3>new text document</h3>
-            <form onsubmit={(event) => { event.preventDefault(); void createDocument(); }}>
-              <label class="field"><span>document name</span><input bind:value={documentName} required maxlength="200" autocomplete="off" /></label>
-              <Action label="create document" onSelect={createDocument} disabled={!browserDocuments || busy} />
-            </form>
-            <p class="muted">New documents are saved on this device in browser storage.</p>
             {#if capacity}
               <p class="muted">{(capacity.usage / 1048576).toFixed(1)} MB used · {(capacity.quota / 1073741824).toFixed(1)} GB estimated quota · {capacity.persistent ? 'persistent storage' : 'best-effort storage'}</p>
               <Action label="keep browser storage" onSelect={retainStorage} />
@@ -386,7 +404,7 @@
             {#if storageStatus}<p class="muted" role="status">{storageStatus}</p>{/if}
 
             <h3>root transitions</h3>
-            {#if !rootIds.length}<p class="muted">Home is empty. Add a file or folder above.</p>{/if}
+            {#if !rootIds.length}<p class="muted">Home has no items. Connect a source here or create an item from home.</p>{/if}
             {#each rootIds as id (id)}
               <div class="config-row"><span>{label(id)}</span><button class="small-button" onclick={() => remove(ROOT, id)} aria-label={`Remove ${label(id)} from root`}>remove from root</button></div>
             {/each}
@@ -432,13 +450,33 @@
             <Action label="open" onSelect={openFile} disabled={busy} />
           {:else if current.kind === 'directory'}
             <p class="muted">{children.length} direct {children.length === 1 ? 'child' : 'children'} · {edges.length} reachable {edges.length === 1 ? 'state' : 'states'}</p>
-            <Action label="refresh folder" onSelect={() => { message = ''; void refresh(); }} />
           {/if}
+        {:else}
+          <h1>home</h1>
+          <p class="path">virtual folder · {edges.length} {edges.length === 1 ? 'item' : 'items'} from connected sources</p>
+        {/if}
+        {#if !current || current.kind === 'directory'}
+          <Action label="create new file/folder" onSelect={startCreating} disabled={loading || busy || !browserDocuments} />
+        {/if}
+        {#if current?.kind === 'directory'}
+          <Action label="refresh folder" onSelect={() => { message = ''; void refresh(); }} />
         {/if}
       </section>
       {/if}
     </main>
   </Document>
+  <dialog class="local-picker editor-exit" bind:this={renameDialog} aria-labelledby="rename-title"
+    oncancel={(event) => { if (busy) event.preventDefault(); }}>
+    <h2 id="rename-title">Rename {renameTarget?.kind === 'directory' ? 'folder' : 'file'}</h2>
+    <form onsubmit={(event) => { event.preventDefault(); void renameCurrent(); }}>
+      <label class="field">new name <input bind:value={renameName} required maxlength="255" disabled={busy} /></label>
+      {#if renameError}<p class="notice" role="alert">{renameError}</p>{/if}
+      <div class="editor-controls">
+        <button type="submit" disabled={busy}>Rename and update links</button>
+        <button type="button" onclick={() => renameDialog.close()} disabled={busy}>Cancel</button>
+      </div>
+    </form>
+  </dialog>
   <dialog class="local-picker editor-exit" bind:this={deleteDialog} aria-labelledby="delete-heading"
     onclose={() => { deleteTarget = null; }} oncancel={(event) => { if (busy) event.preventDefault(); }}>
     <h2 id="delete-heading">Delete {deleteTarget?.name}?</h2>

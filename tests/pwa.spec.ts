@@ -15,9 +15,9 @@ test('installed app shell and browser documents work offline', async ({ page, co
   const installability = await protocol.send('Page.getInstallabilityErrors');
   // Playwright's isolated contexts are incognito, where installation is disabled.
   expect(installability.installabilityErrors.filter((error) => error.errorId !== 'in-incognito')).toEqual([]);
-  await action('app settings').click();
-  await page.getByLabel('document name', { exact: true }).fill('offline.txt');
-  await action('create document').click();
+  await action('create new file/folder').click();
+  await page.getByLabel('name', { exact: true }).fill('offline.txt');
+  await action('create text file').click();
   await action('open').click();
   const editor = page.getByRole('textbox', { name: 'Edit offline.txt', exact: true });
   await expect(editor).toBeVisible();
