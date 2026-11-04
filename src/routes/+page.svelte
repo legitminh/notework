@@ -36,6 +36,7 @@
   let creating = $state(false);
   let wrapLines = $state(true);
   let vimMode = $state(false);
+  let stylusOnly = $state(false);
   let graphRevision = $state(0);
   let message = $state('');
   let storageMessage = $state('');
@@ -60,6 +61,8 @@
     catch { /* Use the default when storage is unavailable. */ }
     try { vimMode = localStorage.getItem('notework:vim-mode') === 'true'; }
     catch { /* Use the default when storage is unavailable. */ }
+    try { stylusOnly = localStorage.getItem('notework:stylus-only') === 'true'; }
+    catch { /* Finger drawing remains available when storage is unavailable. */ }
     supported = supportsFilesystem();
     browserDocuments = supportsBrowserDocuments();
     if (browserDocuments) void updateStorage();
@@ -344,9 +347,9 @@
       {:else if editing && current}
         {#key current.uri}
           {#if current.drawing}
-            <StandaloneDrawing {workspace} node={current} onExit={exitEditor} onMissing={() => { void missingCurrent(); }} />
+            <StandaloneDrawing {stylusOnly} {workspace} node={current} onExit={exitEditor} onMissing={() => { void missingCurrent(); }} />
           {:else}
-            <TextEditor {workspace} node={current} {wrapLines} {vimMode} onExit={exitEditor}
+            <TextEditor {workspace} node={current} {wrapLines} {vimMode} {stylusOnly} onExit={exitEditor}
               onMissing={() => { void missingCurrent(); }} onOpenLink={openLinkedFile} />
           {/if}
         {/key}
@@ -434,6 +437,10 @@
             <Action label={`wrap long lines: ${wrapLines ? 'on' : 'off'}`} onSelect={() => {
               wrapLines = !wrapLines;
               saveAppearancePreference('notework:wrap-lines', wrapLines);
+            }} />
+            <Action label={`draw with only physical stylus: ${stylusOnly ? 'enabled' : 'disabled'}`} onSelect={() => {
+              stylusOnly = !stylusOnly;
+              saveAppearancePreference('notework:stylus-only', stylusOnly);
             }} />
             <Action label="smaller type" onSelect={() => min_box.set(Math.max(24, min_box.value - 4))} />
             <Action label="larger type" onSelect={() => min_box.set(Math.min(72, min_box.value + 4))} />

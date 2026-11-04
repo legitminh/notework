@@ -47,7 +47,9 @@ Use **Configure file → rename** or **Configure folder → rename** in navigati
 
 Use **Brush** (Command+B) while editing text to insert a movable `\svgpage[filename.svg]` line. Move the caret off the line to see the drawing, then click it to draw inline. The drawing toolbar supports brush, whole-stroke erasing, undo, redo, and explicit save. Exit returns to the open text draft. Save the text to make the drawing an outgoing navigation target, where it can also be opened on its own.
 
-Drawings for browser notes are SVG files in the same OPFS folder. For a machine note, the drawing lives in OPFS and is listed beside the note if the parent folder is in the graph. Notework does not create an SVG on the machine. The editor offers up to 16 min-box units of extra space beneath the drawing and saves only the area used.
+Drawings for browser notes are SVG files in the same OPFS folder. For a machine note, the drawing lives in OPFS and is listed beside the note if the parent folder is in the graph. Notework does not create an SVG on the machine. Drawing pages fit the available text page width, capped at 32 min-boxes. Both axes and stroke widths scale together when the screen rotates. One extra working page is 16 min-boxes tall at full page width and scales proportionally on smaller screens. Saves contain only the area used.
+
+In a drawing, tap with **two fingers** to undo and **three fingers** to redo. Drag with two fingers to scroll, or pinch to zoom. Adding a second finger cancels the tentative drawing stroke. **App settings → draw with only physical stylus** is disabled by default and persists across reloads. When enabled, fingers use native scrolling/zooming and only pen input draws or erases; toolbar buttons still work with any input device.
 
 ## Create files and folders
 

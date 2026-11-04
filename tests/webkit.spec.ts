@@ -35,8 +35,34 @@ test('WebKit persistent storage creates folders, text, and drawings without clon
     await action('open').click();
     const drawingToolbar = page.getByRole('group', { name: 'Drawing toolbar' });
     await expect(drawingToolbar).toBeVisible();
+    const canvas = page.getByRole('img', { name: 'Drawing canvas for sketch.svg' });
+    const model = await canvas.evaluate((el) => {
+      const m = (el as SVGSVGElement).getScreenCTM()!;
+      return { a: m.a, d: m.d, e: m.e, f: m.f };
+    });
+    expect(model.a).toBeCloseTo(model.d, 5);
+    await page.mouse.move(model.e + 200 * model.a, model.f + 100 * model.d);
+    await page.mouse.down();
+    for (const [x, y] of [[400, 100], [400, 300], [200, 300], [200, 100]]) {
+      await page.mouse.move(model.e + x * model.a, model.f + y * model.d);
+    }
+    await page.mouse.up();
+    for (const viewport of [{ width: 1180, height: 820 }, { width: 820, height: 1180 }]) {
+      await page.setViewportSize(viewport);
+      await expect.poll(() => canvas.evaluate((el) => {
+        const m = (el as SVGSVGElement).getScreenCTM()!;
+        return Math.abs(m.a - m.d);
+      })).toBeLessThan(.0001);
+      const square = (await canvas.locator('polyline').boundingBox())!;
+      const originalRatio = await canvas.locator('polyline').evaluate((el) => {
+        const box = (el as SVGGraphicsElement).getBBox();
+        return box.width / box.height;
+      });
+      expect(square.width / square.height).toBeCloseTo(originalRatio, 3);
+    }
     await drawingToolbar.getByRole('button', { name: 'Save', exact: true }).click();
     await drawingToolbar.getByRole('button', { name: 'Exit', exact: true }).click();
+    await expect(action('open')).toBeVisible();
     await page.reload();
     await action('iPad notes/').click();
     await action('first.txt').click();
@@ -56,6 +82,7 @@ test('WebKit persistent storage creates folders, text, and drawings without clon
     await dialog.getByRole('textbox').fill('iPad archive');
     await dialog.getByRole('button', { name: 'Rename and update links' }).click();
     await expect(page.getByRole('heading', { name: 'iPad archive/', exact: true })).toBeVisible();
+    await expect(action('rename')).toBeEnabled();
     await page.reload();
     await action('iPad archive/').click();
     await action('renamed.txt').click();

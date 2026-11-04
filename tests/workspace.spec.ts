@@ -957,16 +957,16 @@ test('brush inserts a movable SVG page, swaps the inline toolbar, and saves an e
   await expect(editor).not.toBeEditable();
   await expect(editor.locator('.cm-line').last()).toHaveText('after');
   const box = (await canvas.boundingBox())!;
-  const pageHeight = await page.locator('html').evaluate((el) => parseFloat(getComputedStyle(el).getPropertyValue('--min-box')) * 16);
-  expect(box.height).toBe(pageHeight);
+  const pageHeight = await canvas.evaluate((el) => (el as SVGSVGElement).viewBox.baseVal.height);
+  expect(box.height).toBeCloseTo(box.width * pageHeight / 1024, 1);
   await page.mouse.move(box.x + 40, box.y + 50);
   await page.mouse.down();
-  await page.mouse.move(box.x + 100, box.y + pageHeight + 30, { steps: 8 });
+  await page.mouse.move(box.x + 100, box.y + box.height + 30, { steps: 8 });
   await page.mouse.up();
   await expect(canvas.locator('polyline')).toHaveCount(1);
   const stroke = (await canvas.locator('polyline').getAttribute('points'))!.split(' ').map((pair) => Number(pair.split(',')[1]));
   expect(Math.max(...stroke)).toBe(pageHeight);
-  await expect.poll(async () => (await canvas.boundingBox())!.height).toBeGreaterThan(pageHeight);
+  await expect.poll(async () => (await canvas.boundingBox())!.height).toBeGreaterThan(box.height);
 
   await page.keyboard.press('Meta+z');
   await expect(canvas.locator('polyline')).toHaveCount(0);
@@ -990,7 +990,7 @@ test('brush inserts a movable SVG page, swaps the inline toolbar, and saves an e
   await expect(tools).toHaveCount(1);
   await tools.getByRole('button', { name: 'Exit', exact: true }).click();
   await expect(tools).toHaveCount(0);
-  expect((await preview.locator('svg').boundingBox())!.height).toBeLessThan(pageHeight + 4);
+  expect((await preview.locator('svg').boundingBox())!.height).toBeLessThan(box.height + 4);
 
   // Move the directive as source text, and keep text after it.
   await editor.fill(`after\n\\svgpage[${name}]\nbefore`);
@@ -1410,4 +1410,139 @@ test('home is a virtual folder with mixed sources and the shared creation screen
   await button(page, '..').click();
   await button(page, 'Documents/').click();
   await expect(button(page, 'Adobe/')).toBeVisible();
+});
+
+test('drawing pages preserve geometry through rotation, inline preview, and standalone editing', async ({ page }) => {
+  await page.setViewportSize({ width: 820, height: 1180 });
+  await createNote(page, 'rotation.txt');
+  await toolbar(page, 'Brush').click();
+  await page.keyboard.insertText('Below the drawing');
+  const preview = page.getByRole('button', { name: /^Edit drawing drawing-/ });
+  const name = (await preview.getAttribute('aria-label'))!.slice('Edit drawing '.length);
+  await preview.click();
+  const canvas = page.getByRole('img', { name: `Drawing canvas for ${name}` });
+  const tools = page.getByRole('group', { name: 'Drawing toolbar' });
+  const matrix = await canvas.evaluate((el) => {
+    const m = (el as SVGSVGElement).getScreenCTM()!;
+    return { a: m.a, d: m.d, e: m.e, f: m.f };
+  });
+  expect(matrix.a).toBeCloseTo(matrix.d, 5);
+  await page.mouse.move(matrix.e + 200 * matrix.a, matrix.f + 100 * matrix.d);
+  await page.mouse.down();
+  for (const [x, y] of [[400, 100], [400, 300], [200, 300], [200, 100]]) {
+    await page.mouse.move(matrix.e + x * matrix.a, matrix.f + y * matrix.d);
+  }
+  await page.mouse.up();
+  const points = await canvas.locator('polyline').getAttribute('points');
+  async function squareFits(svg: ReturnType<Page['locator']>) {
+    await expect.poll(() => svg.evaluate((el) => {
+      const m = (el as SVGSVGElement).getScreenCTM()!;
+      return Math.abs(m.a - m.d);
+    })).toBeLessThan(.0001);
+    await expect.poll(async () => (await svg.boundingBox())!.width - (await page.locator('main.app').boundingBox())!.width).toBeLessThanOrEqual(0);
+    const square = (await svg.locator('polyline').boundingBox())!;
+    const originalRatio = await svg.locator('polyline').evaluate((el) => {
+      const box = (el as SVGGraphicsElement).getBBox();
+      return box.width / box.height;
+    });
+    expect(square.width / square.height).toBeCloseTo(originalRatio, 3);
+    const box = (await svg.boundingBox())!;
+    const model = await svg.evaluate((el) => ({ width: (el as SVGSVGElement).viewBox.baseVal.width, height: (el as SVGSVGElement).viewBox.baseVal.height }));
+    expect(box.width / box.height).toBeCloseTo(model.width / model.height, 2);
+  }
+  for (const viewport of [{ width: 1180, height: 820 }, { width: 2048, height: 1200 }, { width: 820, height: 1180 }]) {
+    await page.setViewportSize(viewport);
+    await squareFits(canvas);
+    await expect(canvas.locator('polyline')).toHaveAttribute('points', points!);
+  }
+  await tools.getByRole('button', { name: 'Save', exact: true }).click();
+  await tools.getByRole('button', { name: 'Exit', exact: true }).click();
+  await toolbar(page, 'Save').click();
+  await expect(page.getByText('saved in browser storage', { exact: true })).toBeVisible();
+  for (const viewport of [{ width: 1180, height: 820 }, { width: 820, height: 1180 }]) {
+    await page.setViewportSize(viewport);
+    await squareFits(preview.locator('svg'));
+  }
+  await toolbar(page, 'Exit').click();
+  await button(page, name).click(); await openEditor(page);
+  await expect(canvas.locator('polyline')).toHaveAttribute('points', points!);
+  await page.setViewportSize({ width: 1180, height: 820 });
+  await squareFits(canvas);
+});
+
+test('drawing touch gestures undo, redo, pan and zoom; stylus-only mode persists and rejects fingers', async ({ page, context }) => {
+  await page.setViewportSize({ width: 820, height: 620 });
+  await button(page, 'create new file/folder').click();
+  await page.getByLabel('name', { exact: true }).fill('gestures.svg');
+  await button(page, 'create svg file').click(); await openEditor(page);
+  const canvas = page.getByRole('img', { name: 'Drawing canvas for gestures.svg' });
+  const tools = page.getByRole('group', { name: 'Drawing toolbar' });
+  await expect(canvas).toBeVisible();
+  let box = (await canvas.boundingBox())!;
+  await page.mouse.move(box.x + 40, box.y + 50); await page.mouse.down();
+  await page.mouse.move(box.x + 100, box.y + box.height - 20); await page.mouse.up();
+  await expect(canvas.locator('polyline')).toHaveCount(1);
+  const protocol = await context.newCDPSession(page);
+  const contacts = (count: number, y: number, distance = 40) => Array.from({ length: count }, (_, id) => ({
+    id, x: 300 + (id - (count - 1) / 2) * distance, y, radiusX: 5, radiusY: 5, force: 1
+  }));
+  const tap = async (count: number) => {
+    const b = (await canvas.boundingBox())!;
+    const y = Math.max(80, b.y + 60);
+    await protocol.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: contacts(count, y) });
+    await protocol.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  };
+  await tap(2); await expect(canvas.locator('polyline')).toHaveCount(0);
+  await tap(3); await expect(canvas.locator('polyline')).toHaveCount(1);
+  const beforeScroll = await page.locator('.viewport').evaluate((el) => el.scrollTop);
+  box = (await canvas.boundingBox())!;
+  const y = Math.max(160, box.y + 180);
+  await protocol.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: contacts(2, y) });
+  await protocol.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: contacts(2, y - 80) });
+  await protocol.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await expect.poll(() => page.locator('.viewport').evaluate((el) => el.scrollTop)).toBeGreaterThan(beforeScroll);
+  await expect(canvas.locator('polyline')).toHaveCount(1);
+  const beforeWidth = (await canvas.boundingBox())!.width;
+  const top = Math.max(100, (await canvas.boundingBox())!.y + 140);
+  await protocol.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: contacts(2, top, 60) });
+  await protocol.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: contacts(2, top, 120) });
+  await protocol.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await expect.poll(async () => (await canvas.boundingBox())!.width).toBeGreaterThan(beforeWidth * 1.5);
+  await expect(canvas.locator('polyline')).toHaveCount(1);
+  await tools.getByRole('button', { name: 'Save', exact: true }).click();
+  await tools.getByRole('button', { name: 'Exit', exact: true }).click();
+  await button(page, '..').click(); await button(page, 'app settings').click();
+  await button(page, 'draw with only physical stylus: disabled').click();
+  await expect(button(page, 'draw with only physical stylus: enabled')).toBeVisible();
+  await page.reload();
+  await button(page, 'gestures.svg').click(); await openEditor(page);
+  await expect(canvas).toHaveCSS('touch-action', 'manipulation');
+  box = (await canvas.boundingBox())!;
+  await page.mouse.move(box.x + 200, box.y + 50); await page.mouse.down();
+  await page.mouse.move(box.x + 250, box.y + 100); await page.mouse.up();
+  await expect(canvas.locator('polyline')).toHaveCount(1);
+  const scroll = await page.locator('.viewport').evaluate((el) => el.scrollTop);
+  const finger = [{ id: 0, x: box.x + 200, y: Math.max(180, box.y + 180) }];
+  await protocol.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: finger });
+  await protocol.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ ...finger[0], y: finger[0].y - 100 }] });
+  await protocol.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await expect.poll(() => page.locator('.viewport').evaluate((el) => el.scrollTop)).toBeGreaterThan(scroll);
+  await expect(canvas.locator('polyline')).toHaveCount(1);
+  await canvas.scrollIntoViewIfNeeded();
+  box = (await canvas.boundingBox())!;
+  const penY = Math.max(80, box.y + 70);
+  await protocol.send('Input.dispatchMouseEvent', { type: 'mousePressed', pointerType: 'pen', button: 'left', buttons: 1, x: box.x + 300, y: penY });
+  await protocol.send('Input.dispatchMouseEvent', { type: 'mouseMoved', pointerType: 'pen', buttons: 1, x: box.x + 350, y: penY + 30 });
+  await protocol.send('Input.dispatchMouseEvent', { type: 'mouseReleased', pointerType: 'pen', button: 'left', buttons: 0, x: box.x + 350, y: penY + 30 });
+  await expect(canvas.locator('polyline')).toHaveCount(2);
+  const erasePoint = (await canvas.locator('polyline').last().getAttribute('points'))!.split(' ')[0].split(',').map(Number);
+  await tools.getByRole('button', { name: 'Eraser' }).click();
+  const erase = await canvas.evaluate((el, point) => {
+    const m = (el as SVGSVGElement).getScreenCTM()!;
+    const p = new DOMPoint(point[0], point[1]).matrixTransform(m);
+    return { x: p.x, y: p.y };
+  }, erasePoint);
+  await protocol.send('Input.dispatchMouseEvent', { type: 'mousePressed', pointerType: 'pen', button: 'left', buttons: 1, ...erase });
+  await protocol.send('Input.dispatchMouseEvent', { type: 'mouseReleased', pointerType: 'pen', button: 'left', buttons: 0, ...erase });
+  await expect(canvas.locator('polyline')).toHaveCount(1);
 });

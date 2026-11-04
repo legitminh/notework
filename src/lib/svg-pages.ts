@@ -1,6 +1,6 @@
 import { StateEffect, StateField, type EditorState, type Text } from '@codemirror/state';
 import { Decoration, EditorView, WidgetType } from '@codemirror/view';
-import { DRAWING_WIDTH, STROKE_WIDTH, drawingBottom, strokePoints, svgPagePattern, type Drawing } from './drawing';
+import { DRAWING_WIDTH, DRAWING_PAGE_HEIGHT, STROKE_WIDTH, drawingBottom, strokePoints, svgPagePattern, type Drawing } from './drawing';
 
 export interface SvgPage { from: number; to: number; name: string }
 interface ActivePage { from: number; host: HTMLElement }
@@ -17,11 +17,12 @@ class SvgPageWidget extends WidgetType {
     button.className = 'svg-page-preview';
     button.setAttribute('aria-label', `Edit drawing ${this.page.name}`);
     const svg = document.createElementNS(svgNamespace, 'svg');
-    const height = drawingBottom(this.drawing ?? []);
-    svg.setAttribute('viewBox', `0 0 ${DRAWING_WIDTH} ${height || 1}`);
-    svg.setAttribute('preserveAspectRatio', 'none');
+    const height = drawingBottom(this.drawing ?? []) || DRAWING_PAGE_HEIGHT;
+    svg.setAttribute('viewBox', `0 0 ${DRAWING_WIDTH} ${height}`);
+    svg.setAttribute('preserveAspectRatio', 'xMinYMin meet');
+    svg.setAttribute('width', String(DRAWING_WIDTH));
+    svg.setAttribute('height', String(height));
     svg.setAttribute('aria-hidden', 'true');
-    svg.style.height = height ? `${height}px` : 'calc(var(--min-box) * 16)';
     for (const stroke of this.drawing ?? []) {
       const path = document.createElementNS(svgNamespace, 'polyline');
       path.setAttribute('points', strokePoints(stroke));
@@ -30,14 +31,13 @@ class SvgPageWidget extends WidgetType {
       path.setAttribute('stroke-width', String(STROKE_WIDTH));
       path.setAttribute('stroke-linecap', 'round');
       path.setAttribute('stroke-linejoin', 'round');
-      path.setAttribute('vector-effect', 'non-scaling-stroke');
       svg.append(path);
     }
     button.append(svg);
     button.addEventListener('click', () => this.open(this.page));
     return button;
   }
-  get estimatedHeight() { return drawingBottom(this.drawing ?? []) || 640; }
+  get estimatedHeight() { return drawingBottom(this.drawing ?? []) || DRAWING_PAGE_HEIGHT; }
 }
 
 class DrawingHost extends WidgetType {

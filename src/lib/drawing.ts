@@ -3,6 +3,9 @@ export type Stroke = readonly Point[];
 export type Drawing = readonly Stroke[];
 
 export const DRAWING_WIDTH = 1024;
+// The text page is 32 min-boxes wide; one drawing page is 16 min-boxes tall.
+// Store both axes in page units so neither viewport width nor font size changes them.
+export const DRAWING_PAGE_HEIGHT = DRAWING_WIDTH * 16 / 32;
 export const STROKE_WIDTH = 3;
 const header = '<svg xmlns="http://www.w3.org/2000/svg" data-notework-drawing="1"';
 export const svgPagePattern = /^[ \t]*\\svgpage\[([^\[\]\r\n]+\.svg)\][ \t]*$/i;
@@ -20,8 +23,8 @@ export function strokePoints(stroke: Stroke) {
 
 export function serializeDrawing(strokes: Drawing) {
   const height = Math.max(1, drawingBottom(strokes));
-  const lines = strokes.map((stroke) => `  <polyline points="${strokePoints(stroke)}" vector-effect="non-scaling-stroke"/>`).join('\n');
-  return `${header} width="${DRAWING_WIDTH}" height="${height}" viewBox="0 0 ${DRAWING_WIDTH} ${height}" preserveAspectRatio="none">\n<g fill="none" stroke="#202733" stroke-width="${STROKE_WIDTH}" stroke-linecap="round" stroke-linejoin="round">\n${lines}\n</g>\n</svg>\n`;
+  const lines = strokes.map((stroke) => `  <polyline points="${strokePoints(stroke)}"/>`).join('\n');
+  return `${header} width="${DRAWING_WIDTH}" height="${height}" viewBox="0 0 ${DRAWING_WIDTH} ${height}" preserveAspectRatio="xMinYMin meet">\n<g fill="none" stroke="#202733" stroke-width="${STROKE_WIDTH}" stroke-linecap="round" stroke-linejoin="round">\n${lines}\n</g>\n</svg>\n`;
 }
 
 export async function isDrawingFile(file: File) {
@@ -59,11 +62,11 @@ export function svgPageNames(lines: Iterable<string>) {
 }
 
 /** Distances are measured in CSS pixels even when the drawing is scaled to fit. */
-export function touchesStroke(stroke: Stroke, point: Point, scaleX: number, radius = 8) {
+export function touchesStroke(stroke: Stroke, point: Point, scale: number, radius = 8) {
   for (let i = 0; i < stroke.length; i++) {
     const a = stroke[Math.max(0, i - 1)], b = stroke[i];
-    const dx = (b[0] - a[0]) * scaleX, dy = b[1] - a[1];
-    const px = (point[0] - a[0]) * scaleX, py = point[1] - a[1];
+    const dx = (b[0] - a[0]) * scale, dy = (b[1] - a[1]) * scale;
+    const px = (point[0] - a[0]) * scale, py = (point[1] - a[1]) * scale;
     const length = dx * dx + dy * dy;
     const t = length ? Math.max(0, Math.min(1, (px * dx + py * dy) / length)) : 0;
     if ((px - t * dx) ** 2 + (py - t * dy) ** 2 <= radius ** 2) return true;

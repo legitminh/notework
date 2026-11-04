@@ -26,10 +26,11 @@
   import { wikiDisplay } from '../wiki-display';
   import { findWikiTarget, prepareWikiSave, validFilename, wikiCatalog, wikiScore, wikiToken, wikiTokens } from '../wiki';
 
-  let { workspace, node, wrapLines, vimMode, onExit, onMissing, onOpenLink }: {
+  let { workspace, node, wrapLines, vimMode, stylusOnly, onExit, onMissing, onOpenLink }: {
     workspace: Workspace; node: StateNode;
     wrapLines: boolean;
     vimMode: boolean;
+    stylusOnly: boolean;
     onExit: () => void;
     onOpenLink: (id: string) => Promise<void>;
     onMissing: () => void;
@@ -304,6 +305,7 @@
 
   onMount(() => {
     active = true;
+    let pageResize: ResizeObserver | undefined;
     window.addEventListener('keydown', shortcuts, true);
     const beforeUnload = (event: BeforeUnloadEvent) => {
       if (revision !== savedRevision) { event.preventDefault(); event.returnValue = ''; }
@@ -375,6 +377,17 @@
             })
           ] })
         });
+        const measurePage = () => {
+          if (!view) return;
+          const gutter = view.dom.querySelector<HTMLElement>('.cm-gutters');
+          const width = Math.max(1, view.scrollDOM.clientWidth - (gutter?.offsetWidth ?? 0));
+          view.dom.style.setProperty('--drawing-page-width', `${width}px`);
+        };
+        pageResize = new ResizeObserver(measurePage);
+        pageResize.observe(view.scrollDOM);
+        const gutter = view.dom.querySelector('.cm-gutters');
+        if (gutter) pageResize.observe(gutter);
+        measurePage();
         if (vimMode) vimSaves.set(view, () => { void save(); });
         loading = false;
         refreshDrawingPreviews();
@@ -387,6 +400,7 @@
     })();
     return () => {
       active = false;
+      pageResize?.disconnect();
       catalogController.abort();
       window.removeEventListener('keydown', shortcuts, true);
       window.removeEventListener('beforeunload', beforeUnload);
@@ -409,7 +423,7 @@
   </div>
   {/if}
   {#if inlineDrawing}
-    <DrawingEditor name={inlineDrawing.page.name} initial={inlineDrawing.resource?.strokes ?? []}
+    <DrawingEditor {stylusOnly} name={inlineDrawing.page.name} initial={inlineDrawing.resource?.strokes ?? []}
       surfaceTarget={inlineDrawing.host}
       onSave={saveInlineDrawing} onExit={closeInlineDrawing} />
   {/if}

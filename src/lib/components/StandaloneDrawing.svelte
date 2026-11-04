@@ -6,7 +6,8 @@
   import { storageError } from '../browser-documents';
   import DrawingEditor from './DrawingEditor.svelte';
 
-  let { workspace, node, onExit, onMissing }: {
+  let { workspace, node, onExit, onMissing, stylusOnly }: {
+    stylusOnly: boolean;
     workspace: Workspace; node: StateNode; onExit: () => void; onMissing: () => void;
   } = $props();
   let resource = $state.raw<DrawingResource>();
@@ -31,7 +32,7 @@
 </script>
 
 {#if resource}
-  <DrawingEditor name={node.name} initial={resource.strokes} {onExit}
+  <DrawingEditor {stylusOnly} name={node.name} initial={resource.strokes} {onExit}
     onSave={async (strokes) => { resource = await saveDrawing(resource!, strokes); }} />
 {:else if error}
   <button type="button" onclick={onExit}>Exit</button>
