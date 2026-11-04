@@ -13,12 +13,11 @@
 # testing
 /coverage
 
-# next.js
-/.next/
-/out/
-
 # production
 /build
+/.svelte-kit/
+/test-results/
+/playwright-report/
 
 # misc
 .DS_Store
@@ -38,4 +37,3 @@ yarn-error.log*
 
 # typescript
 *.tsbuildinfo
-next-env.d.ts

@@ -1,0 +1,88 @@
+:root {
+  --font-geist-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+  --min-box: 40px;
+}
+* { box-sizing: border-box; }
+body { min-width: 280px; }
+button, input, select, a { -webkit-tap-highlight-color: transparent; }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible {
+  outline: 2px solid var(--primary); outline-offset: 3px;
+}
+button:disabled { opacity: .4; cursor: wait; }
+main { padding: calc(var(--min-box) / 4); padding-bottom: calc(var(--min-box) * 3); }
+.app { max-width: calc(var(--min-box) * 32); }
+.action { min-height: var(--min-box); max-width: 100%; }
+.action > button { max-width: 100%; vertical-align: top; }
+.action .content { min-width: 0; overflow-wrap: anywhere; }
+.hint { display: block; font-size: .5em; line-height: 1.5; opacity: .6; padding: .2em .5em .3em; }
+hr { height: 1px; border: 0; background: var(--primary); opacity: .25; margin: calc(var(--min-box) / 4) 0; }
+.state-display { margin-top: var(--min-box); }
+h1, h2, h3, p { font-size: inherit; font-weight: 400; margin: 0; }
+h1 { overflow-wrap: anywhere; }
+h2 { margin-bottom: calc(var(--min-box) / 2); }
+h3 { font-size: .7em; margin-top: calc(var(--min-box) / 2); }
+.muted, .file-meta, .notice, .field, .config-row, .path { font-size: .5em; line-height: 1.7; }
+.muted, .path { color: var(--tertiary); }
+.path { margin-bottom: calc(var(--min-box) / 2); overflow-wrap: anywhere; }
+.notice { padding: .6em .8em; border-left: 2px solid var(--tertiary); margin: .8em 0; }
+.panel { border-top: 1px solid var(--tertiary); margin-top: calc(var(--min-box) / 2); padding: calc(var(--min-box) / 2) 0; }
+.panel > .muted { margin-bottom: calc(var(--min-box) / 2); }
+.field { display: flex; flex-direction: column; gap: .3em; margin: .8em 0; max-width: 36em; }
+input, select { font: inherit; color: var(--primary); background: var(--background); border: 1px solid var(--tertiary); border-radius: 0; padding: .6em; min-height: 44px; width: 100%; }
+input[type='checkbox'] { width: 1.2em; min-height: 1.2em; height: 1.2em; flex: none; accent-color: var(--primary); }
+.config-row { display: flex; align-items: baseline; flex-wrap: wrap; gap: .6em; margin: .5em 0; overflow-wrap: anywhere; }
+.config-row label { display: flex; gap: .6em; align-items: baseline; }
+.small-button { font: inherit; line-height: inherit; text-decoration: underline; text-underline-offset: .2em; }
+a { color: inherit; text-underline-offset: .15em; }
+.editor-container { border: 1px solid var(--tertiary); margin-top: .5em; }
+.editor-controls { display: flex; gap: .5em; align-items: center; margin: 0 0 .5em; font-size: .55em; }
+.editor-controls button { display: inline-flex; align-items: center; white-space: nowrap; border: 1px solid var(--tertiary); padding: 0 .55em; font-size: inherit; line-height: 36px; }
+.editor-controls button:has(.shortcut-hint) { position: relative; }
+.shortcut-hint {
+  display: none; position: absolute; top: calc(100% + 4px); left: 0; z-index: 5;
+  padding: .25em .5em; font-size: .8em; line-height: 1.4;
+  color: var(--background); background: var(--primary); pointer-events: none;
+}
+.editor-controls button:is(:hover, :focus-visible) .shortcut-hint { display: block; }
+.editor-controls button:focus-visible { outline-offset: -3px; }
+.editor-exit .editor-controls { flex-wrap: wrap; }
+.cm-editor input, .cm-editor button { font-size: 14px; line-height: 1.5; width: auto; }
+.search-status:empty { display: none; }
+.search-field-exit { display: inline-flex; max-width: 100%; margin-bottom: calc(var(--min-box) / 4); }
+.search-field-exit kbd { font: inherit; color: var(--tertiary); background: hsla(0, 100%, 50%, .25); }
+.search-field-exit span { background: hsla(0, 100%, 50%, .125); }
+.source-list { margin: calc(var(--min-box) / 2) 0; }
+.local-picker { color: var(--primary); background: var(--background); border: 1px solid var(--tertiary); padding: calc(var(--min-box) / 2); width: min(880px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow: auto; overflow-wrap: anywhere; }
+.local-picker::backdrop { background: rgb(0 0 0 / .4); }
+.local-picker .drop-zone { border: 1px dashed var(--tertiary); padding: .6em; margin: .6em 0; font-size: .6em; line-height: 1.5; }
+.local-picker .drop-zone .muted { font-size: .8em; }
+.local-picker .picker-button { font-size: .6em; line-height: 1.6; background: hsla(120, 100%, 50%, .125); padding: .3em .6em; margin: .3em 0; min-height: 44px; }
+.picker-row { display: flex; gap: .7em; align-items: center; font-size: .55em; line-height: 1.6; min-height: 44px; padding: .25em 0; }
+.picker-row input { width: 1.2em; min-height: 1.2em; height: 1.2em; flex: none; }
+.picker-row button { font: inherit; line-height: inherit; min-height: 44px; }
+.picker-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.picker-kind { font-size: .8em; color: var(--tertiary); }
+.picker-entries { border-top: 1px solid var(--tertiary); border-bottom: 1px solid var(--tertiary); }
+.picker-footer { display: flex; flex-wrap: wrap; gap: .7em; margin-top: .5em; }
+@media (max-width: 600px) {
+  body, button { font-size: calc(min(var(--min-box), 36px) * .8); }
+  main { padding: 8px; padding-bottom: 80px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0s !important; transition-duration: 0s !important; }
+}
+
+.svg-page-preview, .drawing-canvas {
+  display: block; width: 100%; padding: 0; border: 1px solid var(--tertiary);
+  background: var(--background); color: var(--primary);
+}
+.cm-editor button.svg-page-preview { width: 100%; line-height: 0; }
+.cm-line.svg-page-source { color: transparent; }
+.cm-line.svg-page-source * { color: transparent; }
+.inline-drawing-host, .drawing-surface { width: 100%; }
+.svg-page-preview svg { display: block; width: 100%; }
+.drawing-controls { flex-wrap: wrap; }
+.drawing-controls button[aria-pressed="true"] { background: var(--primary); color: var(--background); }
+.drawing-canvas { cursor: crosshair; touch-action: none; user-select: none; }
+.drawing-canvas.eraser { cursor: cell; }
+.drawing-surface { font-family: var(--font-mono); line-height: normal; }
