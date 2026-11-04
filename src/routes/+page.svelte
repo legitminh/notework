@@ -6,6 +6,7 @@
   import Action from '../lib/components/Action.svelte';
   import SearchPanel from '../lib/components/SearchPanel.svelte';
   import CreateAsset from '../lib/components/CreateAsset.svelte';
+  import { defaultPdfMargins, readPdfMargins, pdfMarginSides, PDF_MARGINS_KEY, type PdfMarginSide } from '../lib/export-preferences';
   import { createAsset } from '../lib/create-asset';
   import type { AssetType } from '../lib/asset-types';
   import TextEditor from '../lib/components/TextEditor.svelte';
@@ -37,6 +38,7 @@
   let wrapLines = $state(true);
   let vimMode = $state(false);
   let stylusOnly = $state(false);
+  let pdfMargins = $state(defaultPdfMargins());
   let graphRevision = $state(0);
   let message = $state('');
   let storageMessage = $state('');
@@ -63,6 +65,7 @@
     catch { /* Use the default when storage is unavailable. */ }
     try { stylusOnly = localStorage.getItem('notework:stylus-only') === 'true'; }
     catch { /* Finger drawing remains available when storage is unavailable. */ }
+    pdfMargins = readPdfMargins();
     supported = supportsFilesystem();
     browserDocuments = supportsBrowserDocuments();
     if (browserDocuments) void updateStorage();
@@ -257,6 +260,16 @@
     } catch (error) { storageStatus = storageError(error); }
   }
 
+  function updatePdfMargin(side: PdfMarginSide, input: HTMLInputElement) {
+    const value = input.valueAsNumber;
+    const valid = Number.isFinite(value) && value >= 0;
+    input.setCustomValidity(valid ? '' : 'Enter zero or a positive number of min-boxes.');
+    if (!valid) return;
+    pdfMargins = { ...pdfMargins, [side]: value };
+    try { localStorage.setItem(PDF_MARGINS_KEY, JSON.stringify(pdfMargins)); }
+    catch { storageMessage = 'PDF margins work in this tab but could not be saved in browser storage.'; }
+  }
+
   async function startCreating() {
     if ((current && current.kind !== 'directory') || busy) return;
     message = ''; panel = null; creating = true;
@@ -347,9 +360,9 @@
       {:else if editing && current}
         {#key current.uri}
           {#if current.drawing}
-            <StandaloneDrawing {stylusOnly} {workspace} node={current} onExit={exitEditor} onMissing={() => { void missingCurrent(); }} />
+            <StandaloneDrawing {pdfMargins} {stylusOnly} {workspace} node={current} onExit={exitEditor} onMissing={() => { void missingCurrent(); }} />
           {:else}
-            <TextEditor {workspace} node={current} {wrapLines} {vimMode} {stylusOnly} onExit={exitEditor}
+            <TextEditor {workspace} node={current} {wrapLines} {vimMode} {stylusOnly} {pdfMargins} onExit={exitEditor}
               onMissing={() => { void missingCurrent(); }} onOpenLink={openLinkedFile} />
           {/if}
         {/key}
@@ -445,6 +458,14 @@
             <Action label="smaller type" onSelect={() => min_box.set(Math.max(24, min_box.value - 4))} />
             <Action label="larger type" onSelect={() => min_box.set(Math.min(72, min_box.value + 4))} />
             <p class="muted">Use the colored key labels or click a button. Tab and Enter also work. Scrolling is native.</p>
+            <h3>PDF export margins</h3>
+            <p class="muted" id="pdf-margin-units">Each side defaults to 1 min-box. Set 0 for no margin; fractions are allowed.</p>
+            {#each pdfMarginSides as side}
+              <label class="field"><span>{side} margin (min-box)</span>
+                <input type="number" min="0" step="any" value={pdfMargins[side]} aria-describedby="pdf-margin-units"
+                  oninput={(event) => updatePdfMargin(side, event.currentTarget)} />
+              </label>
+            {/each}
           </section>
         {/if}
       </div>

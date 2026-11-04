@@ -4,11 +4,12 @@
   import { drawingGestures } from '../drawing-gestures';
   import { storageError } from '../browser-documents';
 
-  let { name, initial, onSave, onExit, surfaceTarget, stylusOnly }: {
+  let { name, initial, onSave, onExit, surfaceTarget, stylusOnly, onExport }: {
     name: string;
     stylusOnly: boolean;
     initial: Drawing;
     onSave: (strokes: Drawing) => Promise<void>;
+    onExport: (strokes: Drawing) => void;
     onExit: () => void;
     surfaceTarget?: HTMLElement;
   } = $props();
@@ -149,7 +150,7 @@
       if (!['b', 's', 'z', 'y', 'escape'].includes(key)) return;
       event.preventDefault();
       event.stopImmediatePropagation();
-      if (event.repeat || exitDialog.open) return;
+      if (event.repeat || exitDialog.open || document.querySelector('dialog[open][aria-labelledby="export-heading"]')) return;
       if (key === 's') void save();
       else if (key === 'b') tool = 'brush';
       else if (key === 'escape') exit();
@@ -190,6 +191,7 @@
   <button type="button" onclick={() => { tool = 'eraser'; }} aria-pressed={tool === 'eraser'}>Eraser</button>
   <button type="button" onclick={undo} disabled={!undoStack.length || saving}>Undo<span class="shortcut-hint" aria-hidden="true">Command+Z</span></button>
   <button type="button" onclick={redo} disabled={!redoStack.length || saving}>Redo<span class="shortcut-hint" aria-hidden="true">Command+Shift+Z</span></button>
+  <button type="button" onclick={() => onExport(strokes)} disabled={saving || !!gesture}>Export</button>
 </div>
 
 <div class="drawing-surface" use:portal={surfaceTarget}>

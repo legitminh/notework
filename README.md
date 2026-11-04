@@ -37,6 +37,12 @@ Readable files use the plain-text CodeMirror editor unless they are Notework dra
 
 The editor virtualizes its viewport and streams text reads/writes instead of rendering a collection or converting an entire collection into one string. There is no former 2 MB preview truncation. A multi-megabyte/60,000-line document is covered by browser tests. A single open document still uses editor memory, so capacity is not unlimited.
 
+## Export
+
+**Export** in either editor opens a format dialog; PDF is currently available. It exports the current draft without saving it, including unsaved inline drawing strokes. The result is one custom-sized page with configurable margins, the editor’s font/colors/wrapping, formatted wiki links, and vector SVG strokes. Set each side in **App settings → PDF export margins**, always in min-box units. Left, right, top, and bottom default to 1; zero and fractional values are supported. Margins add space around the content without changing wrapping or SVG proportions, using the current min-box size. Navigation, toolbars, the caret, and line numbers are excluded. Text is rendered in small image tiles to preserve system fonts and Unicode, so PDF text is not selectable.
+
+In a browser, **Download PDF** uses the browser’s regular download destination/settings. In an installed PWA, **Share PDF** opens the OS file-sharing sheet when supported; a download fallback is always available. The PDF is prepared before the final share tap, preserving the user gesture required by iOS. Cancelling sharing does not start a download. Export runs entirely on-device and works offline with the cached app shell; no note contents are uploaded.
+
 ## Wiki links and rename
 
 Type `[[` in the editor to see matching files. Use the arrow keys and Enter to pick a file or **create: filename**. You can also type the link directly. Save creates any new targets beside the source file and makes the links available as outgoing navigation buttons. Removing a link and saving removes its transition. Discarding edits creates no files or transitions.

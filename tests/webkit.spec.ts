@@ -8,6 +8,14 @@ test('WebKit persistent storage creates folders, text, and drawings without clon
   const profile = await mkdtemp(join(tmpdir(), 'notework-webkit-'));
   const context = await webkit.launchPersistentContext(profile, { viewport: { width: 820, height: 1180 }, isMobile: true, hasTouch: true });
   try {
+    await context.addInitScript(() => {
+      Object.defineProperty(navigator, 'standalone', { value: true });
+      Object.defineProperty(navigator, 'canShare', { value: (data: ShareData) => data.files?.[0]?.type === 'application/pdf' });
+      Object.defineProperty(navigator, 'share', { value: async (data: ShareData) => {
+        sessionStorage.setItem('pdf-share', JSON.stringify({ name: data.files![0].name, type: data.files![0].type,
+          active: navigator.userActivation.isActive, size: data.files![0].size }));
+      } });
+    });
     const page = await context.newPage();
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
@@ -27,6 +35,20 @@ test('WebKit persistent storage creates folders, text, and drawings without clon
     const toolbar = page.getByRole('group', { name: 'Editor toolbar' });
     await toolbar.getByRole('button', { name: 'Save', exact: true }).click();
     await expect(page.getByText('saved in browser storage', { exact: true })).toBeVisible();
+    await toolbar.getByRole('button', { name: 'Export', exact: true }).click();
+    const exportDialog = page.getByRole('dialog', { name: 'Export', exact: true });
+    await expect(exportDialog.getByRole('button', { name: 'Share PDF', exact: true })).toBeEnabled();
+    const downloadPdf = page.waitForEvent('download');
+    await exportDialog.getByRole('button', { name: 'Download PDF', exact: true }).click();
+    expect((await downloadPdf).suggestedFilename()).toBe('first.pdf');
+    await toolbar.getByRole('button', { name: 'Export', exact: true }).click();
+    await expect(exportDialog.getByRole('button', { name: 'Share PDF', exact: true })).toBeEnabled();
+    await exportDialog.getByRole('button', { name: 'Share PDF', exact: true }).click();
+    await expect(exportDialog).toHaveCount(0);
+    const shared = await page.evaluate(() => JSON.parse(sessionStorage.getItem('pdf-share')!));
+    expect(shared).toMatchObject({ name: 'first.pdf', type: 'application/pdf', active: true });
+    expect(shared.size).toBeGreaterThan(100);
+
     await toolbar.getByRole('button', { name: 'Exit', exact: true }).click();
     await action('..').click();
     await action('create new file/folder').click();

@@ -19,6 +19,10 @@
   import { decodedChunks, encodedChunks, inspectText, type TextFormat } from '../text-resource';
   import { writeBrowserContent, storageError } from '../browser-documents';
   import { saveWorkspace } from '../persistence';
+  import ExportDialog from './ExportDialog.svelte';
+  import type { PdfMargins } from '../export-preferences';
+  import { exportStyle } from '../export-style';
+  import type { PdfSource } from '../pdf-export';
   import DrawingEditor from './DrawingEditor.svelte';
   import { svgPages, type SvgPage } from '../svg-pages';
   import { svgPageNames, type Drawing } from '../drawing';
@@ -26,11 +30,12 @@
   import { wikiDisplay } from '../wiki-display';
   import { findWikiTarget, prepareWikiSave, validFilename, wikiCatalog, wikiScore, wikiToken, wikiTokens } from '../wiki';
 
-  let { workspace, node, wrapLines, vimMode, stylusOnly, onExit, onMissing, onOpenLink }: {
+  let { workspace, node, wrapLines, vimMode, stylusOnly, pdfMargins, onExit, onMissing, onOpenLink }: {
     workspace: Workspace; node: StateNode;
     wrapLines: boolean;
     vimMode: boolean;
     stylusOnly: boolean;
+    pdfMargins: PdfMargins;
     onExit: () => void;
     onOpenLink: (id: string) => Promise<void>;
     onMissing: () => void;
@@ -42,6 +47,7 @@
   const catalogController = new AbortController();
   let catalogRequest: Promise<StateNode[]> | undefined;
   let inlineDrawing = $state.raw<{ page: SvgPage; host: HTMLDivElement; resource?: DrawingResource }>();
+  let exportSource = $state.raw<PdfSource>();
   let openingDrawing = false;
   const textLock = new Compartment();
   const pageWidgets = svgPages((page) => { void openDrawing(page); }, () => vimMode);
@@ -286,21 +292,31 @@
     if (vimMode && key === 'f' && event.ctrlKey) return;
     event.preventDefault();
     event.stopImmediatePropagation();
-    if (event.repeat || exitDialog.open) return;
+    if (event.repeat || exitDialog.open || exportSource) return;
     if (key === 'b') insertDrawing();
     else if (key === 'escape') requestExit();
     else if (key === 's') void save();
     else find();
   }
 
-  async function exportText() {
-    if (!view) return;
-    // Export can rescue unsaved edits even when write permission or quota is unavailable.
-    const blob = new Blob([...encodedChunks(chunks(view.state.doc), format)] as BlobPart[], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url; link.download = node.name; link.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  function openExport(drawing?: Drawing) {
+    if (!view || loading) return;
+    const snapshot = view.state.doc;
+    const override = inlineDrawing && drawing ? { name: inlineDrawing.page.name, strokes: drawing } : undefined;
+    const content = view.contentDOM;
+    const width = parseFloat(view.dom.style.getPropertyValue('--drawing-page-width')) || content.clientWidth;
+    const style = exportStyle(content, width, wrapLines, pdfMargins);
+    style.background = getComputedStyle(view.dom).backgroundColor;
+    exportSource = {
+      kind: 'text', name: node.name, lines: snapshot.iterLines(), style,
+      drawing: async (name) => {
+        if (override?.name === name) return override.strokes;
+        const resource = await loadSiblingDrawing(workspace, node, handle, name);
+        if (resource) return resource.strokes;
+        if (newDrawings.has(name) || !savedPages.has(name)) return [];
+        throw new Error(`Drawing “${name}” is unavailable. Restore it before exporting.`);
+      }
+    };
   }
 
   onMount(() => {
@@ -419,13 +435,13 @@
     <button type="button" aria-keyshortcuts="Control+S" onclick={() => save()} disabled={loading || saving}>Save<span class="shortcut-hint" aria-hidden="true">Ctrl+S</span></button>
     <button type="button" aria-keyshortcuts={vimMode ? undefined : 'Control+F'} aria-label="Find and replace" onclick={find} disabled={loading}><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="10" cy="10" r="6" /><path d="m14.5 14.5 5 5" /></svg>{#if !vimMode}<span class="shortcut-hint" aria-hidden="true">Ctrl+F</span>{/if}</button>
     <button type="button" onclick={insertDrawing} disabled={loading || saving} aria-keyshortcuts="Meta+B">Brush<span class="shortcut-hint" aria-hidden="true">Command+B</span></button>
-    <button type="button" onclick={exportText} disabled={loading}>Export</button>
+    <button type="button" onclick={() => openExport()} disabled={loading}>Export</button>
   </div>
   {/if}
   {#if inlineDrawing}
     <DrawingEditor {stylusOnly} name={inlineDrawing.page.name} initial={inlineDrawing.resource?.strokes ?? []}
       surfaceTarget={inlineDrawing.host}
-      onSave={saveInlineDrawing} onExit={closeInlineDrawing} />
+      onExport={(strokes) => openExport(strokes)} onSave={saveInlineDrawing} onExit={closeInlineDrawing} />
   {/if}
   <h1>{node.name}</h1>
   <p class="muted" role="status" aria-live="polite">
@@ -447,3 +463,7 @@
     <button type="button" onclick={() => exitDialog.close()} disabled={saving}>Cancel</button>
   </div>
 </dialog>
+
+{#if exportSource}
+  <ExportDialog source={exportSource} onClose={() => { exportSource = undefined; }} />
+{/if}

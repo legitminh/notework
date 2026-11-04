@@ -34,4 +34,10 @@ test('installed app shell and browser documents work offline', async ({ page, co
   await expect(page.getByText('saved in browser storage', { exact: true })).toBeVisible();
   await page.reload(); await action('offline.txt').click(); await action('open').click();
   await expect(editor).toHaveText('Notes survive offline. Still writing.');
+  await page.getByRole('group', { name: 'Editor toolbar' }).getByRole('button', { name: 'Export', exact: true }).click();
+  const exportDialog = page.getByRole('dialog', { name: 'Export', exact: true });
+  await expect(exportDialog.getByRole('button', { name: 'Download PDF', exact: true })).toBeEnabled();
+  const download = page.waitForEvent('download');
+  await exportDialog.getByRole('button', { name: 'Download PDF', exact: true }).click();
+  expect((await download).suggestedFilename()).toBe('offline.pdf');
 });
