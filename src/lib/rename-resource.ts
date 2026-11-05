@@ -92,8 +92,8 @@ export async function renameResource(workspace: Workspace, source: StateNode, na
         grant.handle = await at(destination, path) as unknown as LocalHandle;
         grant.uri = renamedUri + (path.length ? '/' + path.map(encodeURIComponent).join('/') : '');
       }
-      if (grant.parent) grant.parent = remap(grant.parent);
-      if (grant.drawingScope?.startsWith('[')) grant.drawingScope = remap(grant.drawingScope);
+      if (grant.legacyDrawingScope?.startsWith('[')) grant.legacyDrawingScope = remap(grant.legacyDrawingScope);
+      else if (grant.legacyDrawingScope?.startsWith('file:')) grant.legacyDrawingScope = 'file:' + remap(grant.legacyDrawingScope.slice(5));
     }
     next.data.rootIds = next.data.rootIds.map(remap);
     for (const table of ['links', 'hidden'] as const) next.data[table] = Object.fromEntries(

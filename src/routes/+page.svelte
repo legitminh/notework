@@ -55,6 +55,7 @@
   let pendingHistory: string | undefined;
   let refreshVersion = 0;
   const currentId = $derived(current?.id ?? ROOT);
+  const canCreateHere = $derived(current?.storage === 'local' ? supported : browserDocuments);
   const source = $derived(workspace.data.sources.find((item) => item.id === current?.sourceId));
   const needsPermission = $derived(source && source.storage !== 'browser' && permissions[source.id] !== 'granted');
 
@@ -278,7 +279,7 @@
   }
 
   async function createAtFolder(name: string, type: AssetType) {
-    if ((current && current.kind !== 'directory') || busy || !browserDocuments) return;
+    if ((current && current.kind !== 'directory') || busy || !canCreateHere) return;
     const parent = current;
     busy = true; message = '';
     try {
@@ -355,7 +356,7 @@
     <main class="app" aria-label="notework" aria-busy={loading}>
       {#if creating && (!current || current.kind === 'directory')}
         <CreateAsset path={current ? workspace.label(current) : 'home'} machineFolder={current?.storage === 'local'}
-          {busy} supported={browserDocuments} error={message} onCreate={createAtFolder}
+          {busy} supported={canCreateHere} error={message} onCreate={createAtFolder}
           onCancel={() => { creating = false; message = ''; }} />
       {:else if editing && current}
         {#key current.uri}
@@ -404,7 +405,7 @@
             <Action label={`delete this ${resourceType}`} onSelect={confirmDelete}
               disabled={busy || current.storage !== 'browser'} />
             {#if current.storage !== 'browser'}
-              <p class="muted">Machine resources are read-only here. Delete this {resourceType} using your system file manager.</p>
+              <p class="muted">Delete this {resourceType} using your system file manager.</p>
             {/if}
           </section>
         {:else if panel === 'settings'}
@@ -484,7 +485,7 @@
           <p class="path">virtual folder · {edges.length} {edges.length === 1 ? 'item' : 'items'} from connected sources</p>
         {/if}
         {#if !current || current.kind === 'directory'}
-          <Action label="create new file/folder" onSelect={startCreating} disabled={loading || busy || !browserDocuments} />
+          <Action label="create new file/folder" onSelect={startCreating} disabled={loading || busy || !canCreateHere} />
         {/if}
         {#if current?.kind === 'directory'}
           <Action label="refresh folder" onSelect={() => { message = ''; void refresh(); }} />

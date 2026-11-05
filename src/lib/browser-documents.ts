@@ -3,25 +3,6 @@ import type { LocalFile, LocalHandle } from './filesystem';
 export const supportsBrowserDocuments = () => typeof navigator !== 'undefined' &&
   window.isSecureContext && !!navigator.storage?.getDirectory;
 
-export async function createBrowserDocument(name: string) {
-  name = name.trim();
-  if (!name || name === '.' || name === '..' || /[/\\\0]/.test(name)) throw new Error('Choose a document name without slashes or null characters.');
-  const id = crypto.randomUUID();
-  const root = await navigator.storage.getDirectory();
-  const app = await root.getDirectoryHandle('notework', { create: true });
-  const documents = await app.getDirectoryHandle('documents', { create: true });
-  const folder = await documents.getDirectoryHandle(id, { create: true });
-  try {
-    const handle = await folder.getFileHandle(name, { create: true });
-    return {
-      id, handle: handle as unknown as LocalFile,
-      uri: `opfs://notework/documents/${id}/${encodeURIComponent(name)}`,
-      storage: 'browser' as const,
-      discard: () => documents.removeEntry(id, { recursive: true })
-    };
-  } catch (error) { await documents.removeEntry(id, { recursive: true }).catch(() => {}); throw error; }
-}
-
 /** Stream text or arbitrary binary chunks to app-owned OPFS only, never a machine file. */
 export async function writeBrowserContent(handle: LocalFile, chunks: Iterable<string | Uint8Array> | AsyncIterable<string | Uint8Array>) {
   const root = await navigator.storage.getDirectory();

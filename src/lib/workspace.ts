@@ -8,7 +8,10 @@ export interface Source {
   handle: LocalHandle;
   storage?: 'local' | 'browser';
   uri?: string;
+  /** Legacy metadata used only to preserve existing drawing references. */
   drawingScope?: string;
+  legacyDrawingScope?: string;
+  /** Legacy virtual parenting is migrated to an ordinary directed link. */
   parent?: string;
 }
 export interface WorkspaceData {
@@ -26,14 +29,12 @@ export interface StateNode {
   name: string;
   kind: 'file' | 'directory';
   drawing?: boolean;
-  drawingScope?: string;
-  parent?: string;
   storage: 'local' | 'browser';
   uri: string;
 }
 export const emptyWorkspace = (): WorkspaceData => ({ sources: [], rootIds: [], links: {}, hidden: {} });
 export const nodeId = (sourceId: string, path: string[] = []) => JSON.stringify([sourceId, ...path]);
-export const parentId = (node: StateNode) => node.path.length ? nodeId(node.sourceId, node.path.slice(0, -1)) : node.parent ?? (node.drawingScope?.startsWith('[') ? node.drawingScope : ROOT);
+export const parentId = (node: StateNode) => node.path.length ? nodeId(node.sourceId, node.path.slice(0, -1)) : ROOT;
 
 export class Workspace {
   readonly known = new Map<string, StateNode>();
@@ -47,6 +48,17 @@ export class Workspace {
     for (const source of data.sources) {
       source.storage ??= 'local';
       source.uri ??= `notework-local://${source.id}/${encodeURIComponent(source.handle.name)}`;
+      const owner = source.parent ?? source.drawingScope;
+      if (owner) {
+        const from = owner.startsWith('file:') ? owner.slice(5) : owner;
+        try {
+          const parts = from === ROOT ? [] : JSON.parse(from);
+          if (Array.isArray(parts) && (from === ROOT || parts.length > 0) && parts.every((part) => typeof part === 'string')) this.link(from, nodeId(source.id));
+        } catch { /* Ignore malformed legacy associations without changing their resources. */ }
+      }
+      if (source.drawingScope) source.legacyDrawingScope = source.drawingScope;
+      delete source.drawingScope;
+      delete source.parent;
     }
   }
 
@@ -56,7 +68,6 @@ export class Workspace {
     const node: StateNode = {
       id: nodeId(sourceId, path), sourceId, path, name: handle.name, kind: handle.kind,
       drawing: this.drawings.has(nodeId(sourceId, path)),
-      drawingScope: source.drawingScope, parent: source.parent,
       storage: source.storage ?? 'local',
       uri: source.uri! + (path.length ? '/' + path.map(encodeURIComponent).join('/') : '')
     };
@@ -98,8 +109,7 @@ export class Workspace {
 
   private async validate(id: string, handle: LocalHandle) {
     if (handle.kind === 'file') {
-      if (this.data.sources.find((source) => source.id === (JSON.parse(id) as string[])[0])?.storage === 'browser' &&
-          handle.name.toLowerCase().endsWith('.svg') && await isDrawingFile(await handle.getFile())) {
+      if (handle.name.toLowerCase().endsWith('.svg') && await isDrawingFile(await handle.getFile())) {
         this.drawings.add(id);
         return;
       }
@@ -163,6 +173,8 @@ export class Workspace {
     return this.handles.get(id)!;
   }
 
+  cachedHandle(id: string) { return this.handles.get(id); }
+
   async fileAliases(file: LocalHandle) {
     const aliases: StateNode[] = [];
     for (const [id, node] of this.known) {
@@ -203,18 +215,7 @@ export class Workspace {
 
   label(node: StateNode) {
     const source = this.data.sources.find((source) => source.id === node.sourceId);
-    const names = [source?.handle.name, ...node.path];
-    const seen = new Set([node.id]);
-    let parent = source?.parent;
-    while (parent && !seen.has(parent)) {
-      seen.add(parent);
-      const [id, ...path] = JSON.parse(parent) as string[];
-      const ancestor = this.data.sources.find((item) => item.id === id);
-      if (!ancestor) break;
-      names.unshift(ancestor.handle.name, ...path);
-      parent = ancestor.parent;
-    }
-    return names.join('/');
+    return [source?.handle.name, ...node.path].join('/');
   }
 
   async children(id: string): Promise<StateNode[]> {
@@ -230,10 +231,6 @@ export class Workspace {
         if (isMissing(error)) this.forget(childId);
         else if (!(error instanceof HiddenResource)) throw error;
       }
-    }
-    for (const source of this.data.sources.filter((source) => (source.parent ?? source.drawingScope) === id)) {
-      try { children.push(await this.node(nodeId(source.id))); }
-      catch (error) { if (!isMissing(error)) throw error; }
     }
     return children.sort((a, b) =>
       Number(b.kind === 'directory') - Number(a.kind === 'directory') ||
@@ -257,7 +254,7 @@ export class Workspace {
     return { nodes: [...nodes.values()], errors };
   }
 
-  async connect(handle: LocalHandle, from: string | null = ROOT, location?: { id: string; uri: string; storage: 'browser'; drawingScope?: string; parent?: string }): Promise<StateNode> {
+  async connect(handle: LocalHandle, from: string | null = ROOT, location?: { id: string; uri: string; storage: 'browser' }): Promise<StateNode> {
     let node: StateNode | undefined;
     // Canonicalize picker selections inside existing grants to prevent duplicate states/cycles.
     for (const source of this.data.sources) {
@@ -273,7 +270,7 @@ export class Workspace {
     }
     if (!node) {
       const id = location?.id ?? crypto.randomUUID();
-      this.data.sources.push({ id, handle, drawingScope: location?.drawingScope, parent: location?.parent, storage: location?.storage ?? 'local', uri: location?.uri ?? `notework-local://${id}/${encodeURIComponent(handle.name)}` });
+      this.data.sources.push({ id, handle, storage: location?.storage ?? 'local', uri: location?.uri ?? `notework-local://${id}/${encodeURIComponent(handle.name)}` });
       node = this.remember(id, [], handle);
     }
     if (from !== null) this.link(from, node.id);

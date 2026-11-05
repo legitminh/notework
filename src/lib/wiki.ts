@@ -98,9 +98,11 @@ export async function assertAvailable(folder: FileSystemDirectoryHandle, name: s
 
 export async function connectSibling(workspace: Workspace, source: StateNode, handle: LocalFile) {
   if (source.storage === 'browser') {
-    return workspace.connect(handle, ROOT, {
+    const node = await workspace.connect(handle, null, {
       id: crypto.randomUUID(), storage: 'browser', uri: `${parentUri(source)}/${encodeURIComponent(handle.name)}`
     });
+    if (!node.path.length) workspace.link(ROOT, node.id);
+    return node;
   }
   return workspace.connect(handle, null);
 }

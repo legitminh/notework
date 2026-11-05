@@ -1,9 +1,9 @@
 import type { LocalFile } from './filesystem';
 import { isMissing } from './filesystem';
 import { nodeId, parentId, ROOT, type StateNode, type Workspace } from './workspace';
-import { assertAvailable, connectSibling, containingFolder, validFilename } from './wiki';
+import { assertAvailable, connectSibling, containingFolder, requireWrite, validFilename } from './wiki';
 import { readDrawing, serializeDrawing, type Drawing } from './drawing';
-import { createBrowserDocument, writeBrowserContent } from './browser-documents';
+import { writeResourceContent } from './resource-content';
 import { saveWorkspace } from './persistence';
 
 function drawingScope(source: StateNode) {
@@ -12,65 +12,62 @@ function drawingScope(source: StateNode) {
 }
 
 function sidecar(workspace: Workspace, source: StateNode, name: string) {
-  return workspace.data.sources.find((item) => item.drawingScope === drawingScope(source) && item.handle.name === name);
+  return workspace.data.sources.find((item) => item.legacyDrawingScope === drawingScope(source) && item.handle.name === name);
 }
 
 export interface DrawingResource {
   handle: LocalFile;
   strokes: Drawing;
   file: File;
+  storage: 'local' | 'browser';
 }
 
-export async function loadDrawing(handle: LocalFile): Promise<DrawingResource> {
+export async function loadDrawing(handle: LocalFile, storage: 'local' | 'browser'): Promise<DrawingResource> {
   const file = await handle.getFile();
-  return { handle, file, strokes: await readDrawing(file) };
+  return { handle, file, strokes: await readDrawing(file), storage };
 }
 
 export async function loadSiblingDrawing(workspace: Workspace, source: StateNode, file: LocalFile, name: string) {
   if (!validFilename(name) || !name.toLowerCase().endsWith('.svg')) throw new Error('A drawing must be an SVG filename in this folder.');
-  if (source.storage === 'local') {
-    const entry = sidecar(workspace, source, name);
-    if (!entry) return;
-    try { return await loadDrawing(await workspace.handle(nodeId(entry.id)) as LocalFile); }
-    catch (error) { if (isMissing(error)) return; throw error; }
+  const saved = workspace.data.wiki?.[source.id]?.[name];
+  if (saved) {
+    try {
+      const node = await workspace.node(saved);
+      const handle = await workspace.handle(saved);
+      if (handle.kind === 'file') return loadDrawing(handle, node.storage);
+    } catch (error) { if (!isMissing(error)) throw error; }
+  }
+  // Older versions placed local drawings in OPFS. Keep those existing links readable.
+  const entry = source.storage === 'local' ? sidecar(workspace, source, name) : undefined;
+  if (entry) {
+    try { return await loadDrawing(await workspace.handle(nodeId(entry.id)) as LocalFile, entry.storage ?? 'browser'); }
+    catch (error) { if (!isMissing(error)) throw error; }
   }
   const folder = await containingFolder(workspace, source, file);
-  try { return await loadDrawing(await folder.getFileHandle(name) as unknown as LocalFile); }
+  try { return await loadDrawing(await folder.getFileHandle(name) as unknown as LocalFile, source.storage); }
   catch (error) { if (isMissing(error)) return undefined; throw error; }
 }
 
-async function writeDrawing(handle: LocalFile, strokes: Drawing) {
-  await writeBrowserContent(handle, [serializeDrawing(strokes)]);
+async function writeDrawing(handle: LocalFile, strokes: Drawing, storage: 'local' | 'browser') {
+  await writeResourceContent(handle, storage, [serializeDrawing(strokes)]);
 }
 
 export async function saveDrawing(resource: DrawingResource, strokes: Drawing) {
+  if (resource.storage === 'local') await requireWrite(resource.handle);
   const latest = await resource.handle.getFile();
   if (latest.lastModified !== resource.file.lastModified || latest.size !== resource.file.size) {
     throw new Error('The SVG changed outside the editor. Reopen it before saving.');
   }
-  await writeDrawing(resource.handle, strokes);
-  return { handle: resource.handle, file: await resource.handle.getFile(), strokes };
+  await writeDrawing(resource.handle, strokes, resource.storage);
+  return { handle: resource.handle, file: await resource.handle.getFile(), strokes, storage: resource.storage };
 }
 
 async function stageSibling(
   workspace: Workspace, source: StateNode, file: LocalFile, name: string, strokes: Drawing
 ) {
   if (!validFilename(name) || !name.toLowerCase().endsWith('.svg')) throw new Error('A drawing must be an SVG filename in this folder.');
-  if (source.storage === 'local') {
-    if (sidecar(workspace, source, name)) throw new Error('A drawing with that name already exists.');
-    const document = await createBrowserDocument(name);
-    let id: string | undefined;
-    async function rollback() {
-      await document.discard().catch(() => {});
-      if (id) workspace.forget(id);
-    }
-    try {
-      await writeDrawing(document.handle, strokes);
-      id = (await workspace.connect(document.handle, null, { ...document, drawingScope: drawingScope(source) })).id;
-      return { id, resource: { handle: document.handle, file: await document.handle.getFile(), strokes }, rollback };
-    } catch (error) { await rollback(); throw error; }
-  }
   const folder = await containingFolder(workspace, source, file);
+  if (source.storage === 'local') await requireWrite(folder);
   await assertAvailable(folder, name);
   const handle = await folder.getFileHandle(name, { create: true }) as unknown as LocalFile;
   let id: string | undefined;
@@ -79,9 +76,9 @@ async function stageSibling(
     if (id) workspace.forget(id);
   }
   try {
-    await writeDrawing(handle, strokes);
+    await writeDrawing(handle, strokes, source.storage);
     id = (await connectSibling(workspace, source, handle)).id;
-    return { id, resource: { handle, file: await handle.getFile(), strokes }, rollback };
+    return { id, resource: { handle, file: await handle.getFile(), strokes, storage: source.storage }, rollback };
   } catch (error) { await rollback(); throw error; }
 }
 
@@ -104,9 +101,7 @@ export async function prepareSvgPages(
   try {
     for (const name of names) {
       const existing = await loadSiblingDrawing(workspace, source, file, name);
-      if (existing) targets[name] = source.storage === 'local'
-        ? nodeId(sidecar(workspace, source, name)!.id)
-        : (await connectSibling(workspace, source, existing.handle)).id;
+      if (existing) targets[name] = (await connectSibling(workspace, source, existing.handle)).id;
       else if (canCreate(name)) {
         const item = await stageSibling(workspace, source, file, name, []);
         staged.push(item);

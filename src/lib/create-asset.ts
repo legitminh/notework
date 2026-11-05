@@ -1,32 +1,45 @@
 import { assetName, validAssetName, type AssetType } from './asset-types';
-import { writeBrowserContent } from './browser-documents';
+import { writeResourceContent } from './resource-content';
 import type { LocalFile, LocalHandle } from './filesystem';
 import { saveWorkspace } from './persistence';
-import { ROOT, type StateNode, type Workspace } from './workspace';
+import { ROOT, nodeId, type StateNode, type Workspace } from './workspace';
+import { requireWrite } from './wiki';
 
 export async function createAsset(workspace: Workspace, parent: StateNode | null, input: string, type: AssetType) {
   const name = assetName(input, type);
   if (!validAssetName(input.trim()) || !validAssetName(name)) throw new Error('Choose a name without slashes or control characters. “.”, “..”, and “.git” are reserved.');
+  const selected = parent ? workspace.cachedHandle(parent.id) : undefined;
+  if (parent?.storage === 'local') {
+    if (!selected || selected.kind !== 'directory') throw new Error('Reopen the selected folder before creating an item.');
+    // Request permission before any asynchronous directory traversal consumes the user gesture.
+    await requireWrite(selected as unknown as FileSystemDirectoryHandle);
+  }
   if (parent && (await workspace.node(parent.id)).kind !== 'directory') throw new Error('Create assets inside a folder.');
-  const existing = parent ? await workspace.children(parent.id) : (await workspace.reachable(ROOT)).nodes;
-  if (existing.some((node) => node.name.toLowerCase() === name.toLowerCase())) throw new Error('An item with this name already exists.');
+  if (!parent) {
+    const existing = (await workspace.reachable(ROOT)).nodes;
+    if (existing.some((node) => node.name.toLowerCase() === name.toLowerCase())) throw new Error('An item with this name already exists.');
+  }
 
   let directory: FileSystemDirectoryHandle;
-  let location: { id: string; uri: string; storage: 'browser'; parent?: string } | undefined;
+  let location: { id: string; uri: string; storage: 'browser' } | undefined;
   let discardBucket: (() => Promise<void>) | undefined;
-  if (parent?.storage === 'browser') {
+  if (parent) {
     directory = await workspace.handle(parent.id) as unknown as FileSystemDirectoryHandle;
-    const path = await (await navigator.storage.getDirectory()).resolve(directory);
-    if (!path || path[0] !== 'notework' || path[1] !== 'documents') throw new Error('Only app-owned browser folders can be changed.');
+    if (parent.storage === 'browser') {
+      const path = await (await navigator.storage.getDirectory()).resolve(directory);
+      if (!path || path[0] !== 'notework' || path[1] !== 'documents') throw new Error('Only app-owned browser folders can be changed.');
+    } else if (!await directory.isSameEntry(selected as unknown as FileSystemDirectoryHandle)) {
+      throw new Error('The folder changed outside Notework. Reopen it before creating an item.');
+    }
   } else {
-    // Machine folders remain read-only. New resources are browser-backed children.
+    // Root has no backing folder; new root resources use app-owned browser storage.
     const root = await navigator.storage.getDirectory();
     const app = await root.getDirectoryHandle('notework', { create: true });
     const documents = await app.getDirectoryHandle('documents', { create: true });
     const id = crypto.randomUUID();
     directory = await documents.getDirectoryHandle(id, { create: true });
     discardBucket = () => documents.removeEntry(id, { recursive: true });
-    location = { id, uri: `opfs://notework/documents/${id}/${encodeURIComponent(name)}`, storage: 'browser', parent: parent?.id };
+    location = { id, uri: `opfs://notework/documents/${id}/${encodeURIComponent(name)}`, storage: 'browser' };
   }
   let created = false;
   let createdId: string | undefined;
@@ -39,10 +52,10 @@ export async function createAsset(workspace: Workspace, parent: StateNode | null
       ? await directory.getDirectoryHandle(name, { create: true })
       : await directory.getFileHandle(name, { create: true });
     created = true;
-    if (type.kind === 'file') await writeBrowserContent(handle as unknown as LocalFile, [type.initialContent?.() ?? '']);
-    const connected = await workspace.connect(handle as unknown as LocalHandle, parent ? null : ROOT, location);
-    createdId = connected.id;
-    const node = await workspace.node(connected.id);
+    if (type.kind === 'file') await writeResourceContent(handle as unknown as LocalFile, parent?.storage ?? 'browser', [type.initialContent?.() ?? '']);
+    createdId = parent ? nodeId(parent.sourceId, [...parent.path, name])
+      : (await workspace.connect(handle as unknown as LocalHandle, ROOT, location)).id;
+    const node = await workspace.node(createdId);
     await saveWorkspace(workspace.data);
     return node;
   } catch (error) {

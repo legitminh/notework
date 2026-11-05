@@ -21,8 +21,8 @@
   <Action label="cancel creation" onSelect={onCancel} disabled={busy} />
   <h1 id="create-heading">create new file/folder</h1>
   <label class="field"><span>name</span><input bind:this={input} bind:value={name} maxlength="255" autocomplete="off" disabled={busy} /></label>
-  <p class="muted">{machineFolder ? 'New assets are stored in this app’s browser storage and appear inside this folder in Notework.' : 'New assets are saved inside this folder in browser storage.'}</p>
-  {#if !supported}<p class="notice" role="alert">Browser storage is unavailable. Use HTTPS and allow site storage.</p>{/if}
+  <p class="muted">{machineFolder ? 'New assets are saved in this folder on your computer. Creating an item may ask for write access.' : 'New assets are saved inside this folder in browser storage.'}</p>
+  {#if !supported}<p class="notice" role="alert">{machineFolder ? 'Local creation needs browser filesystem support.' : 'Browser storage is unavailable. Use HTTPS and allow site storage.'}</p>{/if}
   {#if error}<p class="notice" role="alert">{error}</p>{/if}
   {#each assetTypes as type (type.id)}
     <div class="creation-option">

@@ -32,7 +32,7 @@
       try {
         const handle = await workspace.handle(node.id);
         if (handle.kind !== 'file') throw new Error('The drawing is no longer a file.');
-        const loaded = await loadDrawing(handle);
+        const loaded = await loadDrawing(handle, node.storage);
         if (active) resource = loaded;
       } catch (cause) {
         if (!active) return;
