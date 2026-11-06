@@ -26,7 +26,7 @@
   import DrawingEditor from './DrawingEditor.svelte';
   import { svgPages, type SvgPage } from '../svg-pages';
   import { svgPageNames, type Drawing } from '../drawing';
-  import { loadSiblingDrawing, prepareSvgPages, saveDrawing, saveSiblingDrawing, type DrawingResource } from '../drawing-files';
+  import { canCreateSiblingDrawing, loadDrawingReference, prepareSvgPages, saveDrawing, saveSiblingDrawing, type DrawingResource } from '../drawing-files';
   import { wikiDisplay } from '../wiki-display';
   import { containingFolder, findWikiTarget, prepareWikiSave, requireWrite, validFilename, wikiCatalog, wikiScore, wikiToken, wikiTokens, WritePermissionRequired } from '../wiki';
 
@@ -169,7 +169,7 @@
     if (!view || !active) return;
     for (const { name } of view.state.field(pageWidgets.field).pages) {
       if (newDrawings.has(name) || previews.has(name)) continue;
-      const loading = loadSiblingDrawing(workspace, node, handle, name);
+      const loading = catalog().then((files) => loadDrawingReference(workspace, node, handle, name, files));
       previews.set(name, loading);
       void loading.then((resource) => {
         if (active && resource && previews.get(name) === loading) {
@@ -183,7 +183,8 @@
     if (!view || saving || inlineDrawing || openingDrawing || followingLink) return;
     openingDrawing = true; error = '';
     try {
-      const resource = newDrawings.has(page.name) ? undefined : await loadSiblingDrawing(workspace, node, handle, page.name);
+      const resource = newDrawings.has(page.name) ? undefined : await loadDrawingReference(workspace, node, handle, page.name, await catalog());
+      if (!resource && !canCreateSiblingDrawing(page.name)) throw new Error(`Drawing resource “${page.name}” could not be found.`);
       if (!active || !view.state.field(pageWidgets.field).pages.some((item) => item.from === page.from && item.name === page.name)) return;
       const host = document.createElement('div');
       host.className = 'inline-drawing-host';
@@ -252,7 +253,7 @@
         // Exit/Ctrl+S gesture remains eligible to open the browser prompt.
         const permissions = [requireWrite(handle, requestWrite)];
         const mayCreateSibling = [...tokens].some((token) => !savedTokens.has(token) || requestedCreates.has(token)) ||
-          [...pages].some((name) => !savedPages.has(name) || newDrawings.has(name));
+          [...pages].some((name) => canCreateSiblingDrawing(name) && (!savedPages.has(name) || newDrawings.has(name)));
         const parent = parentId(node);
         const cached = parent === ROOT ? undefined : workspace.cachedHandle(parent);
         if (mayCreateSibling && cached?.kind === 'directory') permissions.push(requireWrite(cached, requestWrite));
@@ -264,7 +265,7 @@
         let svg: Awaited<ReturnType<typeof prepareSvgPages>> | undefined;
         try {
           svg = await prepareSvgPages(workspace, node, handle, pages,
-            (name) => !savedPages.has(name) || newDrawings.has(name), requestWrite);
+            (name) => !savedPages.has(name) || newDrawings.has(name), requestWrite, await catalog());
           await write(snapshot);
         } catch (cause) {
           await svg?.rollback(); await prepared.rollback(); throw cause;
@@ -353,10 +354,10 @@
     const style = exportStyle(content, width, wrapLines, pdfMargins);
     style.background = getComputedStyle(view.dom).backgroundColor;
     exportSource = {
-      kind: 'text', name: node.name, lines: snapshot.iterLines(), style,
+      kind: 'text', name: node.name, lines: () => snapshot.iterLines(), style,
       drawing: async (name) => {
         if (override?.name === name) return override.strokes;
-        const resource = await loadSiblingDrawing(workspace, node, handle, name);
+        const resource = await loadDrawingReference(workspace, node, handle, name, await catalog());
         if (resource) return resource.strokes;
         if (newDrawings.has(name) || !savedPages.has(name)) return [];
         throw new Error(`Drawing “${name}” is unavailable. Restore it before exporting.`);
@@ -482,31 +483,35 @@
 </script>
 
 <div class="document-editor">
-  {#if !inlineDrawing}
-  <div class="editor-controls" role="group" aria-label="Editor toolbar">
-    <button type="button" aria-keyshortcuts="Control+Escape" onclick={requestExit} disabled={saving}>Exit<span class="shortcut-hint" aria-hidden="true">Ctrl+Esc</span></button>
-    <button type="button" aria-keyshortcuts={vimMode ? undefined : 'Control+F'} aria-label="Find and replace" onclick={find} disabled={loading}><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="10" cy="10" r="6" /><path d="m14.5 14.5 5 5" /></svg>{#if !vimMode}<span class="shortcut-hint" aria-hidden="true">Ctrl+F</span>{/if}</button>
-    <button type="button" onclick={() => { void insertDrawing(); }} disabled={loading || saving} aria-keyshortcuts="Meta+B">Brush<span class="shortcut-hint" aria-hidden="true">Command+B</span></button>
-    <button type="button" onclick={() => openExport()} disabled={loading}>Export</button>
-  </div>
-  {/if}
-  {#if inlineDrawing}
-    <div class="inline-drawing-controller">
-      <DrawingEditor {stylusOnly} {autosaveMs} name={inlineDrawing.page.name} initial={inlineDrawing.resource?.strokes ?? []}
-        surfaceTarget={inlineDrawing.host}
-        onExport={(strokes) => openExport(strokes)} onSave={saveInlineDrawing} onExit={closeInlineDrawing} />
+  <div class="editor-toolbar-slot">
+    {#if !inlineDrawing}
+    <div class="editor-controls" role="group" aria-label="Editor toolbar">
+      <button type="button" aria-keyshortcuts="Control+Escape" onclick={requestExit} disabled={saving}>Exit<span class="shortcut-hint" aria-hidden="true">Ctrl+Esc</span></button>
+      <button type="button" aria-keyshortcuts={vimMode ? undefined : 'Control+F'} aria-label="Find and replace" onclick={find} disabled={loading}><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="10" cy="10" r="6" /><path d="m14.5 14.5 5 5" /></svg>{#if !vimMode}<span class="shortcut-hint" aria-hidden="true">Ctrl+F</span>{/if}</button>
+      <button type="button" onclick={() => { void insertDrawing(); }} disabled={loading || saving} aria-keyshortcuts="Meta+B">Brush<span class="shortcut-hint" aria-hidden="true">Command+B</span></button>
+      <button type="button" onclick={() => openExport()} disabled={loading}>Export</button>
     </div>
-  {/if}
-  <h1>{node.name}</h1>
-  <p class="muted" role="status" aria-live="polite">
-    {#if loading}loading text…{loadedBytes ? ` ${Math.round(loadedBytes / 1024)} KB` : ''}
-    {:else if saving}saving…
-    {:else if waitingForPermission}autosave is waiting for write permission; exit to save
-    {:else if dirty}unsaved changes
-    {:else if !error}saved {node.storage === 'browser' ? 'in browser storage' : 'on your computer'}{/if}
-  </p>
-  {#if error}<p class="notice" role="alert">{error}</p>{/if}
-  <div class="editor-container" bind:this={container}></div>
+    {/if}
+    {#if inlineDrawing}
+      <div class="inline-drawing-controller">
+        <DrawingEditor {stylusOnly} {autosaveMs} name={inlineDrawing.page.name} initial={inlineDrawing.resource?.strokes ?? []}
+          surfaceTarget={inlineDrawing.host}
+          onExport={(strokes) => openExport(strokes)} onSave={saveInlineDrawing} onExit={closeInlineDrawing} />
+      </div>
+    {/if}
+  </div>
+  <div class="editor-scroll">
+    <h1>{node.name}</h1>
+    <p class="muted" role="status" aria-live="polite">
+      {#if loading}loading text…{loadedBytes ? ` ${Math.round(loadedBytes / 1024)} KB` : ''}
+      {:else if saving}saving…
+      {:else if waitingForPermission}autosave is waiting for write permission; exit to save
+      {:else if dirty}unsaved changes
+      {:else if !error}saved {node.storage === 'browser' ? 'in browser storage' : 'on your computer'}{/if}
+    </p>
+    {#if error}<p class="notice" role="alert">{error}</p>{/if}
+    <div class="editor-container" bind:this={container}></div>
+  </div>
 </div>
 
 {#if exportSource}

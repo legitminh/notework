@@ -10,7 +10,8 @@ test('WebKit persistent storage creates folders, text, and drawings without clon
   try {
     await context.addInitScript(() => {
       Object.defineProperty(navigator, 'standalone', { value: true });
-      Object.defineProperty(navigator, 'canShare', { value: (data: ShareData) => data.files?.[0]?.type === 'application/pdf' });
+      Object.defineProperty(navigator, 'canShare', { value: (data: ShareData) =>
+        ['application/pdf', 'image/png', 'image/jpeg'].includes(data.files?.[0]?.type ?? '') });
       Object.defineProperty(navigator, 'share', { value: async (data: ShareData) => {
         sessionStorage.setItem('pdf-share', JSON.stringify({ name: data.files![0].name, type: data.files![0].type,
           active: navigator.userActivation.isActive, size: data.files![0].size }));
@@ -52,6 +53,15 @@ test('WebKit persistent storage creates folders, text, and drawings without clon
     const shared = await page.evaluate(() => JSON.parse(sessionStorage.getItem('pdf-share')!));
     expect(shared).toMatchObject({ name: 'first.pdf', type: 'application/pdf', active: true });
     expect(shared.size).toBeGreaterThan(100);
+
+    for (const [format, label] of [['png', 'PNG'], ['jpeg', 'JPEG']] as const) {
+      await toolbar.getByRole('button', { name: 'Export', exact: true }).click();
+      await exportDialog.getByLabel('Export format').selectOption(format);
+      await expect(exportDialog.getByRole('button', { name: `Share ${label}`, exact: true })).toBeEnabled();
+      const downloaded = page.waitForEvent('download');
+      await exportDialog.getByRole('button', { name: `Download ${label}`, exact: true }).click();
+      expect((await downloaded).suggestedFilename()).toBe(`first.${format}`);
+    }
 
     await toolbar.getByRole('button', { name: 'Exit', exact: true }).click();
     await action('..').click();

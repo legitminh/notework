@@ -48,6 +48,24 @@ export function findWikiTarget(workspace: Workspace, source: StateNode, token: s
   return matches[0];
 }
 
+/** Resolve a saved or URI/path/name file reference without assuming physical parentage. */
+export async function resolveFileReference(workspace: Workspace, source: StateNode, token: string, catalog: StateNode[]) {
+  const references = workspace.data.wiki?.[source.id];
+  const saved = references && Object.hasOwn(references, token) ? references[token] : undefined;
+  let target = saved ? await workspace.node(saved).catch((error) => {
+    if (!isMissing(error)) throw error;
+    return undefined;
+  }) : undefined;
+  const candidate = target ?? findWikiTarget(workspace, source, token, catalog);
+  if (candidate && !target) {
+    target = await workspace.node(candidate.id).catch((error) => {
+      if (!isMissing(error)) throw error;
+      return undefined;
+    });
+  }
+  return target?.kind === 'file' ? target : undefined;
+}
+
 export function wikiScore(query: string, name: string) {
   query = fold(query); name = fold(name);
   if (!query || name === query) return 0;
@@ -133,18 +151,7 @@ export async function prepareWikiSave(
   }
   try {
     for (const token of tokens) {
-      const references = workspace.data.wiki?.[source.id];
-      const saved = references && Object.hasOwn(references, token) ? references[token] : undefined;
-      let target = saved ? await workspace.node(saved).catch((error) => {
-        if (!isMissing(error)) throw error;
-      }) : undefined;
-      const candidate = target ?? findWikiTarget(workspace, source, token, catalog);
-      if (candidate && !target) {
-        target = await workspace.node(candidate.id).catch((error) => {
-          if (!isMissing(error)) throw error;
-          return undefined;
-        });
-      }
+      let target = await resolveFileReference(workspace, source, token, catalog);
       if (!target) {
         if (!canCreate(token)) continue;
         if (!validFilename(token)) throw new Error(`Cannot create “${token}”. Use a filename without a path or choose an existing file.`);

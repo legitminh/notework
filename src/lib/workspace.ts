@@ -315,7 +315,7 @@ export class Workspace {
 export interface SearchProgress { visited: number; errors: number; limited: boolean }
 export async function searchReachable(
   workspace: Workspace, from: string, query: string, signal: AbortSignal,
-  onProgress: (results: StateNode[], progress: SearchProgress) => void, resultLimit = 1000
+  onProgress: (results: StateNode[], progress: SearchProgress) => void, resultLimit = 1000, includeFolders = false
 ) {
   const queue = [from];
   const seen = new Set<string>();
@@ -331,7 +331,7 @@ export async function searchReachable(
     if (id !== ROOT) {
       try {
         const node = await workspace.node(id);
-        if (node.kind === 'file' && workspace.label(node).toLocaleLowerCase().includes(needle)) results.push(node);
+        if ((node.kind === 'file' || includeFolders) && workspace.label(node).toLocaleLowerCase().includes(needle)) results.push(node);
       } catch (error) { if (!(error instanceof HiddenResource) && !isMissing(error)) progress.errors++; continue; }
     }
     const reachable = await workspace.reachable(id);

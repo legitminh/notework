@@ -21,7 +21,7 @@ In app settings, **add existing folder/file** opens one local chooser. Drop mixe
 
 Folders expose their direct children. Existing directed links and hidden-child settings from older versions remain readable. `..` follows the filesystem parent within a granted source, returning home at its boundary; unselected ancestors cannot be discovered by a web app.
 
-Search matches names/paths along outgoing graph transitions, including folder descendants and saved links, and handles cycles. Parent navigation is excluded. Search reports progress, supports stopping, and caps traversal at 20,000 states or 1,000 results. Press **Esc** or click **esc · search results** to leave the search field without clearing your query. **Edit search** returns to typing.
+Search matches file and folder names/paths along outgoing graph transitions, including folder descendants and saved links, and handles cycles. Parent navigation is excluded. Folder results navigate normally; file results provide paired **open** and filename actions for either immediate editing or navigation. Search reports progress, supports stopping, and caps traversal at 20,000 states or 1,000 results. Press **Esc** or click **esc · search results** to leave the search field without clearing your query. **Edit search** returns to typing.
 
 ## Text editing
 
@@ -31,7 +31,7 @@ Readable files use the plain-text CodeMirror editor unless they are Notework dra
 - Parentheses, brackets, braces, and quotes pair automatically.
 - Undo/redo and Ctrl/Cmd-F search use standard editor bindings.
 - **App settings → Appearance → Vim mode** enables standard Vim editing keys and is off by default. In Vim mode, `:w` saves, Esc returns to Normal mode, and Ctrl+F pages forward; use the magnifying glass for Find and Replace.
-- Selecting a file keeps navigation available. **Open** switches to an isolated editor with a horizontal toolbar that scrolls with the page.
+- Selecting a file keeps navigation available. **Open** switches to an isolated editor whose toolbar stays at the top while the document scrolls beneath it.
 - **Exit** (Ctrl+Esc), **Find and replace** (Ctrl+F), **Brush**, and **Export** are the text toolbar actions. The shortcut labels appear on hover. There is no Save button.
 - Text and SVG files autosave after changes, at most once per the interval configured in **App settings → Autosave** (4 seconds by default). Exit always finishes saving before returning to navigation. A machine file only prompts for write permission from an explicit exit or save shortcut; if saving fails, the editor stays open with the edits available for retry or export. Ctrl+S and Vim `:w` remain available as immediate saves.
 
@@ -39,9 +39,9 @@ The editor virtualizes its viewport and streams text reads/writes instead of ren
 
 ## Export
 
-**Export** in either editor opens a format dialog; PDF is currently available. It exports the current draft without saving it, including unsaved inline drawing strokes. The result is one custom-sized page with configurable margins, the editor’s font/colors/wrapping, formatted wiki links, and vector SVG strokes. Set each side in **App settings → PDF export margins**, always in min-box units. Left, right, top, and bottom default to 1; zero and fractional values are supported. Margins add space around the content without changing wrapping or SVG proportions, using the current min-box size. Navigation, toolbars, the caret, and line numbers are excluded. Text is rendered in small image tiles to preserve system fonts and Unicode, so PDF text is not selectable.
+**Export** in either editor opens a format dialog for PDF, PNG, or JPEG. It exports the current draft without saving it, including unsaved inline drawing strokes. Every format uses the same one-page layout with configurable margins, the editor’s font/colors/wrapping, formatted wiki links, and SVG strokes. Set each side in **App settings → export margins**, always in min-box units. Left, right, top, and bottom default to 1; zero and fractional values are supported. Margins add space around the content without changing wrapping or SVG proportions, using the current min-box size. Navigation, toolbars, the caret, and line numbers are excluded. PDF preserves SVG strokes as vector paths; PNG and JPEG render the same page as a single image. Very large raster pages are uniformly scaled to safe browser and iOS canvas limits rather than cropped or split.
 
-In a browser, **Download PDF** uses the browser’s regular download destination/settings. In an installed PWA, **Share PDF** opens the OS file-sharing sheet when supported; a download fallback is always available. The PDF is prepared before the final share tap, preserving the user gesture required by iOS. Cancelling sharing does not start a download. Export runs entirely on-device and works offline with the cached app shell; no note contents are uploaded.
+In a browser, **Download** uses the browser’s regular download destination/settings. In an installed PWA, **Share** opens the OS file-sharing sheet for the selected format when supported; a download fallback is always available. The file is prepared before the final share tap, preserving the user gesture required by iOS. Cancelling sharing does not start a download. Export runs entirely on-device and works offline with the cached app shell; no note contents are uploaded.
 
 ## Wiki links and rename
 
@@ -51,7 +51,7 @@ Use **Configure file → rename** or **Configure folder → rename** in navigati
 
 ## Drawings
 
-Use **Brush** (Command+B) while editing text to insert a movable `\svgpage[filename.svg]` line. Move the caret off the line to see the drawing, then click it to draw inline. The drawing toolbar supports brush, whole-stroke erasing, undo, redo, autosave, and export. Exit saves and returns to the open text draft. The text autosave makes the drawing an outgoing navigation target, where it can also be opened on its own.
+Use **Brush** (Command+B) while editing text to insert a movable `\svgpage[filename.svg]` line. A new Brush drawing is created beside the text file for convenience, but the directive is a graph resource reference like `[[FILE]]`: it may instead contain a unique name, graph path, or resource URI for a Notework SVG drawing in another folder or storage source. Move the caret off the line to see the drawing, then click it to draw inline. The drawing toolbar supports brush, whole-stroke erasing, undo, redo, autosave, and export. Exit saves and returns to the open text draft. Text autosave records the referenced drawing as an outgoing navigation target, where it can also be opened on its own; rename updates the directive even across folders and storage sources.
 
 Drawings are sibling SVG files in the note’s own storage: a local note creates a local SVG beside it, and a browser note creates an SVG in the same OPFS folder. A local drawing may request write permission when Brush creates it or when the editor exits. Existing browser drawings from older versions remain accessible through their directed links. Drawing pages fit the available text page width, capped at 32 min-boxes. Both axes and stroke widths scale together when the screen rotates. One extra working page is 16 min-boxes tall at full page width and scales proportionally on smaller screens. Saves contain only the area used.
 

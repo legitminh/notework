@@ -20,6 +20,9 @@ main { padding: calc(var(--min-box) / 4); padding-bottom: calc(var(--min-box) * 
 .action > button { max-width: 100%; vertical-align: top; }
 .action .content { min-width: 0; overflow-wrap: anywhere; }
 .action-icon { display: block; width: .8em; height: .8em; }
+.file-navigation-row { display: flex; align-items: flex-start; gap: calc(var(--min-box) / 2); max-width: 100%; }
+.file-navigation-row > .action:first-child { flex: none; }
+.file-navigation-row > .action:last-child { min-width: 0; }
 .hint { display: block; font-size: .5em; line-height: 1.5; opacity: .6; padding: .2em .5em .3em; }
 hr { height: 1px; border: 0; background: var(--primary); opacity: .25; margin: calc(var(--min-box) / 4) 0; }
 .state-display { margin-top: var(--min-box); }
@@ -52,6 +55,21 @@ a { color: inherit; text-underline-offset: .15em; }
 .editor-controls button:is(:hover, :focus-visible) .shortcut-hint { display: block; }
 .editor-controls button:focus-visible { outline-offset: -3px; }
 .editor-exit .editor-controls { flex-wrap: wrap; }
+.editing-view { height: 100dvh; min-height: 0; overflow: hidden; padding-bottom: calc(var(--min-box) / 4); }
+.document-editor, .standalone-drawing-editor {
+  display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden;
+}
+.editor-toolbar-slot, .standalone-drawing-editor > .editor-controls {
+  flex: none; min-width: 0; background: var(--background); z-index: 2;
+}
+.editor-toolbar-slot .editor-controls, .standalone-drawing-editor > .editor-controls {
+  margin-bottom: calc(var(--min-box) / 4);
+}
+.editor-toolbar-slot .editor-controls { flex-wrap: wrap; }
+.editor-scroll, .standalone-drawing-editor > .drawing-surface {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+}
 .cm-editor input, .cm-editor button { font-size: 14px; line-height: 1.5; width: auto; }
 .search-status:empty { display: none; }
 .search-field-exit { display: inline-flex; max-width: 100%; margin-bottom: calc(var(--min-box) / 4); }

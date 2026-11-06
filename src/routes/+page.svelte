@@ -62,6 +62,7 @@
   const source = $derived(workspace.data.sources.find((item) => item.id === current?.sourceId));
   const needsPermission = $derived(source && source.storage !== 'browser' && permissions[source.id] !== 'granted');
   const canDeleteCurrent = $derived(!!current && canDeleteResource(workspace, current));
+  const directChildIds = $derived(new Set(current ? children.map((child) => child.id) : rootIds));
 
   onMount(() => {
     try { wrapLines = localStorage.getItem('notework:wrap-lines') !== 'false'; }
@@ -178,6 +179,12 @@
     state_viewport.viewport?.scrollTo({ top: 0 });
   }
 
+  async function openNode(node: StateNode) {
+    if (node.kind !== 'file' || busy) return;
+    await navigate(node.id);
+    if (current?.id === node.id) await openFile();
+  }
+
   async function openLinkedFile(id: string) {
     await navigate(id);
     if (currentId !== id) throw new Error(message || 'The linked file could not be opened.');
@@ -273,7 +280,7 @@
     if (!valid) return;
     pdfMargins = { ...pdfMargins, [side]: value };
     try { localStorage.setItem(PDF_MARGINS_KEY, JSON.stringify(pdfMargins)); }
-    catch { storageMessage = 'PDF margins work in this tab but could not be saved in browser storage.'; }
+    catch { storageMessage = 'Export margins work in this tab but could not be saved in browser storage.'; }
   }
 
   function updateAutosaveInterval(input: HTMLInputElement) {
@@ -368,7 +375,7 @@
 
 <Keyflow options={{ storagePrefix: 'notework:keyflow:', minBox: 40, lockstep: false }}>
   <Document>
-    <main class="app" aria-label="notework" aria-busy={loading}>
+    <main class="app" class:editing-view={editing && !!current} aria-label="notework" aria-busy={loading}>
       {#if creating && (!current || current.kind === 'directory')}
         <CreateAsset path={current ? workspace.label(current) : 'home'} machineFolder={current?.storage === 'local'}
           {busy} supported={canCreateHere} error={message} onCreate={createAtFolder}
@@ -400,7 +407,14 @@
           <Action label=".." onSelect={() => navigate(parentId(current!))} />
         {/if}
         {#each edges as node (node.id)}
-          <Action label={node.name + (node.kind === 'directory' ? '/' : '')} onSelect={() => navigate(node.id)} />
+          {#if node.kind === 'file' && directChildIds.has(node.id) && (!current || current.kind === 'directory')}
+            <div class="file-navigation-row">
+              <Action label="open" onSelect={() => { void openNode(node); }} disabled={busy} />
+              <Action label={node.name} onSelect={() => navigate(node.id)} />
+            </div>
+          {:else}
+            <Action label={node.name + (node.kind === 'directory' ? '/' : '')} onSelect={() => navigate(node.id)} />
+          {/if}
         {/each}
       </nav>
 
@@ -415,7 +429,7 @@
           <div class="panel-controls"><Action label={`close ${panel === 'settings' ? 'app settings' : panel === 'configure' ? `configure ${resourceType}` : panel}`} onSelect={() => { panel = null; state_viewport.viewport?.scrollTo({ top: 0 }); }} /></div>
         {/if}
         {#if panel === 'search'}
-          <SearchPanel {workspace} from={currentId} onNavigate={navigate} {graphRevision} />
+          <SearchPanel {workspace} from={currentId} onNavigate={navigate} onOpen={openNode} {graphRevision} />
         {:else if panel === 'configure' && current}
           <section class="panel" aria-labelledby="configure-heading">
             <h2 id="configure-heading">configure {resourceType}</h2>
@@ -491,7 +505,7 @@
                 oninput={(event) => updateAutosaveInterval(event.currentTarget)} />
             </label>
             <p class="muted">Default: {DEFAULT_AUTOSAVE_SECONDS} seconds. Exit always saves first. Local files may ask for write access when you exit.</p>
-            <h3>PDF export margins</h3>
+            <h3>export margins</h3>
             <p class="muted" id="pdf-margin-units">Each side defaults to 1 min-box. Set 0 for no margin; fractions are allowed.</p>
             {#each pdfMarginSides as side}
               <label class="field"><span>{side} margin (min-box)</span>

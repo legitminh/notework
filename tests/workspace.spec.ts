@@ -166,7 +166,7 @@ test('folder direct children, file display, parent navigation, and browser back'
   await connectDocuments(page);
   await button(page, 'Documents/').click();
   await expect(button(page, 'Adobe/')).toBeVisible();
-  expect(await page.locator('nav [data-action]').evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-action')))).toEqual(['search', 'configure folder', 'home', '..', 'Adobe/', 'readme.txt', 'semantic proto-role inferences.pdf']);
+  expect(await page.locator('nav [data-action]').evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-action')))).toEqual(['search', 'configure folder', 'home', '..', 'Adobe/', 'open', 'readme.txt', 'open', 'semantic proto-role inferences.pdf']);
   await expect(button(page, 'home').locator('svg')).toHaveCount(1);
   await expect(button(page, 'home')).toHaveAccessibleName(/home$/);
   await button(page, 'home').click();
@@ -189,6 +189,63 @@ test('folder direct children, file display, parent navigation, and browser back'
   await expect(page.getByRole('heading', { name: 'Adobe/' })).toBeVisible();
 });
 
+test('direct child files pair open and filename actions only in their parent folder', async ({ page }) => {
+  await connectDocuments(page);
+  await button(page, 'Documents/').click();
+  const readmeRow = page.locator('.file-navigation-row').filter({ has: button(page, 'readme.txt') });
+  await expect(readmeRow).toBeVisible();
+  expect(await readmeRow.locator(':scope > [data-action]').evaluateAll((actions) =>
+    actions.map((action) => action.getAttribute('data-action')))).toEqual(['open', 'readme.txt']);
+  await readmeRow.locator('[data-action="open"] button').click();
+  await expect(page.getByRole('textbox', { name: 'Edit readme.txt', exact: true })).toBeVisible();
+  await toolbar(page, 'Exit').click();
+  await expect(page.locator('.file-navigation-row')).toHaveCount(0);
+  await expect(button(page, 'open')).toHaveCount(1);
+});
+
+test('file editing keeps only the toolbar above a dedicated content scroller', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 640 });
+  await startCreate(page);
+  await page.getByLabel('name', { exact: true }).fill('long-note.txt');
+  await button(page, 'create text file').click();
+  await openEditor(page);
+
+  const editor = page.getByRole('textbox', { name: 'Edit long-note.txt', exact: true });
+  await expect(editor).toBeVisible();
+  await editor.click();
+  await page.keyboard.insertText(Array.from({ length: 80 }, (_, index) => `line ${index}`).join('\n'));
+
+  const before = await page.evaluate(() => {
+    const shell = document.querySelector<HTMLElement>('.document-editor')!;
+    const toolbar = document.querySelector<HTMLElement>('.editor-toolbar-slot')!;
+    const content = document.querySelector<HTMLElement>('.editor-scroll')!;
+    const toolbarBox = toolbar.getBoundingClientRect();
+    const contentBox = content.getBoundingClientRect();
+    return {
+      shellHeight: shell.clientHeight, toolbarHeight: toolbar.offsetHeight, contentHeight: content.clientHeight,
+      toolbarTop: toolbarBox.top, toolbarBottom: toolbarBox.bottom, contentTop: contentBox.top,
+      scrollHeight: content.scrollHeight, viewportScroll: document.querySelector<HTMLElement>('.viewport')!.scrollTop
+    };
+  });
+  expect(before.contentTop).toBeGreaterThanOrEqual(before.toolbarBottom - 1);
+  expect(before.contentHeight + before.toolbarHeight).toBeLessThanOrEqual(before.shellHeight + 1);
+  expect(before.scrollHeight).toBeGreaterThan(before.contentHeight);
+  expect(before.viewportScroll).toBe(0);
+
+  await page.locator('.editor-scroll').evaluate((content) => content.scrollTo({ top: content.scrollHeight }));
+  const after = await page.evaluate(() => ({
+    toolbarTop: document.querySelector<HTMLElement>('.editor-toolbar-slot')!.getBoundingClientRect().top,
+    contentScroll: document.querySelector<HTMLElement>('.editor-scroll')!.scrollTop,
+    titleBottom: document.querySelector<HTMLElement>('.editor-scroll h1')!.getBoundingClientRect().bottom,
+    toolbarBottom: document.querySelector<HTMLElement>('.editor-toolbar-slot')!.getBoundingClientRect().bottom,
+    viewportScroll: document.querySelector<HTMLElement>('.viewport')!.scrollTop
+  }));
+  expect(after.toolbarTop).toBeCloseTo(before.toolbarTop, 0);
+  expect(after.contentScroll).toBeGreaterThan(0);
+  expect(after.titleBottom).toBeLessThan(after.toolbarBottom);
+  expect(after.viewportScroll).toBe(0);
+});
+
 test('root connections and legacy hidden children persist without Configure', async ({ page }) => {
   await connectDocuments(page);
   await seedLegacyGraph(page, { hideAdobe: true });
@@ -206,21 +263,43 @@ test('search traverses descendants, respects hidden children, and stays scoped',
   await button(page, 'Documents/').click();
   await button(page, 'search').click();
   await page.getByRole('searchbox').fill('notes');
-  await expect(page.locator('.search-status')).toContainText('1 file found');
+  await expect(page.locator('.search-status')).toContainText('1 result found');
   await button(page, 'notes.txt').click();
   await expect(button(page, 'open')).toBeVisible();
   await button(page, 'search').click();
   await page.getByRole('searchbox').fill('readme');
-  await expect(page.locator('.search-status')).toContainText('0 files found');
+  await expect(page.locator('.search-status')).toContainText('0 results found');
   await button(page, 'close search').click();
   await button(page, '..').click(); await button(page, '..').click();
   await seedLegacyGraph(page, { hideAdobe: true });
   await button(page, 'Documents/').click();
   await button(page, 'search').click();
   await page.getByRole('searchbox').fill('notes');
-  await expect(page.locator('.search-status')).toContainText('0 files found');
+  await expect(page.locator('.search-status')).toContainText('0 results found');
   await page.getByRole('searchbox').fill('outside');
-  await expect(page.locator('.search-status')).toContainText('0 files found');
+  await expect(page.locator('.search-status')).toContainText('0 results found');
+});
+
+test('search includes folders and gives every file result a quick-open action', async ({ page }) => {
+  await connectDocuments(page);
+  await button(page, 'Documents/').click();
+  await button(page, 'search').click();
+  const panel = page.locator('section[aria-labelledby="search-heading"]');
+  const field = panel.getByRole('searchbox');
+  await field.fill('Adobe');
+  await expect(panel.locator('.search-status')).toContainText('2 results found');
+  await panel.locator('[data-action="Adobe/"] button').click();
+  await expect(page.getByRole('heading', { name: 'Adobe/', exact: true })).toBeVisible();
+
+  await button(page, 'search').click();
+  const nextPanel = page.locator('section[aria-labelledby="search-heading"]');
+  await nextPanel.getByRole('searchbox').fill('notes');
+  await expect(nextPanel.locator('.search-status')).toContainText('1 result found');
+  const row = nextPanel.locator('.search-result-row').filter({ has: button(page, 'notes.txt') });
+  expect(await row.locator(':scope > [data-action]').evaluateAll((actions) =>
+    actions.map((action) => action.getAttribute('data-action')))).toEqual(['open', 'notes.txt']);
+  await row.locator('[data-action="open"] button').click();
+  await expect(page.getByRole('textbox', { name: 'Edit notes.txt', exact: true })).toBeVisible();
 });
 
 test.describe('search field modes', () => {
@@ -232,17 +311,17 @@ test.describe('search field modes', () => {
       await connectDocuments(page);
       await button(page, 'search').click();
       const field = page.getByRole('searchbox');
-      const heading = page.getByRole('heading', { name: 'search reachable files' });
+      const heading = page.getByRole('heading', { name: 'search reachable files and folders' });
       await expect(field).toBeFocused();
       await field.fill('notes');
-      await expect(page.locator('.search-status')).toContainText('1 file found');
+      await expect(page.locator('.search-status')).toContainText('1 result found');
       const leaveField = page.getByRole('button', { name: /esc.*search results/ });
       await expect(leaveField).toBeVisible();
       if (exit === 'Escape') await field.press('Escape');
       else await leaveField.tap();
       await expect(heading).toBeFocused();
       await expect(field).toHaveValue('notes');
-      await expect(page.locator('.search-status')).toContainText('1 file found');
+      await expect(page.locator('.search-status')).toContainText('1 result found');
 
       const edit = button(page, 'edit search');
       await expect(edit.locator('.pending_route')).not.toHaveText('');
@@ -264,12 +343,18 @@ test('legacy directed links and cycles remain readable without Configure', async
   await button(page, 'app settings').click();
   await chooseFile(page);
   await seedLegacyGraph(page, { cycle: true });
+  const rootFile = page.locator('.file-navigation-row').filter({ has: button(page, 'outside.txt') });
+  await expect(rootFile.locator('[data-action="open"]')).toHaveCount(1);
+  await button(page, 'Documents/').click();
+  await expect(button(page, 'outside.txt')).toBeVisible();
+  await expect(page.locator('.file-navigation-row').filter({ has: button(page, 'outside.txt') })).toHaveCount(0);
+  await button(page, 'home').click();
   await button(page, 'outside.txt').click();
   await expect(button(page, 'configure')).toHaveCount(0);
   await expect(button(page, 'Documents/')).toBeVisible();
   await button(page, 'search').click();
   await page.getByRole('searchbox').fill('.txt');
-  await expect(page.locator('.search-status')).toContainText('3 files found');
+  await expect(page.locator('.search-status')).toContainText('3 results found');
 });
 
 test('restored grants request permission only on explicit reconnect and handle denial', async ({ page }) => {
@@ -495,7 +580,7 @@ test('mobile layout fits, scrolling remains native, and text entry does not trig
   await button(page, 'search').click();
   await page.getByRole('searchbox').fill('1234qwerasdf');
   await expect(page.getByRole('searchbox')).toHaveValue('1234qwerasdf');
-  await expect(page.getByRole('heading', { name: 'search reachable files' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'search reachable files and folders' })).toBeVisible();
   await page.setViewportSize({ width: 1440, height: 1000 });
   await button(page, 'close search').click();
   await button(page, 'readme.txt').click();
@@ -533,7 +618,7 @@ async function storedGraph(page: Page) {
       const request = db.transaction('workspace').objectStore('workspace').get('current'); request.onsuccess = () => resolve(request.result);
     });
     db.close();
-    return { roots: data.rootIds, sources: data.sources.map((source) => ({ id: source.id, uri: source.uri, name: source.handle?.name ?? decodeURIComponent(new URL(source.uri!).pathname.split('/').at(-1)!), storage: source.storage })), links: data.links, hidden: data.hidden };
+    return { roots: data.rootIds, sources: data.sources.map((source) => ({ id: source.id, uri: source.uri, name: source.handle?.name ?? decodeURIComponent(new URL(source.uri!).pathname.split('/').at(-1)!), storage: source.storage })), links: data.links, hidden: data.hidden, wiki: data.wiki };
   });
 }
 
@@ -813,7 +898,9 @@ test('large notes load without truncation and render only a virtualized viewport
   await expect(field).toBeVisible();
   expect(await page.locator('.cm-line').count()).toBeLessThan(1000);
   await field.click(); await page.keyboard.press('ControlOrMeta+End'); await page.keyboard.insertText('THE END');
-  await expect(page.getByRole('group', { name: 'Editor toolbar' })).not.toBeInViewport();
+  await expect(page.getByRole('group', { name: 'Editor toolbar' })).toBeInViewport();
+  expect(await page.locator('.editor-scroll').evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  expect(await page.locator('.viewport').evaluate((element) => element.scrollTop)).toBe(0);
   await forceSave(page);
   await expect(page.getByText('saved in browser storage', { exact: true })).toBeVisible();
   const file = await page.evaluate(async (id) => {
@@ -1326,6 +1413,13 @@ test('folder creation previews paths and opens new folders, text files, and SVG 
   await button(page, '..').click();
   await expect(button(page, 'notes.txt')).toBeVisible();
   await expect(button(page, 'diagram.svg')).toBeVisible();
+  const diagramRow = page.locator('.file-navigation-row').filter({ has: button(page, 'diagram.svg') });
+  expect(await diagramRow.locator(':scope > [data-action]').evaluateAll((actions) =>
+    actions.map((action) => action.getAttribute('data-action')))).toEqual(['open', 'diagram.svg']);
+  await diagramRow.locator('[data-action="open"] button').click();
+  await expect(page.getByRole('group', { name: 'Drawing toolbar' })).toBeVisible();
+  await page.getByRole('group', { name: 'Drawing toolbar' }).getByRole('button', { name: 'Exit', exact: true }).click();
+  await button(page, '..').click();
   expect(await page.evaluate(async () => {
     const root = await navigator.storage.getDirectory();
     const documents = await root.getDirectoryHandle('Documents');
@@ -1507,6 +1601,60 @@ test('SVG rename in configuration updates the inline directive and its graph tar
   await expect(editor.locator('.cm-line').last()).toHaveText('Text below');
 });
 
+test('SVG page references resolve and rename drawings across folders and storage sources', async ({ page }) => {
+  await startCreate(page);
+  await page.getByLabel('name', { exact: true }).fill('Art');
+  await button(page, 'create folder').click();
+  await startCreate(page);
+  await page.getByLabel('name', { exact: true }).fill('shared');
+  await button(page, 'create svg file').click();
+  await openEditor(page);
+  const canvas = page.getByRole('img', { name: 'Drawing canvas for shared.svg' });
+  const box = (await canvas.boundingBox())!;
+  await page.mouse.move(box.x + 40, box.y + 40); await page.mouse.down();
+  await page.mouse.move(box.x + 180, box.y + 100); await page.mouse.up();
+  await forceSave(page);
+  await page.getByRole('group', { name: 'Drawing toolbar' }).getByRole('button', { name: 'Exit', exact: true }).click();
+  await button(page, 'home').click();
+
+  await connectDocuments(page);
+  await button(page, 'Documents/').click(); await button(page, 'readme.txt').click(); await openEditor(page);
+  const editor = page.getByRole('textbox', { name: 'Edit readme.txt' });
+  await editor.fill('before\n\\svgpage[Art/shared.svg]\nafter');
+  const preview = page.getByRole('button', { name: 'Edit drawing Art/shared.svg', exact: true });
+  await expect(preview.locator('polyline')).toHaveCount(1);
+  await forceSave(page);
+  await expect(page.getByText('saved on your computer', { exact: true })).toBeVisible();
+  const graph = await storedGraph(page);
+  const documents = graph.sources.find((source) => source.name === 'Documents')!;
+  const art = graph.sources.find((source) => source.name === 'Art')!;
+  const noteId = JSON.stringify([documents.id, 'readme.txt']);
+  const drawingId = JSON.stringify([art.id, 'shared.svg']);
+  expect(graph.wiki?.[noteId]?.['Art/shared.svg']).toBe(drawingId);
+  expect(graph.links[noteId]).toContain(drawingId);
+  expect(await page.evaluate(async () => {
+    const documents = await (await navigator.storage.getDirectory()).getDirectoryHandle('Documents');
+    return documents.getFileHandle('shared.svg').then(() => true, () => false);
+  })).toBe(false);
+
+  await toolbar(page, 'Exit').click();
+  await button(page, 'shared.svg').click();
+  await button(page, 'configure file').click(); await button(page, 'rename').click();
+  const dialog = page.getByRole('dialog', { name: 'Rename file' });
+  await dialog.getByRole('textbox').fill('renamed.svg');
+  await dialog.getByRole('button', { name: 'Rename and update links' }).click();
+  await expect(page.getByRole('heading', { name: 'renamed.svg', exact: true })).toBeVisible();
+
+  await page.reload(); await button(page, 'Documents/').click(); await button(page, 'readme.txt').click(); await openEditor(page);
+  const renamed = page.getByRole('button', { name: 'Edit drawing Art/renamed.svg', exact: true });
+  await expect(renamed.locator('polyline')).toHaveCount(1);
+  await expect(page.getByRole('button', { name: 'Edit drawing Art/shared.svg', exact: true })).toHaveCount(0);
+  expect(await page.evaluate(async () => {
+    const documents = await (await navigator.storage.getDirectory()).getDirectoryHandle('Documents');
+    return (await (await documents.getFileHandle('readme.txt')).getFile()).text();
+  })).toContain('\\svgpage[Art/renamed.svg]');
+});
+
 test('home is a virtual folder with mixed sources and the shared creation screen', async ({ page }) => {
   await connectDocuments(page);
   await button(page, 'app settings').click();
@@ -1626,13 +1774,14 @@ test('drawing touch gestures undo, redo, pan and zoom; stylus-only mode persists
   };
   await tap(2); await expect(canvas.locator('polyline')).toHaveCount(0);
   await tap(3); await expect(canvas.locator('polyline')).toHaveCount(1);
-  const beforeScroll = await page.locator('.viewport').evaluate((el) => el.scrollTop);
+  const drawingScroll = page.locator('.standalone-drawing-editor > .drawing-surface');
+  const beforeScroll = await drawingScroll.evaluate((el) => el.scrollTop);
   box = (await canvas.boundingBox())!;
   const y = Math.max(160, box.y + 180);
   await protocol.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: contacts(2, y) });
   await protocol.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: contacts(2, y - 80) });
   await protocol.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-  await expect.poll(() => page.locator('.viewport').evaluate((el) => el.scrollTop)).toBeGreaterThan(beforeScroll);
+  await expect.poll(() => drawingScroll.evaluate((el) => el.scrollTop)).toBeGreaterThan(beforeScroll);
   await expect(canvas.locator('polyline')).toHaveCount(1);
   const beforeWidth = (await canvas.boundingBox())!.width;
   const top = Math.max(100, (await canvas.boundingBox())!.y + 140);
@@ -1653,12 +1802,12 @@ test('drawing touch gestures undo, redo, pan and zoom; stylus-only mode persists
   await page.mouse.move(box.x + 200, box.y + 50); await page.mouse.down();
   await page.mouse.move(box.x + 250, box.y + 100); await page.mouse.up();
   await expect(canvas.locator('polyline')).toHaveCount(1);
-  const scroll = await page.locator('.viewport').evaluate((el) => el.scrollTop);
+  const scroll = await drawingScroll.evaluate((el) => el.scrollTop);
   const finger = [{ id: 0, x: box.x + 200, y: Math.max(180, box.y + 180) }];
   await protocol.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: finger });
   await protocol.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ ...finger[0], y: finger[0].y - 100 }] });
   await protocol.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-  await expect.poll(() => page.locator('.viewport').evaluate((el) => el.scrollTop)).toBeGreaterThan(scroll);
+  await expect.poll(() => drawingScroll.evaluate((el) => el.scrollTop)).toBeGreaterThan(scroll);
   await expect(canvas.locator('polyline')).toHaveCount(1);
   await canvas.scrollIntoViewIfNeeded();
   box = (await canvas.boundingBox())!;
@@ -1733,7 +1882,7 @@ test('cross-storage wiki links do not change physical children or parent navigat
   await expect(page.getByText('3 direct children', { exact: false })).toBeVisible();
   await button(page, 'search').click();
   await page.getByRole('searchbox').fill('browser-target');
-  await expect(page.locator('.search-status')).toContainText('1 file found');
+  await expect(page.locator('.search-status')).toContainText('1 result found');
   await button(page, 'browser-target.txt').click();
   await expect(page.getByRole('heading', { name: 'browser-target.txt', exact: true })).toBeVisible();
   await button(page, '..').click();

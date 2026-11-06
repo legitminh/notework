@@ -11,8 +11,10 @@ import type { ExportStyle } from './export-style';
 export type PdfSource = {
   name: string;
   style: ExportStyle;
-} & ({ kind: 'text'; lines: Iterable<string>; drawing: (name: string) => Promise<Drawing> } |
+} & ({ kind: 'text'; lines: () => Iterable<string>; drawing: (name: string) => Promise<Drawing> } |
   { kind: 'drawing'; strokes: Drawing });
+
+export type ExportFormat = 'pdf' | 'png' | 'jpeg';
 
 interface Fragment { text: string; x: number; top: number; baseline: number; width: number; height: number; color: string }
 interface DrawingBlock { top: number; width: number; strokes: Drawing }
@@ -44,7 +46,7 @@ async function layout(source: PdfSource, signal: AbortSignal) {
   let count = 0;
   try {
     await document.fonts.ready;
-    for (const line of source.lines) {
+    for (const line of source.lines()) {
       signal.throwIfAborted();
       const page = svgPagePattern.exec(line);
       if (page) {
@@ -186,4 +188,70 @@ export async function createPdf(source: PdfSource, signal: AbortSignal): Promise
   const data = await pdf.save();
   const name = source.name.replace(/\.[^.]+$/, '') || source.name;
   return new File([new Uint8Array(data)], `${name}.pdf`, { type: 'application/pdf' });
+}
+
+const RASTER_MAX_SIDE = 8192;
+const RASTER_MAX_PIXELS = 16_000_000;
+
+/** Render the same custom-sized page as the PDF into one uniformly scaled bitmap. */
+export async function createRaster(source: PdfSource, format: 'png' | 'jpeg', signal: AbortSignal): Promise<File> {
+  const content = await layout(source, signal);
+  signal.throwIfAborted();
+  const { margins, minBox } = source.style;
+  const left = margins.left * minBox, top = margins.top * minBox;
+  const pageWidth = content.width + left + margins.right * minBox;
+  const pageHeight = content.height + top + margins.bottom * minBox;
+  const scale = Math.min(1, RASTER_MAX_SIDE / pageWidth, RASTER_MAX_SIDE / pageHeight,
+    Math.sqrt(RASTER_MAX_PIXELS / (pageWidth * pageHeight)));
+  if (!Number.isFinite(scale) || scale <= 0) throw new Error('This document exceeds the single-image export size limit.');
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.floor(pageWidth * scale));
+  canvas.height = Math.max(1, Math.floor(pageHeight * scale));
+  const context = canvas.getContext('2d');
+  if (!context) throw new Error('The browser could not create the image drawing surface.');
+  context.fillStyle = source.style.background;
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.scale(scale, scale);
+  context.font = source.style.font;
+  context.textBaseline = 'alphabetic';
+  for (const item of content.fragments) {
+    signal.throwIfAborted();
+    context.fillStyle = item.color;
+    context.fillText(item.text, left + item.x, top + item.baseline);
+  }
+  context.strokeStyle = source.style.foreground;
+  context.fillStyle = source.style.foreground;
+  context.lineCap = 'round';
+  context.lineJoin = 'round';
+  for (const drawing of content.drawings) {
+    signal.throwIfAborted();
+    const unit = drawing.width / DRAWING_WIDTH;
+    context.lineWidth = STROKE_WIDTH * unit;
+    for (const points of drawing.strokes) {
+      if (!points.length) continue;
+      const at = ([x, y]: readonly number[]) => [left + x * unit, top + drawing.top + y * unit] as const;
+      if (points.length === 1) {
+        const [x, y] = at(points[0]);
+        context.beginPath(); context.arc(x, y, STROKE_WIDTH / 2 * unit, 0, Math.PI * 2); context.fill();
+        continue;
+      }
+      const [x, y] = at(points[0]);
+      context.beginPath(); context.moveTo(x, y);
+      for (const point of points.slice(1)) { const [nextX, nextY] = at(point); context.lineTo(nextX, nextY); }
+      context.stroke();
+    }
+  }
+  signal.throwIfAborted();
+  const type = format === 'png' ? 'image/png' : 'image/jpeg';
+  const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob((result) =>
+    result && result.type === type ? resolve(result) : reject(new Error(`The browser could not encode a ${format.toUpperCase()} image.`)),
+  type, format === 'jpeg' ? .95 : undefined));
+  canvas.width = canvas.height = 0;
+  signal.throwIfAborted();
+  const name = source.name.replace(/\.[^.]+$/, '') || source.name;
+  return new File([blob], `${name}.${format}`, { type });
+}
+
+export function createExport(source: PdfSource, format: ExportFormat, signal: AbortSignal) {
+  return format === 'pdf' ? createPdf(source, signal) : createRaster(source, format, signal);
 }

@@ -1,7 +1,7 @@
 import type { LocalFile } from './filesystem';
 import { isMissing } from './filesystem';
 import { nodeId, parentId, ROOT, type StateNode, type Workspace } from './workspace';
-import { assertAvailable, connectSibling, containingFolder, requireWrite, validFilename } from './wiki';
+import { assertAvailable, connectSibling, containingFolder, requireWrite, resolveFileReference, validFilename, wikiCatalog } from './wiki';
 import { readDrawing, serializeDrawing, type Drawing } from './drawing';
 import { writeResourceContent } from './resource-content';
 import { saveWorkspace } from './persistence';
@@ -27,25 +27,38 @@ export async function loadDrawing(handle: LocalFile, storage: 'local' | 'browser
   return { handle, file, strokes: await readDrawing(file), storage };
 }
 
-export async function loadSiblingDrawing(workspace: Workspace, source: StateNode, file: LocalFile, name: string) {
-  if (!validFilename(name) || !name.toLowerCase().endsWith('.svg')) throw new Error('A drawing must be an SVG filename in this folder.');
-  const saved = workspace.data.wiki?.[source.id]?.[name];
-  if (saved) {
-    try {
-      const node = await workspace.node(saved);
-      const handle = await workspace.handle(saved);
-      if (handle.kind === 'file') return loadDrawing(handle, node.storage);
-    } catch (error) { if (!isMissing(error)) throw error; }
+export function canCreateSiblingDrawing(reference: string) {
+  return validFilename(reference) && reference.toLowerCase().endsWith('.svg');
+}
+
+async function resolveDrawing(
+  workspace: Workspace, source: StateNode, file: LocalFile, reference: string, catalog?: StateNode[]
+): Promise<{ resource: DrawingResource; node?: StateNode } | undefined> {
+  const files = catalog ?? await wikiCatalog(workspace, new AbortController().signal);
+  const target = await resolveFileReference(workspace, source, reference, files);
+  if (target) {
+    const handle = await workspace.handle(target.id);
+    if (handle.kind === 'file') return { resource: await loadDrawing(handle, target.storage), node: target };
   }
   // Older versions placed local drawings in OPFS. Keep those existing links readable.
-  const entry = source.storage === 'local' ? sidecar(workspace, source, name) : undefined;
+  const entry = source.storage === 'local' && canCreateSiblingDrawing(reference) ? sidecar(workspace, source, reference) : undefined;
   if (entry) {
-    try { return await loadDrawing(await workspace.handle(nodeId(entry.id)) as LocalFile, entry.storage ?? 'browser'); }
+    try {
+      const node = await workspace.node(nodeId(entry.id));
+      return { resource: await loadDrawing(await workspace.handle(node.id) as LocalFile, entry.storage ?? 'browser'), node };
+    }
     catch (error) { if (!isMissing(error)) throw error; }
   }
+  if (!canCreateSiblingDrawing(reference)) return undefined;
   const folder = await containingFolder(workspace, source, file);
-  try { return await loadDrawing(await folder.getFileHandle(name) as unknown as LocalFile, source.storage); }
+  try { return { resource: await loadDrawing(await folder.getFileHandle(reference) as unknown as LocalFile, source.storage) }; }
   catch (error) { if (isMissing(error)) return undefined; throw error; }
+}
+
+export async function loadDrawingReference(
+  workspace: Workspace, source: StateNode, file: LocalFile, reference: string, catalog?: StateNode[]
+) {
+  return (await resolveDrawing(workspace, source, file, reference, catalog))?.resource;
 }
 
 async function writeDrawing(handle: LocalFile, strokes: Drawing, storage: 'local' | 'browser') {
@@ -65,7 +78,7 @@ export async function saveDrawing(resource: DrawingResource, strokes: Drawing, r
 async function stageSibling(
   workspace: Workspace, source: StateNode, file: LocalFile, name: string, strokes: Drawing, requestWrite = true
 ) {
-  if (!validFilename(name) || !name.toLowerCase().endsWith('.svg')) throw new Error('A drawing must be an SVG filename in this folder.');
+  if (!canCreateSiblingDrawing(name)) throw new Error('A new drawing must use an SVG filename without a folder path.');
   const folder = await containingFolder(workspace, source, file);
   if (source.storage === 'local') await requireWrite(folder, requestWrite);
   await assertAvailable(folder, name);
@@ -92,7 +105,7 @@ export async function saveSiblingDrawing(
 
 export async function prepareSvgPages(
   workspace: Workspace, source: StateNode, file: LocalFile, names: Set<string>, canCreate: (name: string) => boolean,
-  requestWrite = true
+  requestWrite = true, catalog?: StateNode[]
 ) {
   const targets: Record<string, string> = Object.create(null);
   const staged: Awaited<ReturnType<typeof stageSibling>>[] = [];
@@ -101,13 +114,13 @@ export async function prepareSvgPages(
   }
   try {
     for (const name of names) {
-      const existing = await loadSiblingDrawing(workspace, source, file, name);
-      if (existing) targets[name] = (await connectSibling(workspace, source, existing.handle)).id;
-      else if (canCreate(name)) {
+      const existing = await resolveDrawing(workspace, source, file, name, catalog);
+      if (existing) targets[name] = existing.node?.id ?? (await connectSibling(workspace, source, existing.resource.handle)).id;
+      else if (canCreate(name) && canCreateSiblingDrawing(name)) {
         const item = await stageSibling(workspace, source, file, name, [], requestWrite);
         staged.push(item);
         targets[name] = item.id;
-      }
+      } else throw new Error(`Drawing resource “${name}” could not be found.`);
     }
     return { targets, rollback };
   } catch (error) { await rollback(); throw error; }

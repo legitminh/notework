@@ -46,7 +46,7 @@
 </script>
 
 {#if resource}
-  <div bind:this={editor}>
+  <div class="standalone-drawing-editor" bind:this={editor}>
   <DrawingEditor {stylusOnly} {autosaveMs} name={node.name} initial={resource.strokes} {onExit} onExport={exportDrawing}
     onSave={async (strokes, requestWrite) => { resource = await saveDrawing(resource!, strokes, requestWrite); }} />
   </div>

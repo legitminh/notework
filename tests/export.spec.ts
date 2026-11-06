@@ -32,6 +32,42 @@ async function readPdf(download: Download) {
   return { pdf, page, operators };
 }
 
+async function inspectRaster(page: Page, download: Download, type: 'image/png' | 'image/jpeg') {
+  const path = await download.path();
+  const bytes = await readFile(path!);
+  if (type === 'image/png') expect([...bytes.subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
+  else expect([...bytes.subarray(0, 3)]).toEqual([255, 216, 255]);
+  return page.evaluate(async ({ data, type }) => {
+    const image = new Image();
+    image.src = `data:${type};base64,${data}`;
+    await image.decode();
+    const canvas = document.createElement('canvas');
+    canvas.width = image.naturalWidth; canvas.height = image.naturalHeight;
+    const context = canvas.getContext('2d')!; context.drawImage(image, 0, 0);
+    const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    const background = pixels.slice(0, 3);
+    let hasInk = false, hasBlue = false;
+    for (let index = 0; index < pixels.length; index += 4) {
+      const difference = Math.abs(pixels[index] - background[0]) + Math.abs(pixels[index + 1] - background[1]) + Math.abs(pixels[index + 2] - background[2]);
+      if (difference > 60) hasInk = true;
+      if (pixels[index + 2] > pixels[index] + 35 && pixels[index + 2] > pixels[index + 1] + 25) hasBlue = true;
+      if (hasInk && hasBlue) break;
+    }
+    return { width: image.naturalWidth, height: image.naturalHeight, hasInk, hasBlue };
+  }, { data: bytes.toString('base64'), type });
+}
+
+async function downloadRaster(page: Page, format: 'png' | 'jpeg') {
+  const dialog = page.getByRole('dialog', { name: 'Export', exact: true });
+  await dialog.getByLabel('Export format').selectOption(format);
+  const label = format === 'png' ? 'PNG' : 'JPEG';
+  const button = dialog.getByRole('button', { name: `Download ${label}`, exact: true });
+  await expect(button).toBeEnabled();
+  const downloaded = page.waitForEvent('download');
+  await button.click();
+  return downloaded;
+}
+
 test('PDF export includes the whole unsaved draft, styled links, and vector SVG with default margins', async ({ page }) => {
   const errors: string[] = []; page.on('pageerror', (error) => errors.push(error.message));
   const editor = await note(page, 'export-note.txt');
@@ -75,10 +111,76 @@ test('PDF export includes the whole unsaved draft, styled links, and vector SVG 
   expect(operators).toContain(' l'); // Vector stroke geometry, not an SVG source literal.
   expect(operators).toContain('S');
   await download.saveAs('/tmp/notework-export-qa.pdf');
-  await expect(page.getByText('unsaved changes', { exact: true })).toBeVisible();
+  await expect(editor).toBeEditable();
   await editor.press('ControlOrMeta+End');
   await expect(editor.locator('.cm-line').last()).toHaveText('DEEP END');
   expect(errors).toEqual([]);
+});
+
+test('text PNG and JPEG exports share the PDF page layout, margins, colors, and current draft', async ({ page }) => {
+  const editor = await note(page, 'raster-note.txt');
+  await editor.fill('Raster layout\n[[blue-link.txt]]\nCurrent unsaved draft');
+  const dimensions = await page.evaluate(() => ({
+    width: parseFloat(document.querySelector<HTMLElement>('.cm-editor')!.style.getPropertyValue('--drawing-page-width')),
+    minBox: parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--min-box'))
+  }));
+  const images = [];
+  for (const format of ['png', 'jpeg'] as const) {
+    await tools(page).getByRole('button', { name: 'Export', exact: true }).click();
+    const select = page.getByRole('dialog', { name: 'Export', exact: true }).getByLabel('Export format');
+    await expect(select.locator('option')).toHaveText(['PDF', 'PNG', 'JPEG']);
+    const download = await downloadRaster(page, format);
+    expect(download.suggestedFilename()).toBe(`raster-note.${format}`);
+    images.push(await inspectRaster(page, download, format === 'png' ? 'image/png' : 'image/jpeg'));
+  }
+  expect(images[0].width).toBe(Math.floor(dimensions.width + 2 * dimensions.minBox));
+  expect(images[0].height).toBeGreaterThan(2 * dimensions.minBox);
+  expect(images[1]).toMatchObject({ width: images[0].width, height: images[0].height });
+  for (const image of images) { expect(image.hasInk).toBe(true); expect(image.hasBlue).toBe(true); }
+  await expect(page.getByText('unsaved changes', { exact: true })).toBeVisible();
+});
+
+test('standalone SVG PNG and JPEG exports use one identical page with current strokes', async ({ page }) => {
+  await page.goto('/'); await startCreate(page);
+  await page.getByLabel('name', { exact: true }).fill('raster-drawing');
+  await action(page, 'create svg file').click(); await action(page, 'open').click();
+  const canvas = page.getByRole('img', { name: 'Drawing canvas for raster-drawing.svg' });
+  const box = (await canvas.boundingBox())!;
+  await page.mouse.move(box.x + 40, box.y + 50); await page.mouse.down();
+  await page.mouse.move(box.x + 250, box.y + 140); await page.mouse.up();
+  const drawingTools = page.getByRole('group', { name: 'Drawing toolbar' });
+  const images = [];
+  for (const format of ['png', 'jpeg'] as const) {
+    await drawingTools.getByRole('button', { name: 'Export', exact: true }).click();
+    const download = await downloadRaster(page, format);
+    expect(download.suggestedFilename()).toBe(`raster-drawing.${format}`);
+    images.push(await inspectRaster(page, download, format === 'png' ? 'image/png' : 'image/jpeg'));
+  }
+  expect(images[0].width).toBe(images[1].width);
+  expect(images[0].height).toBe(images[1].height);
+  for (const image of images) expect(image.hasInk).toBe(true);
+  await expect(page.getByText('unsaved drawing changes', { exact: true })).toBeVisible();
+});
+
+test('installed PWA shares a prepared PNG from the final user tap', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'standalone', { value: true });
+    Object.defineProperty(navigator, 'canShare', { value: (data: ShareData) => data.files?.[0]?.type === 'image/png' });
+    Object.defineProperty(navigator, 'share', { value: async (data: ShareData) => {
+      sessionStorage.setItem('image-share', JSON.stringify({
+        name: data.files![0].name, type: data.files![0].type, active: navigator.userActivation.isActive
+      }));
+    } });
+  });
+  const editor = await note(page, 'share-image.txt'); await editor.fill('Share this image');
+  await tools(page).getByRole('button', { name: 'Export', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Export', exact: true });
+  await dialog.getByLabel('Export format').selectOption('png');
+  const share = dialog.getByRole('button', { name: 'Share PNG', exact: true });
+  await expect(share).toBeEnabled(); await share.click();
+  expect(await page.evaluate(() => JSON.parse(sessionStorage.getItem('image-share')!))).toEqual({
+    name: 'share-image.png', type: 'image/png', active: true
+  });
 });
 
 test('PWA export shares a prepared PDF from a fresh tap and treats cancellation as cancellation', async ({ page }) => {
@@ -183,7 +285,9 @@ test('tall notes stay on a single PDF page, and cancelling preparation leaves th
   const { page: pdfPage } = await readPdf(await downloaded);
   expect(pdfPage.node.get(PDFName.of('UserUnit'))?.toString()).toBe('2');
   expect(pdfPage.getHeight()).toBeLessThanOrEqual(14400);
-  await expect(page.getByText('unsaved changes', { exact: true })).toBeVisible();
+  await expect(editor).toBeEditable();
+  await editor.press('ControlOrMeta+End');
+  await expect(editor.locator('.cm-line').last()).toHaveText('line 850');
 });
 
 test('independent PDF margins persist in min-boxes and pad drawing exports without stretching', async ({ page }) => {
