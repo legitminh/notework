@@ -20,7 +20,7 @@
     "@codemirror/search": "^6.7.2",
     "@codemirror/state": "^6.7.6",
     "@codemirror/view": "^6.43.15",
-    "@legitminh/keyflow": "github:legitminh/keyflow#bd263de7aab9023ac1162b67bf24f827e3dd9416",
+    "@legitminh/keyflow": "github:legitminh/keyflow#60f46f819449906e615ef0b6d3a61acf25e07b40",
     "@replit/codemirror-vim": "^6.4.0",
     "pdf-lib": "^1.17.1",
     "svelte": "^5.57.3"

@@ -3,6 +3,8 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import { Keyflow, Document, ThemeToggle, min_box, state_viewport, lockstep_scrolling } from '@legitminh/keyflow';
+  import Control from '../lib/components/Control.svelte';
+  import { dialogShortcuts, shortcutScope } from '../lib/shortcut-scope.svelte';
   import Action from '../lib/components/Action.svelte';
   import SearchPanel from '../lib/components/SearchPanel.svelte';
   import CreateAsset from '../lib/components/CreateAsset.svelte';
@@ -13,6 +15,7 @@
   import TextEditor from '../lib/components/TextEditor.svelte';
   import StandaloneDrawing from '../lib/components/StandaloneDrawing.svelte';
   import { renameResource } from '../lib/rename-resource';
+  import { relocateResource } from '../lib/relocate-resource';
   import LocalPicker from '../lib/components/LocalPicker.svelte';
   import { Workspace, ROOT, nodeId, parentId, type StateNode } from '../lib/workspace';
   import { loadWorkspace, saveWorkspace } from '../lib/persistence';
@@ -50,6 +53,9 @@
   let renameName = $state('');
   let renameError = $state('');
   let renameTarget = $state.raw<StateNode | null>(null);
+  let relocateTarget = $state.raw<StateNode | null>(null);
+  let relocateDestination = $state.raw<StateNode | null>(null);
+  let relocateDialog: HTMLDialogElement;
   let deleteDialog: HTMLDialogElement;
   let deleteTarget = $state.raw<StateNode | null>(null);
   const resourceType = $derived(current?.kind === 'directory' ? 'folder' : 'file');
@@ -91,7 +97,16 @@
     const interval = setInterval(poll, 5000);
     window.addEventListener('focus', poll);
     document.addEventListener('visibilitychange', poll);
-    return () => { navigationVersion++; refreshVersion++; clearInterval(interval); window.removeEventListener('focus', poll); document.removeEventListener('visibilitychange', poll); };
+    const cancelOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.isComposing || !relocateTarget || busy || document.querySelector('dialog[open]')) return;
+      // Keyflow owns Escape outside editable fields; keep cancellation available
+      // while typing, where the library intentionally leaves keys untouched.
+      if (!(event.target instanceof HTMLElement) || !event.target.closest('input, textarea, select, [contenteditable]')) return;
+      event.preventDefault(); event.stopImmediatePropagation();
+      void cancelRelocate();
+    };
+    window.addEventListener('keydown', cancelOnEscape, true);
+    return () => { window.removeEventListener('keydown', cancelOnEscape, true); navigationVersion++; refreshVersion++; clearInterval(interval); window.removeEventListener('focus', poll); document.removeEventListener('visibilitychange', poll); };
   });
 
   $effect(() => {
@@ -170,7 +185,7 @@
   }
 
   async function openFile() {
-    if (current?.kind !== 'file' || busy) return;
+    if (current?.kind !== 'file' || busy || relocateTarget) return;
     const id = current.id;
     if (needsPermission && source) await reconnect(source.id);
     if (current?.id !== id || needsPermission) return;
@@ -180,7 +195,7 @@
   }
 
   async function openNode(node: StateNode) {
-    if (node.kind !== 'file' || busy) return;
+    if (node.kind !== 'file' || busy || relocateTarget) return;
     await navigate(node.id);
     if (current?.id === node.id) await openFile();
   }
@@ -204,6 +219,7 @@
     refreshVersion++;
     try {
       const result = await renameResource(workspace, renameTarget, renameName);
+      if (relocateTarget) relocateTarget = await workspace.node(result.remap(relocateTarget.id));
       current = result.node;
       await goto(location.pathname, { state: { notework: current.id }, shallow: true, replace: true, reset: false });
       renameDialog.close();
@@ -211,6 +227,44 @@
       message = result.warning;
     } catch (error) { renameError = storageError(error); }
     finally { busy = false; }
+  }
+
+  function startRelocate() {
+    if (!current || busy || relocateTarget) return;
+    relocateTarget = current;
+    panel = null; message = '';
+    state_viewport.viewport?.scrollTo({ top: 0 });
+  }
+
+  async function cancelRelocate() {
+    if (!relocateTarget || busy) return;
+    const origin = relocateTarget.id;
+    relocateTarget = null; creating = false;
+    await navigate(origin);
+  }
+
+  function chooseLocation(destination: StateNode | null) {
+    if (!relocateTarget || busy || (destination && destination.kind !== 'directory')) return;
+    relocateDestination = destination;
+    if (relocateTarget.storage !== (destination?.storage ?? 'browser')) relocateDialog.showModal();
+    else void finishRelocate();
+  }
+
+  async function finishRelocate() {
+    if (!relocateTarget || busy) return;
+    busy = true; message = ''; refreshVersion++;
+    try {
+      const result = await relocateResource(workspace, relocateTarget, relocateDestination);
+      relocateDialog.close();
+      relocateTarget = null; relocateDestination = null;
+      permissions[result.node.sourceId] = 'granted';
+      await navigate(result.node.id);
+      message = result.warning;
+      void updateStorage();
+    } catch (error) {
+      relocateDialog.close();
+      message = storageError(error);
+    } finally { busy = false; }
   }
 
   async function exitEditor() {
@@ -349,6 +403,10 @@
     try {
       await deleteResource(workspace, node);
       workspace.forget(node.id);
+      if (relocateTarget) {
+        try { relocateTarget = await workspace.node(relocateTarget.id); }
+        catch (error) { if (isMissing(error)) relocateTarget = null; }
+      }
       deleteDialog.close();
       const parent = parentId(node);
       let destination = ROOT;
@@ -376,6 +434,12 @@
 <Keyflow options={{ storagePrefix: 'notework:keyflow:', minBox: 40, lockstep: false }}>
   <Document>
     <main class="app" class:editing-view={editing && !!current} aria-label="notework" aria-busy={loading}>
+      {#if relocateTarget}
+        <aside class="relocate-banner" aria-label="relocate" aria-live="polite">
+          <p>choose location for {relocateTarget.name}</p>
+          <Control class="cancel-relocate" onclick={cancelRelocate} disabled={busy} keys="esc">cancel relocate</Control>
+        </aside>
+      {/if}
       {#if creating && (!current || current.kind === 'directory')}
         <CreateAsset path={current ? workspace.label(current) : 'home'} machineFolder={current?.storage === 'local'}
           {busy} supported={canCreateHere} error={message} onCreate={createAtFolder}
@@ -391,29 +455,34 @@
         {/key}
       {:else}
       <nav aria-label="state navigation">
-        <Action label="search" onSelect={() => togglePanel('search')} disabled={loading} />
+        <Action label="search" onSelect={() => togglePanel('search')} disabled={loading || busy} />
         {#if current}
-          <Action label={`configure ${resourceType}`} onSelect={() => togglePanel('configure')} />
+          <Action label={`configure ${resourceType}`} onSelect={() => togglePanel('configure')} disabled={busy} />
         {:else}
-          <Action label="app settings" onSelect={() => togglePanel('settings')} disabled={loading} />
+          <Action label="app settings" onSelect={() => togglePanel('settings')} disabled={loading || busy} />
         {/if}
         <hr />
         {#if current}
-          <Action label="home" iconOnly onSelect={() => navigate(ROOT)}>
+          <Action label="home" iconOnly onSelect={() => navigate(ROOT)} disabled={busy}>
             <svg class="action-icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
               <path d="m3 11 9-8 9 8" /><path d="M5 10v11h14V10" /><path d="M9 21v-7h6v7" />
             </svg>
           </Action>
-          <Action label=".." onSelect={() => navigate(parentId(current!))} />
+          <Action label=".." onSelect={() => navigate(parentId(current!))} disabled={busy} />
         {/if}
         {#each edges as node (node.id)}
-          {#if node.kind === 'file' && directChildIds.has(node.id) && (!current || current.kind === 'directory')}
+          {#if relocateTarget && node.kind === 'directory'}
+            <div class="file-navigation-row">
+              <Action label="choose" onSelect={() => chooseLocation(node)} disabled={busy} />
+              <Action label={node.name + '/'} onSelect={() => navigate(node.id)} disabled={busy} />
+            </div>
+          {:else if !relocateTarget && node.kind === 'file' && directChildIds.has(node.id) && (!current || current.kind === 'directory')}
             <div class="file-navigation-row">
               <Action label="open" onSelect={() => { void openNode(node); }} disabled={busy} />
-              <Action label={node.name} onSelect={() => navigate(node.id)} />
+              <Action label={node.name} onSelect={() => navigate(node.id)} disabled={busy} />
             </div>
           {:else}
-            <Action label={node.name + (node.kind === 'directory' ? '/' : '')} onSelect={() => navigate(node.id)} />
+            <Action label={node.name + (node.kind === 'directory' ? '/' : '')} onSelect={() => navigate(node.id)} disabled={busy} />
           {/if}
         {/each}
       </nav>
@@ -429,7 +498,8 @@
           <div class="panel-controls"><Action label={`close ${panel === 'settings' ? 'app settings' : panel === 'configure' ? `configure ${resourceType}` : panel}`} onSelect={() => { panel = null; state_viewport.viewport?.scrollTo({ top: 0 }); }} /></div>
         {/if}
         {#if panel === 'search'}
-          <SearchPanel {workspace} from={currentId} onNavigate={navigate} onOpen={openNode} {graphRevision} />
+          <SearchPanel {workspace} from={currentId} onNavigate={navigate} onOpen={openNode} {graphRevision}
+            relocating={!!relocateTarget} onChoose={chooseLocation} {busy} />
         {:else if panel === 'configure' && current}
           <section class="panel" aria-labelledby="configure-heading">
             <h2 id="configure-heading">configure {resourceType}</h2>
@@ -441,6 +511,7 @@
               <Action label={`reconnect ${source!.handle.name}`} onSelect={() => reconnect(source!.id)} disabled={busy} />
             {/if}
             <Action label="rename" onSelect={askRename} disabled={busy} />
+            <Action label={`relocate this ${resourceType}`} onSelect={startRelocate} disabled={busy || !!relocateTarget} />
             <Action label={`delete this ${resourceType}`} onSelect={confirmDelete}
               disabled={busy || !canDeleteCurrent} />
             {#if !canDeleteCurrent}
@@ -463,7 +534,7 @@
             <h3>root transitions</h3>
             {#if !rootIds.length}<p class="muted">Home has no items. Connect a source here or create an item from home.</p>{/if}
             {#each rootIds as id (id)}
-              <div class="config-row"><span>{label(id)}</span><button class="small-button" onclick={() => remove(ROOT, id)} aria-label={`Remove ${label(id)} from root`}>remove from root</button></div>
+              <div class="config-row"><span>{label(id)}</span><Control class="small-button" onclick={() => remove(ROOT, id)} aria-label={`Remove ${label(id)} from root`}>remove from root</Control></div>
             {/each}
             <p class="muted">Removing a transition never deletes the original file or folder.</p>
 
@@ -476,14 +547,14 @@
                     <Action label={`reconnect ${grant.handle.name}`} onSelect={() => reconnect(grant.id)} disabled={busy} />
                   {/if}
                   {#if !rootIds.includes(nodeId(grant.id))}
-                    <button class="small-button config-row" onclick={() => { workspace.link(ROOT, nodeId(grant.id)); void persist(); }}>add {grant.handle.name} to root</button>
+                    <Control class="small-button config-row" onclick={() => { workspace.link(ROOT, nodeId(grant.id)); void persist(); }}>add {grant.handle.name} to root</Control>
                   {/if}
                 {/each}
               </div>
             {/if}
 
             <h3>appearance</h3>
-            <div class="action"><ThemeToggle /></div>
+            <div class="action">{#if !shortcutScope.dialog}<ThemeToggle />{/if}</div>
             <Action label={`Vim mode: ${vimMode ? 'on' : 'off'}`} onSelect={() => {
               vimMode = !vimMode;
               saveAppearancePreference('notework:vim-mode', vimMode);
@@ -521,20 +592,24 @@
         {#if current}
           <h1>{current.name}{current.kind === 'directory' ? '/' : ''}</h1>
           <p class="path">{workspace.label(current)} · {current.storage === 'browser' ? 'browser storage' : 'computer'} · {current.kind === 'directory' ? 'folder' : 'file'}</p>
-          {#if current.kind === 'file'}
+          {#if relocateTarget && current.kind === 'directory'}
+            <Action label="choose" onSelect={() => chooseLocation(current)} disabled={busy} />
+          {/if}
+          {#if current.kind === 'file' && !relocateTarget}
             <Action label="open" onSelect={openFile} disabled={busy} />
           {:else if current.kind === 'directory'}
             <p class="muted">{children.length} direct {children.length === 1 ? 'child' : 'children'} · {edges.length} reachable {edges.length === 1 ? 'state' : 'states'}</p>
           {/if}
         {:else}
           <h1>home</h1>
+          {#if relocateTarget}<Action label="choose" onSelect={() => chooseLocation(null)} disabled={busy} />{/if}
           <p class="path">virtual folder · {edges.length} {edges.length === 1 ? 'item' : 'items'} from connected sources</p>
         {/if}
       </section>
       {/if}
     </main>
   </Document>
-  <dialog class="local-picker editor-exit" bind:this={renameDialog} aria-labelledby="rename-title"
+  <dialog use:dialogShortcuts class="local-picker editor-exit" bind:this={renameDialog} aria-labelledby="rename-title"
     oncancel={(event) => { if (busy) event.preventDefault(); }}>
     <h2 id="rename-title">Rename {renameTarget?.kind === 'directory' ? 'folder' : 'file'}</h2>
     <form onsubmit={(event) => { event.preventDefault(); void renameCurrent(); }}>
@@ -542,17 +617,26 @@
       {#if renameError}<p class="notice" role="alert">{renameError}</p>{/if}
       <div class="editor-controls">
         <button type="submit" disabled={busy}>Rename and update links</button>
-        <button type="button" onclick={() => renameDialog.close()} disabled={busy}>Cancel</button>
+        <Control onclick={() => renameDialog.close()} disabled={busy}>Cancel</Control>
       </div>
     </form>
   </dialog>
-  <dialog class="local-picker editor-exit" bind:this={deleteDialog} aria-labelledby="delete-heading"
+  <dialog use:dialogShortcuts class="local-picker editor-exit" bind:this={relocateDialog} aria-labelledby="relocate-heading"
+    oncancel={(event) => { if (busy) event.preventDefault(); }}>
+    <h2 id="relocate-heading">Relocate {relocateTarget?.kind === 'directory' ? 'folder' : 'file'} to {relocateDestination?.storage === 'local' ? 'computer storage' : 'browser storage'}?</h2>
+    <p class="muted">This creates “{relocateTarget?.name}”{relocateTarget?.kind === 'directory' ? ' and all its contents' : ''} in {relocateDestination?.storage === 'local' ? 'computer storage' : 'browser storage'} at {relocateDestination ? workspace.label(relocateDestination) : 'home'}, then deletes the original from {relocateTarget?.storage === 'local' ? 'computer storage' : 'browser storage'}.</p>
+    <div class="editor-controls">
+      <Control onclick={() => relocateDialog.close()} disabled={busy}>No</Control>
+      <Control onclick={finishRelocate} disabled={busy}>Yes</Control>
+    </div>
+  </dialog>
+  <dialog use:dialogShortcuts class="local-picker editor-exit" bind:this={deleteDialog} aria-labelledby="delete-heading"
     onclose={() => { deleteTarget = null; }} oncancel={(event) => { if (busy) event.preventDefault(); }}>
     <h2 id="delete-heading">Delete {deleteTarget?.name}?</h2>
     <p class="muted">{deleteTarget?.kind === 'directory' ? 'This permanently deletes the folder and everything inside it.' : 'This permanently deletes the file.'}</p>
     <div class="editor-controls">
-      <button type="button" onclick={() => deleteDialog.close()} disabled={busy}>Cancel</button>
-      <button type="button" onclick={deleteCurrent} disabled={busy}>Delete {deleteTarget?.kind === 'directory' ? 'folder' : 'file'}</button>
+      <Control onclick={() => deleteDialog.close()} disabled={busy}>Cancel</Control>
+      <Control onclick={deleteCurrent} disabled={busy}>Delete {deleteTarget?.kind === 'directory' ? 'folder' : 'file'}</Control>
     </div>
   </dialog>
   {#if picking}

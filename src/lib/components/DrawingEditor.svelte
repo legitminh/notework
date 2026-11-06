@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Control from './Control.svelte';
   import { onMount } from 'svelte';
   import { DRAWING_WIDTH, DRAWING_PAGE_HEIGHT, STROKE_WIDTH, drawingBottom, strokePoints, touchesStroke, type Drawing, type Point } from '../drawing';
   import { drawingGestures } from '../drawing-gestures';
@@ -237,12 +238,12 @@
 </script>
 
 <div class="editor-controls drawing-controls" role="group" aria-label="Drawing toolbar">
-  <button type="button" onclick={exit} disabled={saving}>Exit<span class="shortcut-hint" aria-hidden="true">Ctrl+Esc</span></button>
-  <button type="button" onclick={() => { tool = 'brush'; }} aria-pressed={tool === 'brush'}>Brush<span class="shortcut-hint" aria-hidden="true">Command+B</span></button>
-  <button type="button" onclick={() => { tool = 'eraser'; }} aria-pressed={tool === 'eraser'}>Eraser</button>
-  <button type="button" onclick={undo} disabled={!undoStack.length || saving}>Undo<span class="shortcut-hint" aria-hidden="true">Command+Z</span></button>
-  <button type="button" onclick={redo} disabled={!redoStack.length || saving}>Redo<span class="shortcut-hint" aria-hidden="true">Command+Shift+Z</span></button>
-  <button type="button" onclick={() => onExport(strokes)} disabled={saving || !!gesture}>Export</button>
+  <Control onclick={exit} disabled={saving}>Exit<span class="shortcut-hint" aria-hidden="true">Ctrl+Esc</span></Control>
+  <Control onclick={() => { tool = 'brush'; }} aria-pressed={tool === 'brush'}>Brush<span class="shortcut-hint" aria-hidden="true">Command+B</span></Control>
+  <Control onclick={() => { tool = 'eraser'; }} aria-pressed={tool === 'eraser'}>Eraser</Control>
+  <Control onclick={undo} disabled={!undoStack.length || saving}>Undo<span class="shortcut-hint" aria-hidden="true">Command+Z</span></Control>
+  <Control onclick={redo} disabled={!redoStack.length || saving}>Redo<span class="shortcut-hint" aria-hidden="true">Command+Shift+Z</span></Control>
+  <Control onclick={() => onExport(strokes)} disabled={saving || !!gesture}>Export</Control>
 </div>
 
 <div class="drawing-surface" use:portal={surfaceTarget}>

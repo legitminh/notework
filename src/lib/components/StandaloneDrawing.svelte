@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Control from './Control.svelte';
   import { onMount } from 'svelte';
   import type { Workspace, StateNode } from '../workspace';
   import { loadDrawing, saveDrawing, type DrawingResource } from '../drawing-files';
@@ -51,7 +52,7 @@
     onSave={async (strokes, requestWrite) => { resource = await saveDrawing(resource!, strokes, requestWrite); }} />
   </div>
 {:else if error}
-  <button type="button" onclick={onExit}>Exit</button>
+  <Control onclick={onExit}>Exit</Control>
   <p class="notice" role="alert">{error}</p>
 {:else}
   <p class="muted" role="status">opening drawing…</p>

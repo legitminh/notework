@@ -1,5 +1,7 @@
 <script lang="ts">
+  import Control from './Control.svelte';
   import { onMount } from 'svelte';
+  import { dialogShortcuts } from '../shortcut-scope.svelte';
   import type { ExportFormat, PdfSource } from '../pdf-export';
   import { shareAvailable, downloadExport } from '../export-delivery';
 
@@ -59,7 +61,7 @@
   }
 </script>
 
-<dialog class="local-picker editor-exit" bind:this={dialog} aria-labelledby="export-heading"
+<dialog use:dialogShortcuts class="local-picker editor-exit" bind:this={dialog} aria-labelledby="export-heading"
   oncancel={(event) => { if (sharing) event.preventDefault(); else onClose(); }}>
   <h2 id="export-heading">Export</h2>
   <label class="field">format <select aria-label="Export format" value={format} onchange={selectFormat} disabled={sharing}>
@@ -71,8 +73,8 @@
   {#if status}<p class="muted" role="status">{status}</p>{/if}
   {#if error}<p class="notice" role="alert">{error}</p>{/if}
   <div class="editor-controls">
-    <button type="button" disabled={!file || sharing} onclick={deliver}>{canShare ? `Share ${label()}` : `Download ${label()}`}</button>
-    {#if canShare}<button type="button" disabled={!file || sharing} onclick={() => { downloadExport(file!); onClose(); }}>Download {label()}</button>{/if}
-    <button type="button" onclick={onClose} disabled={sharing}>Cancel</button>
+    <Control disabled={!file || sharing} onclick={deliver}>{canShare ? `Share ${label()}` : `Download ${label()}`}</Control>
+    {#if canShare}<Control disabled={!file || sharing} onclick={() => { downloadExport(file!); onClose(); }}>Download {label()}</Control>{/if}
+    <Control onclick={onClose} disabled={sharing}>Cancel</Control>
   </div>
 </dialog>

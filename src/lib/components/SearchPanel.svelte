@@ -1,13 +1,17 @@
 <script lang="ts">
+  import Control from './Control.svelte';
   import { onMount } from 'svelte';
   import { searchReachable, type Workspace, type StateNode, type SearchProgress } from '../workspace';
   import Action from './Action.svelte';
-  let { workspace, from, onNavigate, onOpen, graphRevision = 0 }: {
+  let { workspace, from, onNavigate, onOpen, graphRevision = 0, relocating = false, onChoose, busy = false }: {
     workspace: Workspace;
     from: string;
     onNavigate: (id: string) => void;
     onOpen: (node: StateNode) => void;
     graphRevision?: number;
+    relocating?: boolean;
+    onChoose?: (node: StateNode) => void;
+    busy?: boolean;
   } = $props();
   let input: HTMLInputElement;
   let heading: HTMLHeadingElement;
@@ -68,9 +72,9 @@
     <input bind:this={input} bind:value={query} placeholder="start typing…" type="search" autocomplete="off"
       onkeydown={handleFieldKeydown} />
   </label>
-  <button type="button" class="search-field-exit" aria-keyshortcuts="Escape" onclick={leaveField}>
-    <kbd>esc</kbd><span>search results</span>
-  </button>
+  <Control class="search-field-exit" keys={relocating ? undefined : 'esc'} onclick={leaveField}>
+    <span class="visually-hidden">esc </span>search results
+  </Control>
   <Action label="edit search" onSelect={() => input.focus()} />
   <div aria-live="polite" class="search-status muted">
     {#if searching}searching… {progress.visited} states visited
@@ -83,15 +87,18 @@
   {#each results as node (node.id)}
     {#if node.kind === 'file'}
       <div class="file-navigation-row search-result-row">
-        <Action label="open" onSelect={() => onOpen(node)} />
-        <Action label={node.name} onSelect={() => onNavigate(node.id)}>
+        {#if !relocating}<Action label="open" onSelect={() => onOpen(node)} disabled={busy} />{/if}
+        <Action label={node.name} onSelect={() => onNavigate(node.id)} disabled={busy}>
           <span class="hint">{workspace.label(node)}</span>
         </Action>
       </div>
     {:else}
-      <Action label={`${node.name}/`} onSelect={() => onNavigate(node.id)}>
-        <span class="hint">{workspace.label(node)}</span>
-      </Action>
+      <div class="file-navigation-row search-result-row">
+        {#if relocating}<Action label="choose" onSelect={() => onChoose?.(node)} disabled={busy} />{/if}
+        <Action label={`${node.name}/`} onSelect={() => onNavigate(node.id)} disabled={busy}>
+          <span class="hint">{workspace.label(node)}</span>
+        </Action>
+      </div>
     {/if}
   {/each}
 </section>

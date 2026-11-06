@@ -1,5 +1,7 @@
 <script lang="ts">
+  import Control from './Control.svelte';
   import { onMount } from 'svelte';
+  import { dialogShortcuts } from '../shortcut-scope.svelte';
   import { inspectText } from '../text-resource';
   import { pickLocation, droppedHandles, explainError, type LocalDirectory, type LocalHandle, type LocalSelection } from '../filesystem';
 
@@ -21,15 +23,8 @@
 
   onMount(() => {
     dialog.showModal();
-    // Native modal inertness doesn't disable window-level library shortcuts.
-    // Capture keys before Keyflow; native Tab/Enter/Escape defaults still work.
-    const isolateKeys = (event: KeyboardEvent) => event.stopImmediatePropagation();
-    window.addEventListener('keydown', isolateKeys, true);
-    window.addEventListener('keyup', isolateKeys, true);
     return () => {
       generation++;
-      window.removeEventListener('keydown', isolateKeys, true);
-      window.removeEventListener('keyup', isolateKeys, true);
       dialog.close();
     };
   });
@@ -108,7 +103,7 @@
   }
 </script>
 
-<dialog bind:this={dialog} class="local-picker" aria-labelledby="picker-title"
+<dialog use:dialogShortcuts bind:this={dialog} class="local-picker" aria-labelledby="picker-title"
   oncancel={(event) => { event.preventDefault(); if (!busy) onCancel(); }}>
   <h2 id="picker-title">add existing folder/file</h2>
   <p class="muted">Select items to observe. Only their handles are remembered on this device; nothing is uploaded.</p>
@@ -116,22 +111,22 @@
     <p>drop files or folders here</p>
     <p class="muted">Both are recognized automatically. Or browse a location and select either kind below.</p>
   </section>
-  <button type="button" class="picker-button" onclick={browse} disabled={busy}>browse location…</button>
+  <Control class="picker-button" onclick={browse} disabled={busy}>browse location…</Control>
   <p class="muted">Your browser asks for a folder to browse. Only items you select below are remembered.</p>
   {#if error}<p role="alert" class="notice">{error}</p>{/if}
   {#if busy}<p role="status" class="muted">working…</p>{/if}
   {#if location}
     <p class="path">{trail.map((item) => item.name).join('/')}/</p>
-    {#if trail.length > 1}<button type="button" class="picker-button" onclick={() => open(trail.slice(0, -1))} disabled={busy}>..</button>{/if}
+    {#if trail.length > 1}<Control class="picker-button" onclick={() => open(trail.slice(0, -1))} disabled={busy}>..</Control>{/if}
     <label class="picker-row"><input type="checkbox" aria-label={`Select ${location.name} folder`} checked={!!selection[locationKey]} onchange={() => toggle(locationKey, location!, trail.at(-2))} disabled={busy} /><span>this folder: {location.name}/</span></label>
     <div class="picker-entries" aria-label="location contents">
       {#each entries as entry (entry.key)}
         <div class="picker-row">
           <input type="checkbox" aria-label={`Select ${entry.handle.name} ${entry.handle.kind === 'directory' ? 'folder' : 'file'}`} checked={!!selection[entry.key]} onchange={() => toggle(entry.key, entry.handle, location)} disabled={busy} />
           {#if entry.handle.kind === 'directory'}
-            <button type="button" class="picker-name" onclick={() => open([...trail, entry.handle as LocalDirectory])} disabled={busy}>{entry.handle.name}/</button>
+            <Control class="picker-name" onclick={() => open([...trail, entry.handle as LocalDirectory])} disabled={busy}>{entry.handle.name}/</Control>
           {:else}
-            <button type="button" class="picker-name" onclick={() => toggle(entry.key, entry.handle, location)} disabled={busy}>{entry.handle.name}</button>
+            <Control class="picker-name" onclick={() => toggle(entry.key, entry.handle, location)} disabled={busy}>{entry.handle.name}</Control>
           {/if}
           <span class="picker-kind">{entry.handle.kind === 'directory' ? 'folder' : 'file'}</span>
         </div>
@@ -142,11 +137,11 @@
   {#if selected.length}
     <h3>selected to observe</h3>
     {#each Object.entries(selection) as [key, item] (key)}
-      <div class="picker-row"><span>{item.handle.name}{item.handle.kind === 'directory' ? '/' : ''}</span><button type="button" class="small-button" onclick={() => toggle(key, item.handle, item.parent)} disabled={busy}>remove</button></div>
+      <div class="picker-row"><span>{item.handle.name}{item.handle.kind === 'directory' ? '/' : ''}</span><Control class="small-button" onclick={() => toggle(key, item.handle, item.parent)} disabled={busy}>remove</Control></div>
     {/each}
   {/if}
   <div class="picker-footer">
-    <button type="button" class="picker-button" onclick={confirm} disabled={busy || !selected.length}>observe selection{selected.length ? ` (${selected.length})` : ''}</button>
-    <button type="button" class="picker-button" onclick={onCancel} disabled={busy}>cancel</button>
+    <Control class="picker-button" onclick={confirm} disabled={busy || !selected.length}>observe selection{selected.length ? ` (${selected.length})` : ''}</Control>
+    <Control class="picker-button" onclick={onCancel} disabled={busy}>cancel</Control>
   </div>
 </dialog>

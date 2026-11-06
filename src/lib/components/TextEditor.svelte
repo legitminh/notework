@@ -7,6 +7,7 @@
 </script>
 
 <script lang="ts">
+  import Control from './Control.svelte';
   import { onMount, tick } from 'svelte';
   import { Compartment, EditorState, Prec, Text, Transaction } from '@codemirror/state';
   import { EditorView, keymap, lineNumbers, drawSelection, highlightActiveLine } from '@codemirror/view';
@@ -486,10 +487,10 @@
   <div class="editor-toolbar-slot">
     {#if !inlineDrawing}
     <div class="editor-controls" role="group" aria-label="Editor toolbar">
-      <button type="button" aria-keyshortcuts="Control+Escape" onclick={requestExit} disabled={saving}>Exit<span class="shortcut-hint" aria-hidden="true">Ctrl+Esc</span></button>
-      <button type="button" aria-keyshortcuts={vimMode ? undefined : 'Control+F'} aria-label="Find and replace" onclick={find} disabled={loading}><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="10" cy="10" r="6" /><path d="m14.5 14.5 5 5" /></svg>{#if !vimMode}<span class="shortcut-hint" aria-hidden="true">Ctrl+F</span>{/if}</button>
-      <button type="button" onclick={() => { void insertDrawing(); }} disabled={loading || saving} aria-keyshortcuts="Meta+B">Brush<span class="shortcut-hint" aria-hidden="true">Command+B</span></button>
-      <button type="button" onclick={() => openExport()} disabled={loading}>Export</button>
+      <Control aria-keyshortcuts="Control+Escape" onclick={requestExit} disabled={saving}>Exit<span class="shortcut-hint" aria-hidden="true">Ctrl+Esc</span></Control>
+      <Control aria-keyshortcuts={vimMode ? undefined : 'Control+F'} onclick={find} disabled={loading}><span class="visually-hidden">Find and replace</span><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="10" cy="10" r="6" /><path d="m14.5 14.5 5 5" /></svg>{#if !vimMode}<span class="shortcut-hint" aria-hidden="true">Ctrl+F</span>{/if}</Control>
+      <Control onclick={() => { void insertDrawing(); }} disabled={loading || saving} aria-keyshortcuts="Meta+B">Brush<span class="shortcut-hint" aria-hidden="true">Command+B</span></Control>
+      <Control onclick={() => openExport()} disabled={loading}>Export</Control>
     </div>
     {/if}
     {#if inlineDrawing}

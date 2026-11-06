@@ -177,6 +177,10 @@ export class Workspace {
     return this.handles.get(id)!;
   }
 
+  clearCaches() {
+    this.known.clear(); this.handles.clear(); this.drawings.clear(); this.formats.clear();
+  }
+
   cachedHandle(id: string) { return this.handles.get(id); }
 
   deletionParent(node: StateNode) {

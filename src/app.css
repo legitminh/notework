@@ -10,6 +10,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   outline: 2px solid var(--primary); outline-offset: 3px;
 }
 button:disabled { opacity: .4; cursor: wait; }
+.control { display: inline-flex; min-width: 0; max-width: 100%; }
+.control > button { font: inherit; max-width: 100%; vertical-align: top; }
 .visually-hidden {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
@@ -17,7 +19,7 @@ button:disabled { opacity: .4; cursor: wait; }
 main { padding: calc(var(--min-box) / 4); padding-bottom: calc(var(--min-box) * 3); }
 .app { width: 100%; max-width: var(--page-max-width); }
 .action { min-height: var(--min-box); max-width: 100%; }
-.action > button { max-width: 100%; vertical-align: top; }
+.action button { max-width: 100%; vertical-align: top; }
 .action .content { min-width: 0; overflow-wrap: anywhere; }
 .action-icon { display: block; width: .8em; height: .8em; }
 .file-navigation-row { display: flex; align-items: flex-start; gap: calc(var(--min-box) / 2); max-width: 100%; }
@@ -73,8 +75,6 @@ a { color: inherit; text-underline-offset: .15em; }
 .cm-editor input, .cm-editor button { font-size: 14px; line-height: 1.5; width: auto; }
 .search-status:empty { display: none; }
 .search-field-exit { display: inline-flex; max-width: 100%; margin-bottom: calc(var(--min-box) / 4); }
-.search-field-exit kbd { font: inherit; color: var(--tertiary); background: hsla(0, 100%, 50%, .25); }
-.search-field-exit span { background: hsla(0, 100%, 50%, .125); }
 .source-list { margin: calc(var(--min-box) / 2) 0; }
 .local-picker { color: var(--primary); background: var(--background); border: 1px solid var(--tertiary); padding: calc(var(--min-box) / 2); width: min(880px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow: auto; overflow-wrap: anywhere; }
 .local-picker::backdrop { background: rgb(0 0 0 / .4); }
@@ -113,3 +113,11 @@ a { color: inherit; text-underline-offset: .15em; }
 .drawing-canvas { cursor: crosshair; touch-action: none; user-select: none; }
 .drawing-canvas.eraser { cursor: cell; }
 .drawing-surface { font-family: var(--font-mono); line-height: normal; }
+
+.relocate-banner {
+  position: sticky; top: 0; z-index: 3; background: var(--background);
+  border: 1px solid var(--tertiary); padding: calc(var(--min-box) / 4); margin-bottom: calc(var(--min-box) / 2);
+  overflow-wrap: anywhere;
+}
+.cancel-relocate { font: inherit; font-size: .55em; min-height: 44px; }
+.cancel-relocate kbd { font: inherit; color: var(--tertiary); }
