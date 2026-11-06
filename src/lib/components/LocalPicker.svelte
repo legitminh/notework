@@ -1,16 +1,16 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { inspectText } from '../text-resource';
-  import { pickLocation, droppedHandles, explainError, type LocalDirectory, type LocalHandle } from '../filesystem';
+  import { pickLocation, droppedHandles, explainError, type LocalDirectory, type LocalHandle, type LocalSelection } from '../filesystem';
 
   let { onSelect, onCancel }: {
-    onSelect: (handles: LocalHandle[]) => Promise<void>;
+    onSelect: (selections: LocalSelection[]) => Promise<void>;
     onCancel: () => void;
   } = $props();
   let dialog: HTMLDialogElement;
   let trail = $state.raw<LocalDirectory[]>([]);
   let entries = $state.raw<{ key: string; handle: LocalHandle }[]>([]);
-  let selection = $state.raw<Record<string, LocalHandle>>({});
+  let selection = $state.raw<Record<string, LocalSelection>>({});
   let busy = $state(false);
   let error = $state('');
   let locationId = '';
@@ -66,9 +66,9 @@
     finally { busy = false; }
   }
 
-  function toggle(key: string, handle: LocalHandle) {
+  function toggle(key: string, handle: LocalHandle, parent?: LocalDirectory) {
     const next = { ...selection };
-    if (next[key]) delete next[key]; else next[key] = handle;
+    if (next[key]) delete next[key]; else next[key] = { handle, parent };
     selection = next;
   }
 
@@ -88,7 +88,7 @@
       for (const handle of await pending) {
         if (handle.kind === 'directory' && handle.name === '.git') continue;
         if (handle.kind === 'file' && !(await inspectText(handle))) continue;
-        next[crypto.randomUUID()] = handle;
+        next[crypto.randomUUID()] = { handle };
       }
       selection = next;
     } catch (cause) { error = explainError(cause); }
@@ -100,7 +100,7 @@
     busy = true; error = '';
     try {
       // Request read-only access from this explicit gesture. Do not read file contents.
-      const grants = await Promise.all(selected.map((handle) => handle.requestPermission({ mode: 'read' })));
+      const grants = await Promise.all(selected.map(({ handle }) => handle.requestPermission({ mode: 'read' })));
       if (grants.some((grant) => grant !== 'granted')) throw new Error('Read access was not granted. No items were added.');
       await onSelect(selected);
     } catch (cause) { error = explainError(cause); }
@@ -123,15 +123,15 @@
   {#if location}
     <p class="path">{trail.map((item) => item.name).join('/')}/</p>
     {#if trail.length > 1}<button type="button" class="picker-button" onclick={() => open(trail.slice(0, -1))} disabled={busy}>..</button>{/if}
-    <label class="picker-row"><input type="checkbox" aria-label={`Select ${location.name} folder`} checked={!!selection[locationKey]} onchange={() => toggle(locationKey, location!)} disabled={busy} /><span>this folder: {location.name}/</span></label>
+    <label class="picker-row"><input type="checkbox" aria-label={`Select ${location.name} folder`} checked={!!selection[locationKey]} onchange={() => toggle(locationKey, location!, trail.at(-2))} disabled={busy} /><span>this folder: {location.name}/</span></label>
     <div class="picker-entries" aria-label="location contents">
       {#each entries as entry (entry.key)}
         <div class="picker-row">
-          <input type="checkbox" aria-label={`Select ${entry.handle.name} ${entry.handle.kind === 'directory' ? 'folder' : 'file'}`} checked={!!selection[entry.key]} onchange={() => toggle(entry.key, entry.handle)} disabled={busy} />
+          <input type="checkbox" aria-label={`Select ${entry.handle.name} ${entry.handle.kind === 'directory' ? 'folder' : 'file'}`} checked={!!selection[entry.key]} onchange={() => toggle(entry.key, entry.handle, location)} disabled={busy} />
           {#if entry.handle.kind === 'directory'}
             <button type="button" class="picker-name" onclick={() => open([...trail, entry.handle as LocalDirectory])} disabled={busy}>{entry.handle.name}/</button>
           {:else}
-            <button type="button" class="picker-name" onclick={() => toggle(entry.key, entry.handle)} disabled={busy}>{entry.handle.name}</button>
+            <button type="button" class="picker-name" onclick={() => toggle(entry.key, entry.handle, location)} disabled={busy}>{entry.handle.name}</button>
           {/if}
           <span class="picker-kind">{entry.handle.kind === 'directory' ? 'folder' : 'file'}</span>
         </div>
@@ -141,8 +141,8 @@
   {/if}
   {#if selected.length}
     <h3>selected to observe</h3>
-    {#each Object.entries(selection) as [key, handle] (key)}
-      <div class="picker-row"><span>{handle.name}{handle.kind === 'directory' ? '/' : ''}</span><button type="button" class="small-button" onclick={() => toggle(key, handle)} disabled={busy}>remove</button></div>
+    {#each Object.entries(selection) as [key, item] (key)}
+      <div class="picker-row"><span>{item.handle.name}{item.handle.kind === 'directory' ? '/' : ''}</span><button type="button" class="small-button" onclick={() => toggle(key, item.handle, item.parent)} disabled={busy}>remove</button></div>
     {/each}
   {/if}
   <div class="picker-footer">

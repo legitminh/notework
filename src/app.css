@@ -10,11 +10,16 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   outline: 2px solid var(--primary); outline-offset: 3px;
 }
 button:disabled { opacity: .4; cursor: wait; }
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
 main { padding: calc(var(--min-box) / 4); padding-bottom: calc(var(--min-box) * 3); }
 .app { width: 100%; max-width: var(--page-max-width); }
 .action { min-height: var(--min-box); max-width: 100%; }
 .action > button { max-width: 100%; vertical-align: top; }
 .action .content { min-width: 0; overflow-wrap: anywhere; }
+.action-icon { display: block; width: .8em; height: .8em; }
 .hint { display: block; font-size: .5em; line-height: 1.5; opacity: .6; padding: .2em .5em .3em; }
 hr { height: 1px; border: 0; background: var(--primary); opacity: .25; margin: calc(var(--min-box) / 4) 0; }
 .state-display { margin-top: var(--min-box); }

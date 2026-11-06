@@ -14,7 +14,7 @@
   import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap, completionStatus, pickedCompletion, type Completion, type CompletionContext } from '@codemirror/autocomplete';
   import { bracketMatching, indentUnit } from '@codemirror/language';
   import { openSearchPanel, searchKeymap, highlightSelectionMatches } from '@codemirror/search';
-  import type { Workspace, StateNode } from '../workspace';
+  import { parentId, ROOT, type Workspace, type StateNode } from '../workspace';
   import { isMissing, type LocalFile } from '../filesystem';
   import { decodedChunks, encodedChunks, inspectText, type TextFormat } from '../text-resource';
   import { writeBrowserContent, storageError } from '../browser-documents';
@@ -28,20 +28,20 @@
   import { svgPageNames, type Drawing } from '../drawing';
   import { loadSiblingDrawing, prepareSvgPages, saveDrawing, saveSiblingDrawing, type DrawingResource } from '../drawing-files';
   import { wikiDisplay } from '../wiki-display';
-  import { findWikiTarget, prepareWikiSave, validFilename, wikiCatalog, wikiScore, wikiToken, wikiTokens } from '../wiki';
+  import { containingFolder, findWikiTarget, prepareWikiSave, requireWrite, validFilename, wikiCatalog, wikiScore, wikiToken, wikiTokens, WritePermissionRequired } from '../wiki';
 
-  let { workspace, node, wrapLines, vimMode, stylusOnly, pdfMargins, onExit, onMissing, onOpenLink }: {
+  let { workspace, node, wrapLines, vimMode, stylusOnly, pdfMargins, autosaveMs, onExit, onMissing, onOpenLink }: {
     workspace: Workspace; node: StateNode;
     wrapLines: boolean;
     vimMode: boolean;
     stylusOnly: boolean;
+    autosaveMs: number;
     pdfMargins: PdfMargins;
     onExit: () => void;
     onOpenLink: (id: string) => Promise<void>;
     onMissing: () => void;
   } = $props();
   let container: HTMLDivElement;
-  let exitDialog: HTMLDialogElement;
   let nextLink = $state<string>();
   let followingLink = false;
   const catalogController = new AbortController();
@@ -62,12 +62,14 @@
   let loading = $state(true);
   let dirty = $state(false);
   let saving = $state(false);
-  let writable = $state(false);
   let error = $state('');
+  let waitingForPermission = $state(false);
   let loadedBytes = $state(0);
   let revision = 0;
   let savedRevision = 0;
-  let active = true;
+  let active = false;
+  let autosaveTimer: ReturnType<typeof setTimeout> | undefined;
+  let lastSaveAt = 0;
 
   function* chunks(doc: Text) {
     let buffer = '';
@@ -135,21 +137,32 @@
     return options.length ? { from: match.from + 2, options, filter: false } : null;
   }
 
-  function insertDrawing() {
+  async function insertDrawing() {
     if (!view || saving || inlineDrawing) return;
-    const name = `drawing-${crypto.randomUUID().slice(0, 8)}.svg`;
-    const { from, to } = view.state.selection.main;
-    const before = from === view.state.doc.lineAt(from).from ? '' : '\n';
-    const after = to < view.state.doc.length && view.state.sliceDoc(to, to + 1) === '\n' ? '' : '\n';
-    const insert = `${before}\\svgpage[${name}]${after}`;
-    newDrawings.add(name);
-    view.dispatch({
-      changes: { from, to, insert },
-      selection: { anchor: from + insert.length + (after ? 0 : 1) },
-      annotations: Transaction.userEvent.of('input'),
-      scrollIntoView: true
-    });
-    view.focus();
+    error = '';
+    try {
+      // Brush explicitly creates a sibling SVG, so acquire directory write access
+      // while this click or keyboard gesture is still active.
+      if (node.storage === 'local') {
+        const parent = parentId(node);
+        const cached = parent === ROOT ? undefined : workspace.cachedHandle(parent);
+        const folder = cached?.kind === 'directory' ? cached : await containingFolder(workspace, node, handle);
+        await requireWrite(folder, true);
+      }
+      const name = `drawing-${crypto.randomUUID().slice(0, 8)}.svg`;
+      const { from, to } = view.state.selection.main;
+      const before = from === view.state.doc.lineAt(from).from ? '' : '\n';
+      const after = to < view.state.doc.length && view.state.sliceDoc(to, to + 1) === '\n' ? '' : '\n';
+      const insert = `${before}\\svgpage[${name}]${after}`;
+      newDrawings.add(name);
+      view.dispatch({
+        changes: { from, to, insert },
+        selection: { anchor: from + insert.length + (after ? 0 : 1) },
+        annotations: Transaction.userEvent.of('input'),
+        scrollIntoView: true
+      });
+      view.focus();
+    } catch (cause) { error = storageError(cause); }
   }
 
   function refreshDrawingPreviews() {
@@ -185,47 +198,73 @@
     finally { openingDrawing = false; }
   }
 
-  async function saveInlineDrawing(strokes: Drawing) {
+  async function saveInlineDrawing(strokes: Drawing, requestWrite: boolean) {
     const drawing = inlineDrawing;
     if (!drawing) return;
     const { name } = drawing.page;
     drawing.resource = drawing.resource
-      ? await saveDrawing(drawing.resource, strokes)
-      : await saveSiblingDrawing(workspace, node, handle, name, strokes);
+      ? await saveDrawing(drawing.resource, strokes, requestWrite)
+      : await saveSiblingDrawing(workspace, node, handle, name, strokes, requestWrite);
     newDrawings.delete(name);
     previews.set(name, Promise.resolve(drawing.resource));
     view?.dispatch({ effects: pageWidgets.setPreview.of({ name, strokes }) });
   }
 
   async function closeInlineDrawing() {
+    view?.dispatch({ effects: [pageWidgets.setActive.of(undefined), textLock.reconfigure([])] });
     inlineDrawing = undefined;
     await tick();
-    view?.dispatch({ effects: [pageWidgets.setActive.of(undefined), textLock.reconfigure([])] });
     view?.focus();
+    scheduleAutosave();
   }
 
-  async function save(leave = false) {
+  function clearAutosave() {
+    if (autosaveTimer) clearTimeout(autosaveTimer);
+    autosaveTimer = undefined;
+  }
+
+  function scheduleAutosave() {
+    clearAutosave();
+    if (!active || !dirty || saving || inlineDrawing || waitingForPermission) return;
+    const delay = Math.max(0, lastSaveAt + autosaveMs - Date.now());
+    autosaveTimer = setTimeout(() => {
+      autosaveTimer = undefined;
+      void save(false, false);
+    }, delay);
+  }
+
+  async function save(leave = false, requestWrite = true) {
     if (!view || saving || inlineDrawing) return;
     if (!dirty) {
       if (leave) await finishExit();
       return;
     }
+    clearAutosave();
     saving = true; error = '';
+    let succeeded = false;
     try {
-      if (node.storage === 'local' && !writable) {
-        writable = (await handle.requestPermission({ mode: 'readwrite' })) === 'granted';
-        if (!writable) throw new Error('Write permission was not granted. Your edits are still open.');
-      }
       const snapshot = view.state.doc;
       const version = revision;
       const tokens = wikiTokens(snapshot);
       const pages = svgPageNames(snapshot);
+      if (node.storage === 'local') {
+        // Start every permission request before the first await so an explicit
+        // Exit/Ctrl+S gesture remains eligible to open the browser prompt.
+        const permissions = [requireWrite(handle, requestWrite)];
+        const mayCreateSibling = [...tokens].some((token) => !savedTokens.has(token) || requestedCreates.has(token)) ||
+          [...pages].some((name) => !savedPages.has(name) || newDrawings.has(name));
+        const parent = parentId(node);
+        const cached = parent === ROOT ? undefined : workspace.cachedHandle(parent);
+        if (mayCreateSibling && cached?.kind === 'directory') permissions.push(requireWrite(cached, requestWrite));
+        await Promise.all(permissions);
+      }
       if (tokens.size || pages.size || Object.keys(workspace.data.wiki?.[node.id] ?? {}).length) {
         const prepared = await prepareWikiSave(workspace, node, handle, tokens, tokens.size ? await catalog() : [],
-          (token) => !savedTokens.has(token) || requestedCreates.has(token));
+          (token) => !savedTokens.has(token) || requestedCreates.has(token), requestWrite);
         let svg: Awaited<ReturnType<typeof prepareSvgPages>> | undefined;
         try {
-          svg = await prepareSvgPages(workspace, node, handle, pages, (name) => !savedPages.has(name) || newDrawings.has(name));
+          svg = await prepareSvgPages(workspace, node, handle, pages,
+            (name) => !savedPages.has(name) || newDrawings.has(name), requestWrite);
           await write(snapshot);
         } catch (cause) {
           await svg?.rollback(); await prepared.rollback(); throw cause;
@@ -244,11 +283,19 @@
       requestedCreates.clear();
       savedRevision = version;
       dirty = revision !== savedRevision;
+      waitingForPermission = false;
+      succeeded = true;
+      lastSaveAt = Date.now();
       if (leave && !dirty) await finishExit();
     } catch (cause) {
-      error = storageError(cause);
-      if (exitDialog.open) exitDialog.close();
-    } finally { saving = false; }
+      lastSaveAt = Date.now();
+      if (cause instanceof WritePermissionRequired) waitingForPermission = true;
+      else error = storageError(cause);
+    } finally {
+      saving = false;
+      if (leave && succeeded && dirty) void save(true, true);
+      else if (dirty && !waitingForPermission) scheduleAutosave();
+    }
   }
 
   async function finishExit() {
@@ -262,20 +309,18 @@
       const id = saved ?? findWikiTarget(workspace, node, token, await catalog())?.id;
       if (!id) throw new Error(`No file found for “${token}”. Save the link to create it.`);
       if (id === node.id) {
-        if (exitDialog.open) exitDialog.close();
         return;
       }
       await onOpenLink(id);
     } catch (cause) {
       error = storageError(cause);
-      if (exitDialog.open) exitDialog.close();
     } finally { followingLink = false; }
   }
 
   function leaveEditor(token?: string) {
-    if (saving || followingLink || exitDialog.open || inlineDrawing) return;
+    if (saving || followingLink || inlineDrawing) return;
     nextLink = token;
-    if (dirty) exitDialog.showModal();
+    if (dirty) void save(true, true);
     else void finishExit();
   }
 
@@ -292,10 +337,10 @@
     if (vimMode && key === 'f' && event.ctrlKey) return;
     event.preventDefault();
     event.stopImmediatePropagation();
-    if (event.repeat || exitDialog.open || exportSource) return;
-    if (key === 'b') insertDrawing();
+    if (event.repeat || exportSource) return;
+    if (key === 'b') void insertDrawing();
     else if (key === 'escape') requestExit();
-    else if (key === 's') void save();
+    else if (key === 's') void save(false, true);
     else find();
   }
 
@@ -319,8 +364,16 @@
     };
   }
 
+  $effect(() => {
+    autosaveMs;
+    dirty;
+    if (dirty && !waitingForPermission) scheduleAutosave();
+    else if (!dirty) clearAutosave();
+  });
+
   onMount(() => {
     active = true;
+    lastSaveAt = Date.now();
     let pageResize: ResizeObserver | undefined;
     window.addEventListener('keydown', shortcuts, true);
     const beforeUnload = (event: BeforeUnloadEvent) => {
@@ -350,7 +403,6 @@
         if (!active) return;
         savedTokens = wikiTokens(doc);
         savedPages = svgPageNames(doc);
-        writable = node.storage === 'browser' || (await handle.queryPermission({ mode: 'readwrite' }).catch(() => 'prompt')) === 'granted';
         if (!active) return;
         view = new EditorView({
           parent: container,
@@ -379,7 +431,7 @@
             ]),
             EditorView.updateListener.of((update) => {
               if (!update.docChanged) return;
-              revision++; dirty = true;
+              revision++; dirty = true; waitingForPermission = false;
               queueMicrotask(refreshDrawingPreviews);
             }),
             EditorView.theme({
@@ -404,7 +456,7 @@
         const gutter = view.dom.querySelector('.cm-gutters');
         if (gutter) pageResize.observe(gutter);
         measurePage();
-        if (vimMode) vimSaves.set(view, () => { void save(); });
+        if (vimMode) vimSaves.set(view, () => { void save(false, true); });
         loading = false;
         refreshDrawingPreviews();
         view.focus();
@@ -416,6 +468,7 @@
     })();
     return () => {
       active = false;
+      clearAutosave();
       pageResize?.disconnect();
       catalogController.abort();
       window.removeEventListener('keydown', shortcuts, true);
@@ -432,37 +485,29 @@
   {#if !inlineDrawing}
   <div class="editor-controls" role="group" aria-label="Editor toolbar">
     <button type="button" aria-keyshortcuts="Control+Escape" onclick={requestExit} disabled={saving}>Exit<span class="shortcut-hint" aria-hidden="true">Ctrl+Esc</span></button>
-    <button type="button" aria-keyshortcuts="Control+S" onclick={() => save()} disabled={loading || saving}>Save<span class="shortcut-hint" aria-hidden="true">Ctrl+S</span></button>
     <button type="button" aria-keyshortcuts={vimMode ? undefined : 'Control+F'} aria-label="Find and replace" onclick={find} disabled={loading}><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="10" cy="10" r="6" /><path d="m14.5 14.5 5 5" /></svg>{#if !vimMode}<span class="shortcut-hint" aria-hidden="true">Ctrl+F</span>{/if}</button>
-    <button type="button" onclick={insertDrawing} disabled={loading || saving} aria-keyshortcuts="Meta+B">Brush<span class="shortcut-hint" aria-hidden="true">Command+B</span></button>
+    <button type="button" onclick={() => { void insertDrawing(); }} disabled={loading || saving} aria-keyshortcuts="Meta+B">Brush<span class="shortcut-hint" aria-hidden="true">Command+B</span></button>
     <button type="button" onclick={() => openExport()} disabled={loading}>Export</button>
   </div>
   {/if}
   {#if inlineDrawing}
-    <DrawingEditor {stylusOnly} name={inlineDrawing.page.name} initial={inlineDrawing.resource?.strokes ?? []}
-      surfaceTarget={inlineDrawing.host}
-      onExport={(strokes) => openExport(strokes)} onSave={saveInlineDrawing} onExit={closeInlineDrawing} />
+    <div class="inline-drawing-controller">
+      <DrawingEditor {stylusOnly} {autosaveMs} name={inlineDrawing.page.name} initial={inlineDrawing.resource?.strokes ?? []}
+        surfaceTarget={inlineDrawing.host}
+        onExport={(strokes) => openExport(strokes)} onSave={saveInlineDrawing} onExit={closeInlineDrawing} />
+    </div>
   {/if}
   <h1>{node.name}</h1>
   <p class="muted" role="status" aria-live="polite">
     {#if loading}loading text…{loadedBytes ? ` ${Math.round(loadedBytes / 1024)} KB` : ''}
     {:else if saving}saving…
+    {:else if waitingForPermission}autosave is waiting for write permission; exit to save
     {:else if dirty}unsaved changes
     {:else if !error}saved {node.storage === 'browser' ? 'in browser storage' : 'on your computer'}{/if}
   </p>
   {#if error}<p class="notice" role="alert">{error}</p>{/if}
   <div class="editor-container" bind:this={container}></div>
 </div>
-
-<dialog class="local-picker editor-exit" bind:this={exitDialog} aria-labelledby="editor-exit-title"
-  oncancel={(event) => { if (saving) event.preventDefault(); }}>
-  <h2 id="editor-exit-title">{nextLink ? 'Save changes before opening the link?' : 'Save changes before exiting?'}</h2>
-  <div class="editor-controls">
-    <button type="button" onclick={() => save(true)} disabled={saving}>{nextLink ? 'Save and open' : 'Save and exit'}</button>
-    <button type="button" onclick={finishExit} disabled={saving}>Don’t save</button>
-    <button type="button" onclick={() => exitDialog.close()} disabled={saving}>Cancel</button>
-  </div>
-</dialog>
 
 {#if exportSource}
   <ExportDialog source={exportSource} onClose={() => { exportSource = undefined; }} />

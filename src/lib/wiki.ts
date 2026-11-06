@@ -85,9 +85,19 @@ export async function containingFolder(workspace: Workspace, node: StateNode, fi
   throw new Error('Connect the file’s containing folder in App settings before creating a sibling or renaming this file.');
 }
 
-export async function requireWrite(handle: FileSystemHandle | LocalFile) {
+export class WritePermissionRequired extends Error {
+  constructor() { super('Autosave is waiting for write permission. Exit the editor to save.'); }
+}
+
+export async function requireWrite(handle: FileSystemHandle | LocalFile, request = true) {
   const permission = handle as LocalFile;
-  if (await permission.requestPermission({ mode: 'readwrite' }) !== 'granted') throw new Error('Write permission was not granted.');
+  const state = request
+    ? await permission.requestPermission({ mode: 'readwrite' })
+    : await permission.queryPermission({ mode: 'readwrite' });
+  if (state !== 'granted') {
+    if (!request) throw new WritePermissionRequired();
+    throw new Error('Write permission was not granted. Your edits are still open.');
+  }
 }
 
 export async function assertAvailable(folder: FileSystemDirectoryHandle, name: string, except?: string) {
@@ -109,7 +119,7 @@ export async function connectSibling(workspace: Workspace, source: StateNode, ha
 
 export async function prepareWikiSave(
   workspace: Workspace, source: StateNode, file: LocalFile, tokens: Set<string>, catalog: StateNode[],
-  canCreate: (token: string) => boolean
+  canCreate: (token: string) => boolean, requestWrite = true
 ) {
   catalog = [...catalog];
   const targets: Record<string, string> = Object.create(null);
@@ -140,7 +150,7 @@ export async function prepareWikiSave(
         if (!validFilename(token)) throw new Error(`Cannot create “${token}”. Use a filename without a path or choose an existing file.`);
         if (!folder) {
           folder = await containingFolder(workspace, source, file);
-          if (source.storage === 'local') await requireWrite(folder);
+          if (source.storage === 'local') await requireWrite(folder, requestWrite);
         }
         await assertAvailable(folder, token);
         const handle = await folder.getFileHandle(token, { create: true });

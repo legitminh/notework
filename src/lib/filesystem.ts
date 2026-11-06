@@ -4,6 +4,8 @@ export interface HandleBase {
   isSameEntry(other: LocalHandle): Promise<boolean>;
   queryPermission(options: { mode: 'read' | 'readwrite' }): Promise<PermissionState>;
   requestPermission(options: { mode: 'read' | 'readwrite' }): Promise<PermissionState>;
+  /** Direct removal is newer and not available in every File System Access implementation. */
+  remove?(options?: { recursive?: boolean }): Promise<void>;
 }
 export interface LocalFile extends HandleBase {
   kind: 'file';
@@ -12,11 +14,13 @@ export interface LocalFile extends HandleBase {
 export interface LocalDirectory extends HandleBase {
   kind: 'directory';
   values(): AsyncIterableIterator<LocalHandle>;
-  getDirectoryHandle(name: string): Promise<LocalDirectory>;
-  getFileHandle(name: string): Promise<LocalFile>;
+  getDirectoryHandle(name: string, options?: { create?: boolean }): Promise<LocalDirectory>;
+  getFileHandle(name: string, options?: { create?: boolean }): Promise<LocalFile>;
+  removeEntry(name: string, options?: { recursive?: boolean }): Promise<void>;
   resolve(handle: LocalHandle): Promise<string[] | null>;
 }
 export type LocalHandle = LocalFile | LocalDirectory;
+export interface LocalSelection { handle: LocalHandle; parent?: LocalDirectory }
 export const isMissing = (error: unknown) => error instanceof DOMException && error.name === 'NotFoundError';
 
 declare global {

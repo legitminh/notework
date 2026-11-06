@@ -15,7 +15,7 @@ New browser documents work in browsers with OPFS support. Connecting existing ma
 
 ## Navigation and selection
 
-Every state starts with **search**, a divider, then **app settings** at home or **configure folder/file** and **..** elsewhere, followed by its outgoing state buttons. The state display sits underneath. Home is the virtual root folder: its children can come from different machine sources and browser storage. Home and other folders share the same creation screen.
+Every state starts with non-navigation tools above a divider: **search**, then **app settings** at home or **configure folder/file** elsewhere. Below the divider are graph-navigation actions: a house icon for home, **..**, and outgoing state buttons. The state display sits underneath. Home is the virtual root folder: its children can come from different machine sources and browser storage. Home and other folders share the same creation screen.
 
 In app settings, **add existing folder/file** opens one local chooser. Drop mixed files/folders and the app identifies their handles automatically. Or use **browse location…**, grant read access to a folder in the OS dialog, and select files or folders inside it. Browser APIs do not provide one mixed native OS picker. The browsing location is temporary; only confirmed item handles are remembered. Cancelling adds nothing.
 
@@ -32,8 +32,8 @@ Readable files use the plain-text CodeMirror editor unless they are Notework dra
 - Undo/redo and Ctrl/Cmd-F search use standard editor bindings.
 - **App settings → Appearance → Vim mode** enables standard Vim editing keys and is off by default. In Vim mode, `:w` saves, Esc returns to Normal mode, and Ctrl+F pages forward; use the magnifying glass for Find and Replace.
 - Selecting a file keeps navigation available. **Open** switches to an isolated editor with a horizontal toolbar that scrolls with the page.
-- **Exit** (Ctrl+Esc), **Save** (Ctrl+S), **Find and replace** (Ctrl+F), and **Export** are the toolbar actions. The shortcut labels appear on hover.
-- Saves are explicit. Machine files request write permission on Save. Leaving with unsaved changes offers **Save and exit**, **Don’t save**, or **Cancel**. If saving fails, the editor keeps your edits so you can retry or export them.
+- **Exit** (Ctrl+Esc), **Find and replace** (Ctrl+F), **Brush**, and **Export** are the text toolbar actions. The shortcut labels appear on hover. There is no Save button.
+- Text and SVG files autosave after changes, at most once per the interval configured in **App settings → Autosave** (4 seconds by default). Exit always finishes saving before returning to navigation. A machine file only prompts for write permission from an explicit exit or save shortcut; if saving fails, the editor stays open with the edits available for retry or export. Ctrl+S and Vim `:w` remain available as immediate saves.
 
 The editor virtualizes its viewport and streams text reads/writes instead of rendering a collection or converting an entire collection into one string. There is no former 2 MB preview truncation. A multi-megabyte/60,000-line document is covered by browser tests. A single open document still uses editor memory, so capacity is not unlimited.
 
@@ -45,21 +45,21 @@ In a browser, **Download PDF** uses the browser’s regular download destination
 
 ## Wiki links and rename
 
-Type `[[` in the editor to see matching files. Use the arrow keys and Enter to pick a file or **create: filename**. You can also type the link directly. Save creates any new targets beside the source file and makes the links available as outgoing navigation buttons. Removing a link and saving removes its transition. Discarding edits creates no files or transitions.
+Type `[[` in the editor to see matching files. Use the arrow keys and Enter to pick a file or **create: filename**. You can also type the link directly. Autosave creates any new targets beside the source file and makes the links available as outgoing navigation buttons. Removing a link removes its transition on the next autosave.
 
 Use **Configure file → rename** or **Configure folder → rename** in navigation mode. Folder rename updates descendant paths, resource URIs, graph transitions, and saved links to those descendants. SVG directive filenames are updated when the drawing is renamed. The editor toolbar is reserved for editing. For machine files, grant write access to the containing folder. Creating siblings and updating machine-file backlinks may prompt for write permission.
 
 ## Drawings
 
-Use **Brush** (Command+B) while editing text to insert a movable `\svgpage[filename.svg]` line. Move the caret off the line to see the drawing, then click it to draw inline. The drawing toolbar supports brush, whole-stroke erasing, undo, redo, and explicit save. Exit returns to the open text draft. Save the text to make the drawing an outgoing navigation target, where it can also be opened on its own.
+Use **Brush** (Command+B) while editing text to insert a movable `\svgpage[filename.svg]` line. Move the caret off the line to see the drawing, then click it to draw inline. The drawing toolbar supports brush, whole-stroke erasing, undo, redo, autosave, and export. Exit saves and returns to the open text draft. The text autosave makes the drawing an outgoing navigation target, where it can also be opened on its own.
 
-Drawings are sibling SVG files in the note’s own storage: a local note creates a local SVG beside it, and a browser note creates an SVG in the same OPFS folder. Saving a local drawing requests write permission. Existing browser drawings from older versions remain accessible through their directed links. Drawing pages fit the available text page width, capped at 32 min-boxes. Both axes and stroke widths scale together when the screen rotates. One extra working page is 16 min-boxes tall at full page width and scales proportionally on smaller screens. Saves contain only the area used.
+Drawings are sibling SVG files in the note’s own storage: a local note creates a local SVG beside it, and a browser note creates an SVG in the same OPFS folder. A local drawing may request write permission when Brush creates it or when the editor exits. Existing browser drawings from older versions remain accessible through their directed links. Drawing pages fit the available text page width, capped at 32 min-boxes. Both axes and stroke widths scale together when the screen rotates. One extra working page is 16 min-boxes tall at full page width and scales proportionally on smaller screens. Saves contain only the area used.
 
 In a drawing, tap with **two fingers** to undo and **three fingers** to redo. Drag with two fingers to scroll, or pinch to zoom. Adding a second finger cancels the tentative drawing stroke. **App settings → draw with only physical stylus** is disabled by default and persists across reloads. When enabled, fingers use native scrolling/zooming and only pen input draws or erases; toolbar buttons still work with any input device.
 
 ## Create files and folders
 
-Home and folders share a **create new file/folder** action in their state display. Home is a virtual parent that holds items from multiple sources, with no filesystem folder of its own. App settings manages connected sources and preferences. The separate creation screen accepts a name and previews the path for each available type: folder, text file, or SVG drawing. Choose a creation action to open the new state in navigation mode. Existing names are rejected without changing their contents.
+Home exposes **create new file/folder** inside app settings; physical and browser folders expose it inside **configure folder**, alongside **refresh folder**. Home is a virtual parent that holds items from multiple sources, with no filesystem folder of its own. App settings manages connected sources and preferences. The separate creation screen accepts a name and previews the path for each available type: folder, text file, or SVG drawing. Choose a creation action to open the new state in navigation mode. Existing names are rejected without changing their contents.
 
 New assets inherit the parent folder’s storage. Inside a selected machine folder, Create requests write permission and writes directly into that folder. Inside a browser folder, Create writes an actual OPFS child. Root has no backing folder, so new root assets use OPFS. Denied local write access never falls back to browser storage. Directed links may point across storage sources; they do not create child or parent relationships. Older browser-backed virtual children are preserved as explicit links without moving their files. The available actions come from `src/lib/asset-types.ts`; adding a supported type there adds its creation action and initializer.
 
@@ -74,7 +74,7 @@ Creating a resource at home allocates its contents in OPFS before committing a c
 
 Missing resources are checked on startup, navigation/refresh, window focus, and every five seconds while the app is visible. Confirmed missing files/folders, descendants, incoming/outgoing edges, root shortcuts, and caches are pruned and the cleaned graph is saved. If the active resource disappears, navigation returns home. A denied permission or quota error does not count as deletion. OS changes between checks can only be discovered at the next check.
 
-**Configure file** and **Configure folder** let you permanently delete browser-stored resources after confirmation. Deleting a browser folder removes its contents and their graph entries. Use your system file manager to delete machine resources. Removing a root shortcut never deletes the original resource. Clearing site data removes the browser graph and OPFS documents. Data belongs to the current browser profile and origin (scheme, host, and port); it does not automatically sync to another device or origin.
+**Configure file** and **Configure folder** permanently delete browser or machine resources after confirmation. For machine resources, Notework requests write permission on the explicit Delete action and removes the entry through its retained physical parent; folder deletion is recursive. Parent handles selected through the picker persist across reloads. If an older or dropped top-level handle has neither a retained parent nor direct-removal support, reconnect it through its containing folder first. Filesystem deletion completes before descendants, incoming/outgoing edges, formats, and cached handles are pruned from the graph; a denial or failure leaves graph metadata intact. Removing a root shortcut never deletes the original resource. Clearing site data removes the browser graph and OPFS documents. Data belongs to the current browser profile and origin (scheme, host, and port); it does not automatically sync to another device or origin.
 
 ## Installed/offline app
 

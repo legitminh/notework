@@ -52,8 +52,8 @@ async function writeDrawing(handle: LocalFile, strokes: Drawing, storage: 'local
   await writeResourceContent(handle, storage, [serializeDrawing(strokes)]);
 }
 
-export async function saveDrawing(resource: DrawingResource, strokes: Drawing) {
-  if (resource.storage === 'local') await requireWrite(resource.handle);
+export async function saveDrawing(resource: DrawingResource, strokes: Drawing, requestWrite = true) {
+  if (resource.storage === 'local') await requireWrite(resource.handle, requestWrite);
   const latest = await resource.handle.getFile();
   if (latest.lastModified !== resource.file.lastModified || latest.size !== resource.file.size) {
     throw new Error('The SVG changed outside the editor. Reopen it before saving.');
@@ -63,11 +63,11 @@ export async function saveDrawing(resource: DrawingResource, strokes: Drawing) {
 }
 
 async function stageSibling(
-  workspace: Workspace, source: StateNode, file: LocalFile, name: string, strokes: Drawing
+  workspace: Workspace, source: StateNode, file: LocalFile, name: string, strokes: Drawing, requestWrite = true
 ) {
   if (!validFilename(name) || !name.toLowerCase().endsWith('.svg')) throw new Error('A drawing must be an SVG filename in this folder.');
   const folder = await containingFolder(workspace, source, file);
-  if (source.storage === 'local') await requireWrite(folder);
+  if (source.storage === 'local') await requireWrite(folder, requestWrite);
   await assertAvailable(folder, name);
   const handle = await folder.getFileHandle(name, { create: true }) as unknown as LocalFile;
   let id: string | undefined;
@@ -83,15 +83,16 @@ async function stageSibling(
 }
 
 export async function saveSiblingDrawing(
-  workspace: Workspace, source: StateNode, file: LocalFile, name: string, strokes: Drawing
+  workspace: Workspace, source: StateNode, file: LocalFile, name: string, strokes: Drawing, requestWrite = true
 ) {
-  const staged = await stageSibling(workspace, source, file, name, strokes);
+  const staged = await stageSibling(workspace, source, file, name, strokes, requestWrite);
   try { await saveWorkspace(workspace.data); return staged.resource; }
   catch (error) { await staged.rollback(); throw error; }
 }
 
 export async function prepareSvgPages(
-  workspace: Workspace, source: StateNode, file: LocalFile, names: Set<string>, canCreate: (name: string) => boolean
+  workspace: Workspace, source: StateNode, file: LocalFile, names: Set<string>, canCreate: (name: string) => boolean,
+  requestWrite = true
 ) {
   const targets: Record<string, string> = Object.create(null);
   const staged: Awaited<ReturnType<typeof stageSibling>>[] = [];
@@ -103,7 +104,7 @@ export async function prepareSvgPages(
       const existing = await loadSiblingDrawing(workspace, source, file, name);
       if (existing) targets[name] = (await connectSibling(workspace, source, existing.handle)).id;
       else if (canCreate(name)) {
-        const item = await stageSibling(workspace, source, file, name, []);
+        const item = await stageSibling(workspace, source, file, name, [], requestWrite);
         staged.push(item);
         targets[name] = item.id;
       }

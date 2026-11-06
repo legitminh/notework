@@ -14,6 +14,11 @@ const errors = new WeakMap<Page, string[]>();
 const toolbar = (page: Page, name: string) =>
   page.getByRole('group', { name: 'Editor toolbar' }).getByRole('button', { name, exact: true });
 const openEditor = (page: Page) => button(page, 'open').click();
+const forceSave = (page: Page) => page.keyboard.press('ControlOrMeta+s');
+async function startCreate(page: Page) {
+  await page.locator('[data-action="configure folder"] button, [data-action="app settings"] button').click();
+  await button(page, 'create new file/folder').click();
+}
 
 
 test.beforeEach(async ({ page }) => {
@@ -144,11 +149,12 @@ test('empty home, exact navigation order, native scrolling, and keyboard activat
   expect(await page.locator('nav [data-action]').evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-action')))).toEqual(['search', 'app settings']);
   await expect(page.locator('nav hr')).toHaveCount(1);
   await expect(page.getByRole('region', { name: 'current state' }).getByRole('heading', { name: 'home' })).toBeVisible();
-  await expect(button(page, 'create new file/folder')).toBeEnabled();
+  await expect(button(page, 'create new file/folder')).toHaveCount(0);
   await expect(page.locator('.viewport')).toHaveCSS('overflow-y', 'auto');
   const shortcut = await button(page, 'app settings').locator('.pending_route').textContent();
   await page.keyboard.press(shortcut!.trim());
   await expect(page.getByRole('heading', { name: 'app settings' })).toBeVisible();
+  await expect(button(page, 'create new file/folder')).toBeEnabled();
   await page.evaluate(() => sessionStorage.setItem('notework:keyflow:lockstep_scrolling', 'true'));
   await page.reload();
   await expect(button(page, 'app settings')).toBeEnabled();
@@ -160,7 +166,12 @@ test('folder direct children, file display, parent navigation, and browser back'
   await connectDocuments(page);
   await button(page, 'Documents/').click();
   await expect(button(page, 'Adobe/')).toBeVisible();
-  expect(await page.locator('nav [data-action]').evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-action')))).toEqual(['search', 'configure folder', '..', 'Adobe/', 'readme.txt', 'semantic proto-role inferences.pdf']);
+  expect(await page.locator('nav [data-action]').evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-action')))).toEqual(['search', 'configure folder', 'home', '..', 'Adobe/', 'readme.txt', 'semantic proto-role inferences.pdf']);
+  await expect(button(page, 'home').locator('svg')).toHaveCount(1);
+  await expect(button(page, 'home')).toHaveAccessibleName(/home$/);
+  await button(page, 'home').click();
+  await expect(page.getByRole('heading', { name: 'home', exact: true })).toBeVisible();
+  await button(page, 'Documents/').click();
   await button(page, 'Adobe/').click();
   await expect(button(page, 'notes.txt')).toBeVisible();
   await button(page, 'notes.txt').click();
@@ -468,6 +479,7 @@ test('missing files show recovery feedback and folder refresh discovers changes'
     await documents.removeEntry('readme.txt');
     await documents.getDirectoryHandle('New folder', { create: true });
   });
+  await button(page, 'configure folder').click();
   await button(page, 'refresh folder').click();
   await expect(button(page, 'New folder/')).toBeVisible();
   await expect(button(page, 'readme.txt')).toHaveCount(0);
@@ -505,7 +517,7 @@ test('storage failure stays usable and reports that connections are not saved', 
 });
 
 async function createNote(page: Page, name: string) {
-  await button(page, 'create new file/folder').click();
+  await startCreate(page);
   await page.getByLabel('name', { exact: true }).fill(name);
   await button(page, 'create text file').click();
   await openEditor(page);
@@ -525,7 +537,7 @@ async function storedGraph(page: Page) {
   });
 }
 
-test('new notes have OPFS URIs, code-style tabs/brackets, explicit save, and reload persistence', async ({ page }) => {
+test('new notes have OPFS URIs, code-style tabs/brackets, save on exit, and reload persistence', async ({ page }) => {
   await createNote(page, 'ideas.txt');
   const field = page.getByRole('textbox', { name: 'Edit ideas.txt', exact: true });
   await field.click();
@@ -538,8 +550,6 @@ test('new notes have OPFS URIs, code-style tabs/brackets, explicit save, and rel
   await page.keyboard.press('Tab');
   await page.keyboard.type('nested');
   await page.keyboard.press('Control+Escape');
-  const prompt = page.getByRole('dialog', { name: 'Save changes before exiting?' });
-  await prompt.getByRole('button', { name: 'Save and exit' }).click();
   await expect(button(page, 'open')).toBeVisible();
   await button(page, '..').click();
   await expect(button(page, 'ideas.txt')).toBeVisible();
@@ -571,7 +581,7 @@ test('long lines wrap by default without changing saved text, and settings can t
   await expect(editor).toHaveClass(/cm-lineWrapping/);
   const overflows = () => scroller.evaluate((element) => element.scrollWidth > element.clientWidth + 1);
   await expect.poll(overflows).toBe(false);
-  await toolbar(page, 'Save').click();
+  await forceSave(page);
   await expect(page.getByText('saved in browser storage', { exact: true })).toBeVisible();
   await toolbar(page, 'Exit').click();
   await button(page, '..').click();
@@ -629,10 +639,11 @@ test('optional Vim mode persists, handles normal commands, and saves with :w', a
   await expect(button(page, 'vim sibling.txt')).toBeVisible();
 });
 
-test('editor toolbar isolates navigation and supports find, replace, save, and clean exit', async ({ page }) => {
+test('editor toolbar omits Save, isolates navigation, and supports find, replace, and saving exit', async ({ page }) => {
   await createNote(page, 'toolbar.txt');
   await expect(page.getByRole('navigation', { name: 'state navigation' })).toHaveCount(0);
-  for (const [name, shortcut] of [['Exit', 'Ctrl+Esc'], ['Save', 'Ctrl+S'], ['Find and replace', 'Ctrl+F']]) {
+  await expect(toolbar(page, 'Save')).toHaveCount(0);
+  for (const [name, shortcut] of [['Exit', 'Ctrl+Esc'], ['Find and replace', 'Ctrl+F']]) {
     const control = toolbar(page, name);
     const hint = control.getByText(shortcut, { exact: true });
     await expect(hint).toBeHidden();
@@ -656,7 +667,40 @@ test('editor toolbar isolates navigation and supports find, replace, save, and c
   await expect(page.getByRole('heading', { name: 'toolbar.txt' })).toBeVisible();
 });
 
-test('machine text files become writable only after explicit Save and preserve UTF-16', async ({ page }) => {
+test('text and SVG files autosave at the configured maximum frequency', async ({ page }) => {
+  await button(page, 'app settings').click();
+  const interval = page.getByLabel('autosave at most every (seconds)', { exact: true });
+  await expect(interval).toHaveValue('4');
+  await interval.fill('1');
+  await button(page, 'close app settings').click();
+
+  await createNote(page, 'automatic.txt');
+  await expect(toolbar(page, 'Save')).toHaveCount(0);
+  await page.keyboard.insertText('saved by timer');
+  await expect(page.getByText('unsaved changes', { exact: true })).toBeVisible();
+  await expect(page.getByText('saved in browser storage', { exact: true })).toBeVisible({ timeout: 2500 });
+  await toolbar(page, 'Exit').click(); await button(page, '..').click();
+
+  await startCreate(page);
+  await page.getByLabel('name', { exact: true }).fill('automatic.svg');
+  await button(page, 'create svg file').click(); await openEditor(page);
+  const tools = page.getByRole('group', { name: 'Drawing toolbar' });
+  await expect(tools.getByRole('button', { name: 'Save', exact: true })).toHaveCount(0);
+  const canvas = page.getByRole('img', { name: 'Drawing canvas for automatic.svg' });
+  const box = (await canvas.boundingBox())!;
+  await page.mouse.move(box.x + 30, box.y + 30); await page.mouse.down();
+  await page.mouse.move(box.x + 130, box.y + 90); await page.mouse.up();
+  await expect(page.getByText('unsaved drawing changes', { exact: true })).toBeVisible();
+  await expect(page.getByText('drawing saved', { exact: true })).toBeVisible({ timeout: 2500 });
+  await tools.getByRole('button', { name: 'Exit', exact: true }).click();
+  await page.reload(); await button(page, 'automatic.svg').click(); await openEditor(page);
+  await expect(canvas.locator('polyline')).toHaveCount(1);
+  await tools.getByRole('button', { name: 'Exit', exact: true }).click();
+  await button(page, '..').click(); await button(page, 'app settings').click();
+  await expect(interval).toHaveValue('1');
+});
+
+test('machine text files can request write access from the save shortcut and preserve UTF-16', async ({ page }) => {
   await button(page, 'app settings').click();
   await chooseItems(page, ['utf16.txt']);
   await button(page, 'utf16.txt').click();
@@ -666,7 +710,7 @@ test('machine text files become writable only after explicit Save and preserve U
   await field.click(); await page.keyboard.press('ControlOrMeta+End'); await page.keyboard.insertText('world');
   await expect(page.getByText('unsaved changes', { exact: true })).toBeVisible();
   expect(await page.evaluate(() => localStorage.getItem('test-write-granted'))).toBeNull();
-  await toolbar(page, 'Save').click();
+  await forceSave(page);
   await expect(page.getByText('saved on your computer', { exact: true })).toBeVisible();
   expect(await page.evaluate(() => localStorage.getItem('test-write-granted'))).toBe('yes');
   const bytes = await page.evaluate(async () => {
@@ -678,22 +722,40 @@ test('machine text files become writable only after explicit Save and preserve U
   expect(new TextDecoder('utf-16le').decode(new Uint8Array(bytes))).toBe('Hi\r\nworld');
 });
 
-test('write denial keeps edits available for export or discard without changing the file', async ({ page }) => {
+test('machine-file autosave never prompts in the background and saving Exit acquires permission', async ({ page }) => {
+  await page.evaluate(() => localStorage.setItem('notework:autosave-seconds', '1'));
+  await page.reload();
+  await connectDocuments(page); await button(page, 'Documents/').click(); await button(page, 'readme.txt').click();
+  await openEditor(page);
+  const field = page.getByRole('textbox', { name: 'Edit readme.txt', exact: true });
+  await field.press('ControlOrMeta+End'); await page.keyboard.insertText(' autosaved on exit');
+  await expect(page.getByText('autosave is waiting for write permission; exit to save', { exact: true })).toBeVisible({ timeout: 2500 });
+  expect(await page.evaluate(() => localStorage.getItem('test-write-granted'))).toBeNull();
+  await toolbar(page, 'Exit').click();
+  await expect(button(page, 'open')).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem('test-write-granted'))).toBe('yes');
+  await openEditor(page);
+  await expect(field).toContainText('autosaved on exit');
+});
+
+test('write denial keeps edits open for export and a later saving exit', async ({ page }) => {
   await connectDocuments(page); await button(page, 'Documents/').click(); await button(page, 'readme.txt').click();
   await openEditor(page);
   const field = page.getByRole('textbox', { name: 'Edit readme.txt', exact: true });
   await field.click(); await page.keyboard.press('ControlOrMeta+End'); await page.keyboard.insertText(' unsaved');
   await page.evaluate(() => localStorage.setItem('test-deny-write', 'yes'));
-  await toolbar(page, 'Save').click();
+  await forceSave(page);
   await expect(page.getByRole('alert')).toContainText('Write permission was not granted');
   await expect(field).toContainText('unsaved');
   await expect(toolbar(page, 'Export')).toBeEnabled();
   await toolbar(page, 'Exit').click();
-  const prompt = page.getByRole('dialog', { name: 'Save changes before exiting?' });
-  await prompt.getByRole('button', { name: 'Cancel' }).click();
+  await expect(page.getByRole('dialog', { name: /Save changes/ })).toHaveCount(0);
+  await expect(page.getByRole('alert')).toContainText('Write permission was not granted');
   await expect(field).toContainText('unsaved');
+  await page.evaluate(() => localStorage.removeItem('test-deny-write'));
+  await field.press('ControlOrMeta+z');
   await toolbar(page, 'Exit').click();
-  await prompt.getByRole('button', { name: 'Don’t save' }).click();
+  await expect(button(page, 'open')).toBeVisible();
   await openEditor(page);
   await expect(field).not.toContainText('unsaved');
   await toolbar(page, 'Exit').click();
@@ -752,7 +814,7 @@ test('large notes load without truncation and render only a virtualized viewport
   expect(await page.locator('.cm-line').count()).toBeLessThan(1000);
   await field.click(); await page.keyboard.press('ControlOrMeta+End'); await page.keyboard.insertText('THE END');
   await expect(page.getByRole('group', { name: 'Editor toolbar' })).not.toBeInViewport();
-  await toolbar(page, 'Save').click();
+  await forceSave(page);
   await expect(page.getByText('saved in browser storage', { exact: true })).toBeVisible();
   const file = await page.evaluate(async (id) => {
     const root = await navigator.storage.getDirectory(); const app = await root.getDirectoryHandle('notework');
@@ -774,13 +836,13 @@ test('quota errors preserve edits and graph resources, then saving can be retrie
     localStorage.setItem('test-quota-full', 'yes');
   });
   const field = page.getByRole('textbox', { name: 'Edit quota.txt', exact: true });
-  await field.click(); await page.keyboard.insertText('Keep these edits.'); await toolbar(page, 'Save').click();
+  await field.click(); await page.keyboard.insertText('Keep these edits.'); await forceSave(page);
   await expect(page.getByRole('alert')).toContainText('Browser storage is full');
   await expect(field).toHaveText('Keep these edits.');
   expect((await storedGraph(page)).sources[0].name).toBe('quota.txt');
   await expect(toolbar(page, 'Export')).toBeEnabled();
   await page.evaluate(() => localStorage.removeItem('test-quota-full'));
-  await toolbar(page, 'Save').click();
+  await forceSave(page);
   await expect(page.getByText('saved in browser storage', { exact: true })).toBeVisible();
   await page.reload(); await button(page, 'quota.txt').click(); await openEditor(page); await expect(field).toHaveText('Keep these edits.');
 });
@@ -808,7 +870,7 @@ test('wiki suggestions create a sibling on save and rename updates saved backlin
   await page.keyboard.press('Enter');
   await expect(editor).toHaveText('[[linked.txt]]');
   expect((await storedGraph(page)).sources.map((source) => source.name)).toEqual(['origin.txt']);
-  await toolbar(page, 'Save').click();
+  await forceSave(page);
   await expect(page.getByText('saved in browser storage', { exact: true })).toBeVisible();
   const graph = await storedGraph(page);
   const origin = graph.sources.find((source) => source.name === 'origin.txt')!;
@@ -837,18 +899,18 @@ test('wiki suggestions create a sibling on save and rename updates saved backlin
   await openEditor(page);
   await expect(editor).toHaveText('[[renamed.txt]]');
   await editor.fill('');
-  await toolbar(page, 'Save').click();
+  await forceSave(page);
   await expect(page.getByText('saved in browser storage', { exact: true })).toBeVisible();
   await toolbar(page, 'Exit').click();
   await expect(button(page, 'renamed.txt')).toHaveCount(0);
 });
 
-test('wiki links become clickable outside the caret and protect unsaved edits', async ({ page }) => {
+test('wiki links become clickable outside the caret and save edits before opening', async ({ page }) => {
   await createNote(page, 'click origin.txt');
   const editor = page.getByRole('textbox', { name: 'Edit click origin.txt' });
   const link = editor.locator('.cm-wiki-link');
   await page.keyboard.insertText('[[click target.txt]]\nend');
-  await toolbar(page, 'Save').click();
+  await forceSave(page);
   await expect(page.getByText('saved in browser storage', { exact: true })).toBeVisible();
   await expect(link).toHaveText('[[click target.txt]]');
   await expect(link).toHaveCSS('cursor', 'pointer');
@@ -859,11 +921,6 @@ test('wiki links become clickable outside the caret and protect unsaved edits', 
   await expect(link).toBeVisible();
   await page.keyboard.insertText(' edited');
   await link.click();
-  const prompt = page.getByRole('dialog', { name: 'Save changes before opening the link?' });
-  await prompt.getByRole('button', { name: 'Cancel' }).click();
-  await expect(editor).toContainText('end edited');
-  await link.click();
-  await prompt.getByRole('button', { name: 'Save and open' }).click();
   await expect(page.getByRole('textbox', { name: 'Edit click target.txt' })).toBeVisible();
   await expect(page.getByRole('navigation', { name: 'state navigation' })).toHaveCount(0);
 });
@@ -888,7 +945,7 @@ test('wiki completion uses arrow selection and creates machine-file siblings in 
   await expect(editor).toContainText('[[Documents/readme.txt]]');
   await page.keyboard.press('Enter');
   await page.keyboard.insertText('[[sibling.txt]]');
-  await toolbar(page, 'Save').click();
+  await forceSave(page);
   await expect(page.getByText('saved on your computer', { exact: true })).toBeVisible();
   await toolbar(page, 'Exit').click();
   await expect(button(page, 'sibling.txt')).toBeVisible();
@@ -978,7 +1035,7 @@ test('brush inserts a movable SVG page, swaps the inline toolbar, and saves an e
   await expect(canvas.locator('polyline')).toHaveCount(0);
   await tools.getByRole('button', { name: 'Undo' }).click();
   await expect(canvas.locator('polyline')).toHaveCount(1);
-  await tools.getByRole('button', { name: 'Save', exact: true }).click();
+  await forceSave(page);
   await expect.poll(async () => (await storedGraph(page)).sources.some((source) => source.name === name)).toBe(true);
   await tools.getByRole('button', { name: 'Exit', exact: true }).click();
   await expect(toolbar(page, 'Brush')).toBeVisible();
@@ -994,7 +1051,7 @@ test('brush inserts a movable SVG page, swaps the inline toolbar, and saves an e
 
   // Move the directive as source text, and keep text after it.
   await editor.fill(`after\n\\svgpage[${name}]\nbefore`);
-  await toolbar(page, 'Save').click();
+  await forceSave(page);
   await expect(page.getByText('saved in browser storage', { exact: true })).toBeVisible();
   const graph = await storedGraph(page);
   const note = graph.sources.find((source) => source.name === 'sketch.txt')!;
@@ -1031,7 +1088,7 @@ test('brush inserts a movable SVG page, swaps the inline toolbar, and saves an e
   await expect(page.getByRole('heading', { name })).toBeVisible();
 });
 
-test('saving a drawing for a machine note uses browser storage and appears beside the note', async ({ page }) => {
+test('saving a drawing for a machine note creates and edits a real local SVG sibling', async ({ page }) => {
   await connectDocuments(page);
   await button(page, 'Documents/').click();
   await button(page, 'readme.txt').click();
@@ -1040,29 +1097,34 @@ test('saving a drawing for a machine note uses browser storage and appears besid
   await toolbar(page, 'Brush').click();
   const preview = page.getByRole('button', { name: /^Edit drawing drawing-/ });
   const name = (await preview.getAttribute('aria-label'))!.slice('Edit drawing '.length);
-  await toolbar(page, 'Save').click();
+  await forceSave(page);
   await expect(page.getByText('saved on your computer', { exact: true })).toBeVisible();
   const svg = await page.evaluate(async (name) => {
     const root = await navigator.storage.getDirectory();
     const folder = await root.getDirectoryHandle('Documents');
-    const machineNames: string[] = [];
-    for await (const entry of (folder as unknown as { values(): AsyncIterable<FileSystemHandle> }).values()) machineNames.push(entry.name);
-    if (machineNames.includes(name)) throw new Error('Drawing was written to the machine folder.');
-    const app = await root.getDirectoryHandle('notework');
-    const documents = await app.getDirectoryHandle('documents');
-    for await (const entry of (documents as unknown as { values(): AsyncIterable<FileSystemDirectoryHandle> }).values()) {
-      const file = await entry.getFileHandle(name).catch(() => undefined);
-      if (file) return (await file.getFile()).text();
-    }
-    throw new Error('Drawing was not found in browser storage.');
+    return (await (await folder.getFileHandle(name)).getFile()).text();
   }, name);
   expect(svg).toContain('height="1"');
   expect(svg).not.toContain('<polyline');
   await toolbar(page, 'Exit').click();
   await expect(button(page, name)).toBeVisible();
+  await button(page, name).click(); await openEditor(page);
+  const canvas = page.getByRole('img', { name: 'Drawing canvas for ' + name });
+  await expect(canvas).toBeVisible();
+  const box = (await canvas.boundingBox())!;
+  await page.mouse.move(box.x + 40, box.y + 40); await page.mouse.down();
+  await page.mouse.move(box.x + 150, box.y + 100); await page.mouse.up();
+  const tools = page.getByRole('group', { name: 'Drawing toolbar' });
+  await forceSave(page);
+  await tools.getByRole('button', { name: 'Exit', exact: true }).click();
   await button(page, '..').click();
   await expect(button(page, 'readme.txt')).toBeVisible();
   await expect(button(page, name)).toBeVisible();
+  await page.reload(); await button(page, 'Documents/').click();
+  await button(page, name).click(); await openEditor(page);
+  await expect(canvas.locator('polyline')).toHaveCount(1);
+  const graph = await storedGraph(page);
+  expect(graph.sources.map((source) => [source.name, source.storage])).toEqual([['Documents', 'local']]);
 });
 
 test('Vim j and k land on SVG directives and let you edit them', async ({ page }) => {
@@ -1087,12 +1149,81 @@ test('Vim j and k land on SVG directives and let you edit them', async ({ page }
   await expect(editor.locator('.cm-line').nth(1)).toHaveText('x\\svgpage[sketch.svg]');
 });
 
-test('configure deletes browser files after confirmation and keeps machine resources read-only', async ({ page }) => {
+test('configure deletes local files and folders through their physical parent handles', async ({ page }) => {
   await connectDocuments(page);
   await button(page, 'Documents/').click();
-  await button(page, 'configure folder').click();
-  await expect(button(page, 'delete this folder')).toBeDisabled();
-  await button(page, '..').click();
+  await button(page, 'readme.txt').click(); await button(page, 'configure file').click();
+  await expect(button(page, 'delete this file')).toBeEnabled();
+  await button(page, 'delete this file').click();
+  let dialog = page.getByRole('dialog', { name: 'Delete readme.txt?' });
+  await dialog.getByRole('button', { name: 'Cancel' }).click();
+  await expect(button(page, 'open')).toBeVisible();
+  await button(page, 'delete this file').click();
+  await dialog.getByRole('button', { name: 'Delete file' }).click();
+  await expect(page.getByRole('heading', { name: 'Documents/', exact: true })).toBeVisible();
+  await expect(button(page, 'readme.txt')).toHaveCount(0);
+  expect(await page.evaluate(async () => {
+    const root = await navigator.storage.getDirectory();
+    const documents = await root.getDirectoryHandle('Documents');
+    return documents.getFileHandle('readme.txt').then(() => false, (error: DOMException) => error.name === 'NotFoundError');
+  })).toBe(true);
+
+  await button(page, 'Adobe/').click(); await button(page, 'configure folder').click();
+  await expect(button(page, 'delete this folder')).toBeEnabled();
+  await button(page, 'delete this folder').click();
+  dialog = page.getByRole('dialog', { name: 'Delete Adobe?' });
+  await dialog.getByRole('button', { name: 'Delete folder' }).click();
+  await expect(page.getByRole('heading', { name: 'Documents/', exact: true })).toBeVisible();
+  await expect(button(page, 'Adobe/')).toHaveCount(0);
+  expect(await page.evaluate(async () => {
+    const root = await navigator.storage.getDirectory();
+    const documents = await root.getDirectoryHandle('Documents');
+    return documents.getDirectoryHandle('Adobe').then(() => false, (error: DOMException) => error.name === 'NotFoundError');
+  })).toBe(true);
+  expect((await storedGraph(page)).sources.map((source) => source.name)).toEqual(['Documents']);
+});
+
+test('a directly connected local file retains its parent across reload and can be deleted', async ({ page }) => {
+  await button(page, 'app settings').click(); await chooseFile(page);
+  await page.reload(); await button(page, 'outside.txt').click(); await button(page, 'configure file').click();
+  await expect(button(page, 'delete this file')).toBeEnabled();
+  await page.evaluate(() => localStorage.setItem('test-deny-write', 'yes'));
+  await button(page, 'delete this file').click();
+  let dialog = page.getByRole('dialog', { name: 'Delete outside.txt?' });
+  await dialog.getByRole('button', { name: 'Delete file' }).click();
+  await expect(page.getByRole('alert')).toContainText('Write permission was not granted');
+  await expect(button(page, 'open')).toBeVisible();
+  expect((await storedGraph(page)).sources.map((source) => source.name)).toEqual(['outside.txt']);
+  await page.evaluate(() => localStorage.removeItem('test-deny-write'));
+  await button(page, 'delete this file').click();
+  dialog = page.getByRole('dialog', { name: 'Delete outside.txt?' });
+  await dialog.getByRole('button', { name: 'Delete file' }).click();
+  await expect(button(page, 'app settings')).toBeVisible();
+  expect(await page.evaluate(async () => {
+    const root = await navigator.storage.getDirectory();
+    return root.getFileHandle('outside.txt').then(() => false, (error: DOMException) => error.name === 'NotFoundError');
+  })).toBe(true);
+  await expect.poll(async () => (await storedGraph(page)).sources).toEqual([]);
+});
+
+test('a directly connected local folder can be recursively deleted after reload', async ({ page }) => {
+  await connectDocuments(page);
+  await page.reload(); await button(page, 'Documents/').click(); await button(page, 'configure folder').click();
+  await expect(button(page, 'delete this folder')).toBeEnabled();
+  await button(page, 'delete this folder').click();
+  await page.getByRole('dialog', { name: 'Delete Documents?' }).getByRole('button', { name: 'Delete folder' }).click();
+  await expect(page.getByRole('heading', { name: 'home', exact: true })).toBeVisible();
+  await expect(button(page, 'Documents/')).toHaveCount(0);
+  expect(await page.evaluate(async () => {
+    const root = await navigator.storage.getDirectory();
+    return root.getDirectoryHandle('Documents').then(() => false, (error: DOMException) => error.name === 'NotFoundError');
+  })).toBe(true);
+  const graph = await storedGraph(page);
+  expect(graph.sources).toEqual([]); expect(graph.roots).toEqual([]);
+  expect(Object.values(graph.links).flat()).toEqual([]);
+});
+
+test('configure deletes browser files after confirmation', async ({ page }) => {
   await createNote(page, 'delete-me.txt');
   await toolbar(page, 'Exit').click();
   await button(page, 'configure file').click();
@@ -1104,7 +1235,7 @@ test('configure deletes browser files after confirmation and keeps machine resou
   await dialog.getByRole('button', { name: 'Delete file' }).click();
   await expect(button(page, 'app settings')).toBeVisible();
   await expect(button(page, 'delete-me.txt')).toHaveCount(0);
-  await expect.poll(async () => (await storedGraph(page)).sources.map((source) => source.name)).toEqual(['Documents']);
+  await expect.poll(async () => (await storedGraph(page)).sources).toEqual([]);
 });
 
 test('configure recursively deletes a browser folder and prunes descendant links', async ({ page }) => {
@@ -1158,7 +1289,7 @@ test('configure recursively deletes a browser folder and prunes descendant links
 test('folder creation previews paths and opens new folders, text files, and SVG states', async ({ page }) => {
   await connectDocuments(page);
   await button(page, 'Documents/').click();
-  await button(page, 'create new file/folder').click();
+  await startCreate(page);
   await expect(page.getByRole('navigation', { name: 'state navigation' })).toHaveCount(0);
   await expect(button(page, 'create folder')).toBeDisabled();
   const name = page.getByLabel('name', { exact: true });
@@ -1171,7 +1302,7 @@ test('folder creation previews paths and opens new folders, text files, and SVG 
   await expect(button(page, 'Research/')).toBeVisible();
   await button(page, 'Research/').click();
 
-  await button(page, 'create new file/folder').click();
+  await startCreate(page);
   await name.fill('notes.txt');
   await expect(page.getByLabel('Path for text file', { exact: true })).toHaveText('Documents/Research/notes.txt');
   await button(page, 'create text file').click();
@@ -1179,12 +1310,12 @@ test('folder creation previews paths and opens new folders, text files, and SVG 
   await openEditor(page);
   await expect(page.getByRole('textbox', { name: 'Edit notes.txt' })).toBeFocused();
   await page.keyboard.insertText('A new note');
-  await toolbar(page, 'Save').click();
-  await expect(page.getByText('saved in browser storage', { exact: true })).toBeVisible();
+  await forceSave(page);
+  await expect(page.getByText('saved on your computer', { exact: true })).toBeVisible();
   await toolbar(page, 'Exit').click();
   await button(page, '..').click();
 
-  await button(page, 'create new file/folder').click();
+  await startCreate(page);
   await name.fill('diagram');
   await button(page, 'create svg file').click();
   await expect(page.getByRole('heading', { name: 'diagram.svg', exact: true })).toBeVisible();
@@ -1198,8 +1329,9 @@ test('folder creation previews paths and opens new folders, text files, and SVG 
   expect(await page.evaluate(async () => {
     const root = await navigator.storage.getDirectory();
     const documents = await root.getDirectoryHandle('Documents');
-    return documents.getDirectoryHandle('Research').then(() => false, () => true);
-  })).toBe(true); // Machine folder was never modified.
+    const research = await documents.getDirectoryHandle('Research');
+    return (await (await research.getFileHandle('notes.txt')).getFile()).text();
+  })).toBe('A new note');
   await page.reload();
   await button(page, 'Documents/').click();
   await button(page, 'Research/').click();
@@ -1211,7 +1343,7 @@ test('folder creation previews paths and opens new folders, text files, and SVG 
 test('creation rejects invalid and duplicate names without overwriting existing resources', async ({ page }) => {
   await connectDocuments(page);
   await button(page, 'Documents/').click();
-  await button(page, 'create new file/folder').click();
+  await startCreate(page);
   const name = page.getByLabel('name', { exact: true });
   for (const invalid of ['..', 'one/two', '.git']) {
     await name.fill(invalid);
@@ -1249,7 +1381,7 @@ test('Safari-style non-cloneable OPFS handles support creation, rename, save, an
   await page.reload();
   await createNote(page, 'ipad-first.txt');
   await page.keyboard.insertText('iPad notes');
-  await toolbar(page, 'Save').click();
+  await forceSave(page);
   await expect(page.getByText('saved in browser storage', { exact: true })).toBeVisible();
   await toolbar(page, 'Exit').click();
   await button(page, '..').click();
@@ -1271,20 +1403,20 @@ test('Safari-style non-cloneable OPFS handles support creation, rename, save, an
 });
 
 test('folder configuration rename moves descendants and rewrites links through root and nested renames', async ({ page }) => {
-  await button(page, 'create new file/folder').click();
+  await startCreate(page);
   await page.getByLabel('name', { exact: true }).fill('Project');
   await button(page, 'create folder').click();
-  await button(page, 'create new file/folder').click();
+  await startCreate(page);
   await page.getByLabel('name', { exact: true }).fill('Nested');
   await button(page, 'create folder').click();
-  await button(page, 'create new file/folder').click();
+  await startCreate(page);
   await page.getByLabel('name', { exact: true }).fill('note.txt');
   await button(page, 'create text file').click();
   await openEditor(page);
   const note = page.getByRole('textbox', { name: 'Edit note.txt' });
   await expect(note).toBeVisible();
   await note.fill('Keep this content');
-  await toolbar(page, 'Save').click();
+  await forceSave(page);
   await expect(page.getByText('saved in browser storage', { exact: true })).toBeVisible();
   await toolbar(page, 'Exit').click();
   await button(page, '..').click(); // Nested
@@ -1293,7 +1425,7 @@ test('folder configuration rename moves descendants and rewrites links through r
   await createNote(page, 'index.txt');
   const index = page.getByRole('textbox', { name: 'Edit index.txt' });
   await index.fill('[[Project/Nested/note.txt]]');
-  await toolbar(page, 'Save').click();
+  await forceSave(page);
   await expect(page.getByText('saved in browser storage', { exact: true })).toBeVisible();
   await expect(toolbar(page, 'Rename')).toHaveCount(0);
   await toolbar(page, 'Exit').click();
@@ -1354,7 +1486,7 @@ test('SVG rename in configuration updates the inline directive and its graph tar
   await createNote(page, 'drawing-note.txt');
   const editor = page.getByRole('textbox', { name: 'Edit drawing-note.txt' });
   await editor.fill('\\svgpage[ink.svg]\nText below');
-  await toolbar(page, 'Save').click();
+  await forceSave(page);
   await expect(page.getByText('saved in browser storage', { exact: true })).toBeVisible();
   await toolbar(page, 'Exit').click();
   await button(page, 'ink.svg').click();
@@ -1380,16 +1512,16 @@ test('home is a virtual folder with mixed sources and the shared creation screen
   await button(page, 'app settings').click();
   const settings = page.getByRole('region', { name: 'app settings' });
   await expect(settings.getByText('create document', { exact: true })).toHaveCount(0);
-  await expect(settings.locator('[data-action="create new file/folder"]')).toHaveCount(0);
+  await expect(settings.locator('[data-action="create new file/folder"]')).toHaveCount(1);
   await expect(page.getByLabel('document name', { exact: true })).toHaveCount(0);
   await button(page, 'close app settings').click();
 
-  await button(page, 'create new file/folder').click();
+  await startCreate(page);
   await page.getByLabel('name', { exact: true }).fill('Notebook');
   await expect(page.getByLabel('Path for folder', { exact: true })).toHaveText('home/Notebook/');
   await button(page, 'create folder').click();
   await expect(page.getByRole('heading', { name: 'Notebook/', exact: true })).toBeVisible();
-  await button(page, 'create new file/folder').click();
+  await startCreate(page);
   await page.getByLabel('name', { exact: true }).fill('entry.txt');
   await button(page, 'create text file').click();
   await expect(page.getByRole('heading', { name: 'entry.txt', exact: true })).toBeVisible();
@@ -1455,9 +1587,9 @@ test('drawing pages preserve geometry through rotation, inline preview, and stan
     await squareFits(canvas);
     await expect(canvas.locator('polyline')).toHaveAttribute('points', points!);
   }
-  await tools.getByRole('button', { name: 'Save', exact: true }).click();
+  await forceSave(page);
   await tools.getByRole('button', { name: 'Exit', exact: true }).click();
-  await toolbar(page, 'Save').click();
+  await forceSave(page);
   await expect(page.getByText('saved in browser storage', { exact: true })).toBeVisible();
   for (const viewport of [{ width: 1180, height: 820 }, { width: 820, height: 1180 }]) {
     await page.setViewportSize(viewport);
@@ -1472,7 +1604,7 @@ test('drawing pages preserve geometry through rotation, inline preview, and stan
 
 test('drawing touch gestures undo, redo, pan and zoom; stylus-only mode persists and rejects fingers', async ({ page, context }) => {
   await page.setViewportSize({ width: 820, height: 620 });
-  await button(page, 'create new file/folder').click();
+  await startCreate(page);
   await page.getByLabel('name', { exact: true }).fill('gestures.svg');
   await button(page, 'create svg file').click(); await openEditor(page);
   const canvas = page.getByRole('img', { name: 'Drawing canvas for gestures.svg' });
@@ -1509,7 +1641,7 @@ test('drawing touch gestures undo, redo, pan and zoom; stylus-only mode persists
   await protocol.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   await expect.poll(async () => (await canvas.boundingBox())!.width).toBeGreaterThan(beforeWidth * 1.5);
   await expect(canvas.locator('polyline')).toHaveCount(1);
-  await tools.getByRole('button', { name: 'Save', exact: true }).click();
+  await forceSave(page);
   await tools.getByRole('button', { name: 'Exit', exact: true }).click();
   await button(page, '..').click(); await button(page, 'app settings').click();
   await button(page, 'draw with only physical stylus: disabled').click();
@@ -1545,4 +1677,149 @@ test('drawing touch gestures undo, redo, pan and zoom; stylus-only mode persists
   await protocol.send('Input.dispatchMouseEvent', { type: 'mousePressed', pointerType: 'pen', button: 'left', buttons: 1, ...erase });
   await protocol.send('Input.dispatchMouseEvent', { type: 'mouseReleased', pointerType: 'pen', button: 'left', buttons: 0, ...erase });
   await expect(canvas.locator('polyline')).toHaveCount(1);
+});
+
+test('local creation denial and failed metadata saves leave no child or browser fallback', async ({ page }) => {
+  await connectDocuments(page); await button(page, 'Documents/').click();
+  await startCreate(page);
+  await page.getByLabel('name', { exact: true }).fill('denied.txt');
+  await page.evaluate(() => localStorage.setItem('test-deny-write', 'yes'));
+  await button(page, 'create text file').click();
+  await expect(page.getByRole('alert')).toContainText('Write permission was not granted');
+  async function exists(name: string) {
+    return page.evaluate(async (name) => {
+      const root = await navigator.storage.getDirectory();
+      const folder = await root.getDirectoryHandle('Documents');
+      return folder.getFileHandle(name).then(() => true, () => false);
+    }, name);
+  }
+  expect(await exists('denied.txt')).toBe(false);
+  expect((await storedGraph(page)).sources.map((source) => source.name)).toEqual(['Documents']);
+  await page.evaluate(() => {
+    localStorage.removeItem('test-deny-write');
+    const put = IDBObjectStore.prototype.put;
+    IDBObjectStore.prototype.put = function(value, key) {
+      if (sessionStorage.getItem('test-fail-create-save')) throw new Error('Metadata save failed');
+      return put.call(this, value, key);
+    };
+    sessionStorage.setItem('test-fail-create-save', 'yes');
+  });
+  await page.getByLabel('name', { exact: true }).fill('rolled-back.txt');
+  await button(page, 'create text file').click();
+  await expect(page.getByRole('alert')).toContainText('Metadata save failed');
+  expect(await exists('rolled-back.txt')).toBe(false);
+  await page.evaluate(() => sessionStorage.removeItem('test-fail-create-save'));
+  await button(page, 'cancel creation').click();
+  await expect(button(page, 'rolled-back.txt')).toHaveCount(0);
+  expect((await storedGraph(page)).sources.map((source) => source.name)).toEqual(['Documents']);
+  await expect(button(page, 'readme.txt')).toBeVisible();
+});
+
+test('cross-storage wiki links do not change physical children or parent navigation', async ({ page }) => {
+  await createNote(page, 'browser-target.txt');
+  await page.keyboard.insertText('Browser resource');
+  await forceSave(page);
+  await expect(page.getByText('saved in browser storage', { exact: true })).toBeVisible();
+  await toolbar(page, 'Exit').click(); await button(page, '..').click();
+  await connectDocuments(page); await button(page, 'Documents/').click();
+  await button(page, 'readme.txt').click(); await openEditor(page);
+  const editor = page.getByRole('textbox', { name: 'Edit readme.txt' });
+  await editor.fill('[[browser-target.txt]]'); await forceSave(page);
+  await expect(page.getByText('saved on your computer', { exact: true })).toBeVisible();
+  await toolbar(page, 'Exit').click();
+  await expect(button(page, 'browser-target.txt')).toBeVisible();
+  await button(page, '..').click();
+  await expect(button(page, 'browser-target.txt')).toHaveCount(0);
+  await expect(page.getByText('3 direct children', { exact: false })).toBeVisible();
+  await button(page, 'search').click();
+  await page.getByRole('searchbox').fill('browser-target');
+  await expect(page.locator('.search-status')).toContainText('1 file found');
+  await button(page, 'browser-target.txt').click();
+  await expect(page.getByRole('heading', { name: 'browser-target.txt', exact: true })).toBeVisible();
+  await button(page, '..').click();
+  await expect(page.getByRole('heading', { name: 'home', exact: true })).toBeVisible();
+  expect((await storedGraph(page)).sources.map((source) => [source.name, source.storage])).toEqual([
+    ['browser-target.txt', 'browser'], ['Documents', 'local']
+  ]);
+});
+
+test('legacy browser-backed children become links and retain their original resources', async ({ page }) => {
+  await connectDocuments(page);
+  await createNote(page, 'legacy.txt');
+  await page.keyboard.insertText('Preserve browser bytes'); await forceSave(page);
+  await expect(page.getByText('saved in browser storage', { exact: true })).toBeVisible();
+  await toolbar(page, 'Exit').click(); await expect(button(page, 'open')).toBeVisible();
+  await page.evaluate(async () => {
+    for (const registration of await navigator.serviceWorker.getRegistrations()) await registration.unregister();
+  });
+  await page.goto('about:blank'); await page.goto('/manifest.webmanifest');
+  await page.evaluate(async () => {
+    const db = await new Promise<IDBDatabase>((resolve) => {
+      const request = indexedDB.open('notework', 1); request.onsuccess = () => resolve(request.result);
+    });
+    const data = await new Promise<WorkspaceData>((resolve) => {
+      const request = db.transaction('workspace').objectStore('workspace').get('current'); request.onsuccess = () => resolve(request.result);
+    });
+    const local = data.sources.find((source) => source.storage === 'local')!;
+    const browser = data.sources.find((source) => source.storage === 'browser')!;
+    browser.parent = JSON.stringify([local.id]);
+    data.rootIds = data.rootIds.filter((id) => id !== JSON.stringify([browser.id]));
+    const root = await navigator.storage.getDirectory();
+    const app = await root.getDirectoryHandle('notework');
+    const documents = await app.getDirectoryHandle('documents');
+    const bucket = await documents.getDirectoryHandle('legacy-drawing', { create: true });
+    const drawing = await bucket.getFileHandle('legacy.svg', { create: true });
+    const writer = await drawing.createWritable();
+    await writer.write('<svg xmlns="http://www.w3.org/2000/svg" data-notework-drawing="1" width="1024" height="1" viewBox="0 0 1024 1"><g/></svg>');
+    await writer.close();
+    data.sources.push({ id: 'legacy-svg', storage: 'browser', uri: 'opfs://notework/documents/legacy-drawing/legacy.svg',
+      drawingScope: JSON.stringify([local.id]) } as WorkspaceData['sources'][number]);
+    const folder = local.handle as unknown as FileSystemDirectoryHandle;
+    const readme = await folder.getFileHandle('readme.txt');
+    const readmeWriter = await readme.createWritable();
+    await readmeWriter.write('\\svgpage[legacy.svg]\nLegacy drawing below'); await readmeWriter.close();
+    const note = JSON.stringify([local.id, 'readme.txt']);
+    (data.wiki ??= {})[note] = { 'legacy.svg': JSON.stringify(['legacy-svg']) };
+    data.links[note] = [JSON.stringify(['legacy-svg'])];
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction('workspace', 'readwrite'); tx.objectStore('workspace').put(data, 'current');
+      tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  });
+  await page.goto('/'); await button(page, 'Documents/').click();
+  await expect(button(page, 'legacy.txt')).toBeVisible();
+  await expect(page.getByText('3 direct children · 5 reachable states', { exact: true })).toBeVisible();
+  await button(page, 'legacy.txt').click(); await openEditor(page);
+  await expect(page.getByRole('textbox', { name: 'Edit legacy.txt' })).toHaveText('Preserve browser bytes');
+  await toolbar(page, 'Exit').click(); await button(page, '..').click();
+  await expect(page.getByRole('heading', { name: 'home', exact: true })).toBeVisible();
+  await expect(button(page, 'legacy.txt')).toHaveCount(0);
+  const graph = await storedGraph(page);
+  const local = graph.sources.find((source) => source.storage === 'local')!;
+  const browser = graph.sources.find((source) => source.name === 'legacy.txt')!;
+  expect(browser.storage).toBe('browser'); expect(browser.uri).toMatch(/^opfs:\/\//);
+  expect(graph.links[JSON.stringify([local.id])]).toContain(JSON.stringify([browser.id]));
+  await page.reload(); await button(page, 'Documents/').click();
+  await expect(page.getByText('3 direct children · 5 reachable states', { exact: true })).toBeVisible();
+  await button(page, 'readme.txt').click(); await openEditor(page);
+  await page.getByRole('textbox', { name: 'Edit readme.txt' }).press('ControlOrMeta+End');
+  await page.getByRole('button', { name: 'Edit drawing legacy.svg', exact: true }).click();
+  const canvas = page.getByRole('img', { name: 'Drawing canvas for legacy.svg' });
+  const box = (await canvas.boundingBox())!;
+  await page.mouse.move(box.x + 40, box.y + 40); await page.mouse.down();
+  await page.mouse.move(box.x + 150, box.y + 100); await page.mouse.up();
+  const tools = page.getByRole('group', { name: 'Drawing toolbar' });
+  await forceSave(page);
+  await tools.getByRole('button', { name: 'Exit', exact: true }).click();
+  const resource = await page.evaluate(async () => {
+    const root = await navigator.storage.getDirectory();
+    const local = await root.getDirectoryHandle('Documents');
+    const inLocal = await local.getFileHandle('legacy.svg').then(() => true, () => false);
+    const app = await root.getDirectoryHandle('notework');
+    const documents = await app.getDirectoryHandle('documents');
+    const bucket = await documents.getDirectoryHandle('legacy-drawing');
+    return { inLocal, content: await (await (await bucket.getFileHandle('legacy.svg')).getFile()).text() };
+  });
+  expect(resource.inLocal).toBe(false); expect(resource.content).toContain('<polyline');
 });

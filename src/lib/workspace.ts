@@ -1,4 +1,4 @@
-import { isMissing, type LocalHandle } from './filesystem';
+import { isMissing, type LocalDirectory, type LocalHandle } from './filesystem';
 import { isDrawingFile } from './drawing';
 import { HiddenResource, inspectText, type TextFormat } from './text-resource';
 
@@ -8,6 +8,8 @@ export interface Source {
   handle: LocalHandle;
   storage?: 'local' | 'browser';
   uri?: string;
+  /** Physical parent retained for a machine resource connected directly at home. */
+  physicalParent?: LocalDirectory;
   /** Legacy metadata used only to preserve existing drawing references. */
   drawingScope?: string;
   legacyDrawingScope?: string;
@@ -81,6 +83,7 @@ export class Workspace {
     const source = this.data.sources.find((source) => source.id === sourceId);
     if (!source) { this.forget(id); throw new DOMException('Resource is no longer in the graph.', 'NotFoundError'); }
     let handle = source.handle;
+    this.handles.set(nodeId(sourceId), handle);
     try {
       for (const [i, name] of path.entries()) {
         if (handle.kind !== 'directory') throw new DOMException('The resource parent no longer exists as a folder.', 'NotFoundError');
@@ -98,6 +101,7 @@ export class Workspace {
             handle = await handle.getFileHandle(name);
           }
         }
+        this.handles.set(nodeId(sourceId, path.slice(0, i + 1)), handle);
       }
       await this.validate(id, handle);
       return this.remember(sourceId, path, handle);
@@ -174,6 +178,14 @@ export class Workspace {
   }
 
   cachedHandle(id: string) { return this.handles.get(id); }
+
+  deletionParent(node: StateNode) {
+    if (node.path.length) {
+      const handle = this.handles.get(parentId(node));
+      return handle?.kind === 'directory' ? handle : undefined;
+    }
+    return this.data.sources.find((source) => source.id === node.sourceId)?.physicalParent;
+  }
 
   async fileAliases(file: LocalHandle) {
     const aliases: StateNode[] = [];
@@ -254,12 +266,14 @@ export class Workspace {
     return { nodes: [...nodes.values()], errors };
   }
 
-  async connect(handle: LocalHandle, from: string | null = ROOT, location?: { id: string; uri: string; storage: 'browser' }): Promise<StateNode> {
+  async connect(handle: LocalHandle, from: string | null = ROOT,
+    location?: { id: string; uri: string; storage: 'browser' }, physicalParent?: LocalDirectory): Promise<StateNode> {
     let node: StateNode | undefined;
     // Canonicalize picker selections inside existing grants to prevent duplicate states/cycles.
     for (const source of this.data.sources) {
       try {
         if (await source.handle.isSameEntry(handle)) {
+          if (physicalParent && source.storage !== 'browser') source.physicalParent = physicalParent;
           node = this.remember(source.id, [], handle); break;
         }
         if (source.handle.kind === 'directory') {
@@ -270,7 +284,9 @@ export class Workspace {
     }
     if (!node) {
       const id = location?.id ?? crypto.randomUUID();
-      this.data.sources.push({ id, handle, storage: location?.storage ?? 'local', uri: location?.uri ?? `notework-local://${id}/${encodeURIComponent(handle.name)}` });
+      this.data.sources.push({ id, handle, storage: location?.storage ?? 'local',
+        uri: location?.uri ?? `notework-local://${id}/${encodeURIComponent(handle.name)}`,
+        ...(physicalParent && !location ? { physicalParent } : {}) });
       node = this.remember(id, [], handle);
     }
     if (from !== null) this.link(from, node.id);

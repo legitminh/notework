@@ -7,6 +7,7 @@
   import SearchPanel from '../lib/components/SearchPanel.svelte';
   import CreateAsset from '../lib/components/CreateAsset.svelte';
   import { defaultPdfMargins, readPdfMargins, pdfMarginSides, PDF_MARGINS_KEY, type PdfMarginSide } from '../lib/export-preferences';
+  import { AUTOSAVE_SECONDS_KEY, DEFAULT_AUTOSAVE_SECONDS, MIN_AUTOSAVE_SECONDS, normalizeAutosaveSeconds, readAutosaveSeconds } from '../lib/autosave-preferences';
   import { createAsset } from '../lib/create-asset';
   import type { AssetType } from '../lib/asset-types';
   import TextEditor from '../lib/components/TextEditor.svelte';
@@ -15,9 +16,10 @@
   import LocalPicker from '../lib/components/LocalPicker.svelte';
   import { Workspace, ROOT, nodeId, parentId, type StateNode } from '../lib/workspace';
   import { loadWorkspace, saveWorkspace } from '../lib/persistence';
-  import { deleteBrowserResource, supportsBrowserDocuments, storageInfo, storageError } from '../lib/browser-documents';
+  import { supportsBrowserDocuments, storageInfo, storageError } from '../lib/browser-documents';
+  import { canDeleteResource, deleteResource } from '../lib/delete-resource';
   import { HiddenResource } from '../lib/text-resource';
-  import { supportsFilesystem, explainError, isMissing, type LocalHandle } from '../lib/filesystem';
+  import { supportsFilesystem, explainError, isMissing, type LocalSelection } from '../lib/filesystem';
 
   let workspace = $state.raw(new Workspace());
   let current = $state.raw<StateNode | null>(null);
@@ -38,6 +40,7 @@
   let wrapLines = $state(true);
   let vimMode = $state(false);
   let stylusOnly = $state(false);
+  let autosaveSeconds = $state(DEFAULT_AUTOSAVE_SECONDS);
   let pdfMargins = $state(defaultPdfMargins());
   let graphRevision = $state(0);
   let message = $state('');
@@ -58,6 +61,7 @@
   const canCreateHere = $derived(current?.storage === 'local' ? supported : browserDocuments);
   const source = $derived(workspace.data.sources.find((item) => item.id === current?.sourceId));
   const needsPermission = $derived(source && source.storage !== 'browser' && permissions[source.id] !== 'granted');
+  const canDeleteCurrent = $derived(!!current && canDeleteResource(workspace, current));
 
   onMount(() => {
     try { wrapLines = localStorage.getItem('notework:wrap-lines') !== 'false'; }
@@ -66,6 +70,7 @@
     catch { /* Use the default when storage is unavailable. */ }
     try { stylusOnly = localStorage.getItem('notework:stylus-only') === 'true'; }
     catch { /* Finger drawing remains available when storage is unavailable. */ }
+    autosaveSeconds = readAutosaveSeconds();
     pdfMargins = readPdfMargins();
     supported = supportsFilesystem();
     browserDocuments = supportsBrowserDocuments();
@@ -225,12 +230,12 @@
     if (panel) panelElement?.scrollIntoView({ block: 'start' });
   }
 
-  async function add(handles: LocalHandle[]) {
+  async function add(selections: LocalSelection[]) {
     if (busy || loading) return;
     busy = true; message = '';
     try {
-      for (const handle of handles) {
-        const node = await workspace.connect(handle, ROOT);
+      for (const { handle, parent } of selections) {
+        const node = await workspace.connect(handle, ROOT, undefined, parent);
         const source = workspace.data.sources.find((source) => source.id === node.sourceId)!;
         permissions[node.sourceId] = await source.handle.queryPermission({ mode: 'read' });
       }
@@ -269,6 +274,16 @@
     pdfMargins = { ...pdfMargins, [side]: value };
     try { localStorage.setItem(PDF_MARGINS_KEY, JSON.stringify(pdfMargins)); }
     catch { storageMessage = 'PDF margins work in this tab but could not be saved in browser storage.'; }
+  }
+
+  function updateAutosaveInterval(input: HTMLInputElement) {
+    const value = input.valueAsNumber;
+    const valid = Number.isFinite(value) && value >= MIN_AUTOSAVE_SECONDS;
+    input.setCustomValidity(valid ? '' : `Enter ${MIN_AUTOSAVE_SECONDS} second or longer.`);
+    if (!valid) return;
+    autosaveSeconds = normalizeAutosaveSeconds(value);
+    try { localStorage.setItem(AUTOSAVE_SECONDS_KEY, String(autosaveSeconds)); }
+    catch { storageMessage = 'The autosave interval works in this tab but could not be remembered.'; }
   }
 
   async function startCreating() {
@@ -314,18 +329,18 @@
   }
 
   function confirmDelete() {
-    if (!current || current.storage !== 'browser' || busy) return;
+    if (!current || !canDeleteCurrent || busy) return;
     deleteTarget = current;
     deleteDialog.showModal();
   }
 
   async function deleteCurrent() {
     const node = deleteTarget;
-    if (!node || node.storage !== 'browser' || busy) return;
+    if (!node || busy) return;
     if (currentId !== node.id) { deleteDialog.close(); return; }
     busy = true;
     try {
-      await deleteBrowserResource(await workspace.handle(node.id));
+      await deleteResource(workspace, node);
       workspace.forget(node.id);
       deleteDialog.close();
       const parent = parentId(node);
@@ -361,21 +376,28 @@
       {:else if editing && current}
         {#key current.uri}
           {#if current.drawing}
-            <StandaloneDrawing {pdfMargins} {stylusOnly} {workspace} node={current} onExit={exitEditor} onMissing={() => { void missingCurrent(); }} />
+            <StandaloneDrawing {pdfMargins} {stylusOnly} autosaveMs={autosaveSeconds * 1000} {workspace} node={current} onExit={exitEditor} onMissing={() => { void missingCurrent(); }} />
           {:else}
-            <TextEditor {workspace} node={current} {wrapLines} {vimMode} {stylusOnly} {pdfMargins} onExit={exitEditor}
+            <TextEditor {workspace} node={current} {wrapLines} {vimMode} {stylusOnly} {pdfMargins} autosaveMs={autosaveSeconds * 1000} onExit={exitEditor}
               onMissing={() => { void missingCurrent(); }} onOpenLink={openLinkedFile} />
           {/if}
         {/key}
       {:else}
       <nav aria-label="state navigation">
         <Action label="search" onSelect={() => togglePanel('search')} disabled={loading} />
-        <hr />
         {#if current}
           <Action label={`configure ${resourceType}`} onSelect={() => togglePanel('configure')} />
-          <Action label=".." onSelect={() => navigate(parentId(current!))} />
         {:else}
           <Action label="app settings" onSelect={() => togglePanel('settings')} disabled={loading} />
+        {/if}
+        <hr />
+        {#if current}
+          <Action label="home" iconOnly onSelect={() => navigate(ROOT)}>
+            <svg class="action-icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path d="m3 11 9-8 9 8" /><path d="M5 10v11h14V10" /><path d="M9 21v-7h6v7" />
+            </svg>
+          </Action>
+          <Action label=".." onSelect={() => navigate(parentId(current!))} />
         {/if}
         {#each edges as node (node.id)}
           <Action label={node.name + (node.kind === 'directory' ? '/' : '')} onSelect={() => navigate(node.id)} />
@@ -388,10 +410,6 @@
       {/if}
       {#if storageMessage}<p class="notice" role="status">{storageMessage}</p>{/if}
       {#if message}<p class="notice" role="alert">{message}</p>{/if}
-      {#if needsPermission && current?.kind !== 'file'}
-        <Action label={`reconnect ${source!.handle.name}`} onSelect={() => reconnect(source!.id)} disabled={busy} />
-      {/if}
-
       <div bind:this={panelElement}>
         {#if panel}
           <div class="panel-controls"><Action label={`close ${panel === 'settings' ? 'app settings' : panel === 'configure' ? `configure ${resourceType}` : panel}`} onSelect={() => { panel = null; state_viewport.viewport?.scrollTo({ top: 0 }); }} /></div>
@@ -401,17 +419,25 @@
         {:else if panel === 'configure' && current}
           <section class="panel" aria-labelledby="configure-heading">
             <h2 id="configure-heading">configure {resourceType}</h2>
+            {#if current.kind === 'directory'}
+              <Action label="create new file/folder" onSelect={startCreating} disabled={loading || busy || !canCreateHere} />
+              <Action label="refresh folder" onSelect={() => { message = ''; void refresh(); }} />
+            {/if}
+            {#if needsPermission}
+              <Action label={`reconnect ${source!.handle.name}`} onSelect={() => reconnect(source!.id)} disabled={busy} />
+            {/if}
             <Action label="rename" onSelect={askRename} disabled={busy} />
             <Action label={`delete this ${resourceType}`} onSelect={confirmDelete}
-              disabled={busy || current.storage !== 'browser'} />
-            {#if current.storage !== 'browser'}
-              <p class="muted">Delete this {resourceType} using your system file manager.</p>
+              disabled={busy || !canDeleteCurrent} />
+            {#if !canDeleteCurrent}
+              <p class="muted">Reconnect this {resourceType} through its containing folder to delete it from Notework.</p>
             {/if}
           </section>
         {:else if panel === 'settings'}
           <section class="panel" aria-labelledby="settings-heading">
             <h2 id="settings-heading">app settings</h2>
             <p class="muted">Choose which files and folders are directly reachable from home. Files stay on your computer.</p>
+            <Action label="create new file/folder" onSelect={startCreating} disabled={loading || busy || !canCreateHere} />
             <Action label="add existing folder/file" onSelect={() => { picking = true; }} disabled={!supported || busy} />
 
             {#if capacity}
@@ -459,6 +485,12 @@
             <Action label="smaller type" onSelect={() => min_box.set(Math.max(24, min_box.value - 4))} />
             <Action label="larger type" onSelect={() => min_box.set(Math.min(72, min_box.value + 4))} />
             <p class="muted">Use the colored key labels or click a button. Tab and Enter also work. Scrolling is native.</p>
+            <h3>autosave</h3>
+            <label class="field"><span>autosave at most every (seconds)</span>
+              <input type="number" min={MIN_AUTOSAVE_SECONDS} step="1" value={autosaveSeconds}
+                oninput={(event) => updateAutosaveInterval(event.currentTarget)} />
+            </label>
+            <p class="muted">Default: {DEFAULT_AUTOSAVE_SECONDS} seconds. Exit always saves first. Local files may ask for write access when you exit.</p>
             <h3>PDF export margins</h3>
             <p class="muted" id="pdf-margin-units">Each side defaults to 1 min-box. Set 0 for no margin; fractions are allowed.</p>
             {#each pdfMarginSides as side}
@@ -483,12 +515,6 @@
         {:else}
           <h1>home</h1>
           <p class="path">virtual folder · {edges.length} {edges.length === 1 ? 'item' : 'items'} from connected sources</p>
-        {/if}
-        {#if !current || current.kind === 'directory'}
-          <Action label="create new file/folder" onSelect={startCreating} disabled={loading || busy || !canCreateHere} />
-        {/if}
-        {#if current?.kind === 'directory'}
-          <Action label="refresh folder" onSelect={() => { message = ''; void refresh(); }} />
         {/if}
       </section>
       {/if}

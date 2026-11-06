@@ -11,8 +11,9 @@
   import type { Drawing } from '../drawing';
   import DrawingEditor from './DrawingEditor.svelte';
 
-  let { workspace, node, onExit, onMissing, stylusOnly, pdfMargins }: {
+  let { workspace, node, onExit, onMissing, stylusOnly, pdfMargins, autosaveMs }: {
     stylusOnly: boolean;
+    autosaveMs: number;
     pdfMargins: PdfMargins;
     workspace: Workspace; node: StateNode; onExit: () => void; onMissing: () => void;
   } = $props();
@@ -46,8 +47,8 @@
 
 {#if resource}
   <div bind:this={editor}>
-  <DrawingEditor {stylusOnly} name={node.name} initial={resource.strokes} {onExit} onExport={exportDrawing}
-    onSave={async (strokes) => { resource = await saveDrawing(resource!, strokes); }} />
+  <DrawingEditor {stylusOnly} {autosaveMs} name={node.name} initial={resource.strokes} {onExit} onExport={exportDrawing}
+    onSave={async (strokes, requestWrite) => { resource = await saveDrawing(resource!, strokes, requestWrite); }} />
   </div>
 {:else if error}
   <button type="button" onclick={onExit}>Exit</button>

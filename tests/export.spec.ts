@@ -4,9 +4,13 @@ import { PDFDocument, PDFArray, PDFRawStream, PDFName, decodePDFRawStream } from
 
 const action = (page: Page, name: string) => page.locator(`[data-action=${JSON.stringify(name)}] button`);
 const tools = (page: Page) => page.getByRole('group', { name: 'Editor toolbar' });
+async function startCreate(page: Page) {
+  await page.locator('[data-action="configure folder"] button, [data-action="app settings"] button').click();
+  await action(page, 'create new file/folder').click();
+}
 async function note(page: Page, name: string) {
   await page.goto('/');
-  await action(page, 'create new file/folder').click();
+  await startCreate(page);
   await page.getByLabel('name', { exact: true }).fill(name);
   await action(page, 'create text file').click();
   await action(page, 'open').click();
@@ -44,7 +48,7 @@ test('PDF export includes the whole unsaved draft, styled links, and vector SVG 
   await page.mouse.move(matrix.e + 500 * matrix.a, matrix.f + 200 * matrix.d);
   await page.mouse.move(matrix.e + 100 * matrix.a, matrix.f + 200 * matrix.d); await page.mouse.up();
   const drawingTools = page.getByRole('group', { name: 'Drawing toolbar' });
-  await drawingTools.getByRole('button', { name: 'Save', exact: true }).click();
+  await page.keyboard.press('ControlOrMeta+s');
   await drawingTools.getByRole('button', { name: 'Exit', exact: true }).click();
   await expect(editor).toBeEditable();
   await editor.press('ControlOrMeta+a');
@@ -121,7 +125,7 @@ test('PWA export falls back to a normal PDF download when file sharing is unavai
 });
 
 test('standalone drawing export includes unsaved strokes as vector geometry', async ({ page }) => {
-  await page.goto('/'); await action(page, 'create new file/folder').click();
+  await page.goto('/'); await startCreate(page);
   await page.getByLabel('name', { exact: true }).fill('export-drawing');
   await action(page, 'create svg file').click(); await action(page, 'open').click();
   const canvas = page.getByRole('img', { name: 'Drawing canvas for export-drawing.svg' });
@@ -201,7 +205,7 @@ test('independent PDF margins persist in min-boxes and pad drawing exports witho
   await action(page, 'larger type').click();
   const minBox = await page.locator('html').evaluate((el) => parseFloat(getComputedStyle(el).getPropertyValue('--min-box')));
   await action(page, 'close app settings').click();
-  await action(page, 'create new file/folder').click();
+  await startCreate(page);
   await page.getByLabel('name', { exact: true }).fill('margins.svg');
   await action(page, 'create svg file').click(); await action(page, 'open').click();
   const canvas = page.getByRole('img', { name: 'Drawing canvas for margins.svg' });
@@ -232,7 +236,7 @@ test('independent PDF margins persist in min-boxes and pad drawing exports witho
   expect(Number(stroke[2])).toBeCloseTo(custom.page.getHeight() - (values.top * minBox + points[0][1] * width / 1024) * .75, 3);
   expect((Number(stroke[3]) - Number(stroke[1])) / (Number(stroke[2]) - Number(stroke[4])))
     .toBeCloseTo((points[1][0] - points[0][0]) / (points[1][1] - points[0][1]), 3);
-  await drawingTools.getByRole('button', { name: 'Save', exact: true }).click();
+  await page.keyboard.press('ControlOrMeta+s');
   await drawingTools.getByRole('button', { name: 'Exit', exact: true }).click();
   await action(page, '..').click(); await action(page, 'app settings').click();
   for (const side of Object.keys(values)) await page.getByLabel(`${side} margin (min-box)`, { exact: true }).fill('0');

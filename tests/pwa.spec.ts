@@ -4,6 +4,10 @@ test('installed app shell and browser documents work offline', async ({ page, co
   test.skip(process.env.PLAYWRIGHT_PRODUCTION !== '1', 'Service workers are built only for production.');
   await page.goto('/');
   const action = (name: string) => page.locator(`[data-action=${JSON.stringify(name)}] button`);
+  const startCreate = async () => {
+    await page.locator('[data-action="configure folder"] button, [data-action="app settings"] button').click();
+    await action('create new file/folder').click();
+  };
   await expect(action('app settings')).toBeEnabled();
   await page.evaluate(async () => {
     await navigator.serviceWorker.ready;
@@ -15,14 +19,14 @@ test('installed app shell and browser documents work offline', async ({ page, co
   const installability = await protocol.send('Page.getInstallabilityErrors');
   // Playwright's isolated contexts are incognito, where installation is disabled.
   expect(installability.installabilityErrors.filter((error) => error.errorId !== 'in-incognito')).toEqual([]);
-  await action('create new file/folder').click();
+  await startCreate();
   await page.getByLabel('name', { exact: true }).fill('offline.txt');
   await action('create text file').click();
   await action('open').click();
   const editor = page.getByRole('textbox', { name: 'Edit offline.txt', exact: true });
   await expect(editor).toBeVisible();
   await editor.click(); await page.keyboard.insertText('Notes survive offline.');
-  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await page.keyboard.press('ControlOrMeta+s');
   await expect(page.getByText('saved in browser storage', { exact: true })).toBeVisible();
   await context.setOffline(true);
   await page.reload();
@@ -30,7 +34,7 @@ test('installed app shell and browser documents work offline', async ({ page, co
   await action('offline.txt').click(); await action('open').click();
   await expect(editor).toHaveText('Notes survive offline.');
   await editor.click(); await page.keyboard.press('ControlOrMeta+End'); await page.keyboard.insertText(' Still writing.');
-  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await page.keyboard.press('ControlOrMeta+s');
   await expect(page.getByText('saved in browser storage', { exact: true })).toBeVisible();
   await page.reload(); await action('offline.txt').click(); await action('open').click();
   await expect(editor).toHaveText('Notes survive offline. Still writing.');
