@@ -2,4 +2,4 @@ packages:
   - '.'
 allowBuilds:
   esbuild: true
-  "@legitminh/keyflow@https://codeload.github.com/legitminh/keyflow/tar.gz/bd263de7aab9023ac1162b67bf24f827e3dd9416": true
+  "@legitminh/keyflow@https://codeload.github.com/legitminh/keyflow/tar.gz/60f46f819449906e615ef0b6d3a61acf25e07b40": true

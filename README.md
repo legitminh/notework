@@ -86,7 +86,9 @@ OPFS supports streamed text/binary storage, but the current UI exposes decodable
 
 ## Keyflow dependency
 
-Components and CSS are imported from `@legitminh/keyflow`, installed directly from GitHub at a pinned commit. No library source is copied here. Update it after pushing library changes:
+Components and CSS are imported from `@legitminh/keyflow`, installed directly from GitHub at a pinned commit. No library source is copied here. When updating Keyflow, review the new revision and replace the commit in its `allowBuilds` entry in `pnpm-workspace.yaml` before installing it. pnpm needs that exact tarball URL to allow Keyflow's build script to run on a clean install.
+
+To update to upstream HEAD after approving that revision:
 
 ```sh
 pnpm update:keyflow
@@ -95,7 +97,7 @@ pnpm build
 pnpm test
 ```
 
-The update command resolves upstream HEAD and pins that commit in `package.json` and `pnpm-lock.yaml`. Commit both. To target a revision manually: `pnpm add -w '@legitminh/keyflow@github:legitminh/keyflow#COMMIT'`.
+The update command resolves upstream HEAD and pins that commit in `package.json` and `pnpm-lock.yaml`. Commit both files along with the matching `pnpm-workspace.yaml` approval. To target a revision manually: `pnpm add -w '@legitminh/keyflow@github:legitminh/keyflow#COMMIT'`.
 
 The current dependency is **Keyflow 0.2.0**, pinned to release commit `60f46f819449906e615ef0b6d3a61acf25e07b40` (upgraded from 0.1.1). Its update adds fixed shortcuts, persistent positional controls, OS-aware shortcut symbols, and shortcut key presets.
 
