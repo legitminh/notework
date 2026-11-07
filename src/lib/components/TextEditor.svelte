@@ -1,5 +1,5 @@
 <script module lang="ts">
-  import { vim, Vim } from '@replit/codemirror-vim';
+  import { getCM, vim, Vim } from '@replit/codemirror-vim';
   import type { EditorView as VimEditorView } from '@codemirror/view';
 
   const vimSaves = new WeakMap<VimEditorView, () => void>();
@@ -12,9 +12,9 @@
   import { Compartment, EditorState, Prec, Text, Transaction } from '@codemirror/state';
   import { EditorView, keymap, lineNumbers, drawSelection, highlightActiveLine } from '@codemirror/view';
   import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
-  import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap, completionStatus, pickedCompletion, type Completion, type CompletionContext } from '@codemirror/autocomplete';
+  import { autocompletion, closeBrackets, closeBracketsKeymap, closeCompletion, completionKeymap, completionStatus, pickedCompletion, type Completion, type CompletionContext } from '@codemirror/autocomplete';
   import { bracketMatching, indentUnit } from '@codemirror/language';
-  import { openSearchPanel, searchKeymap, highlightSelectionMatches } from '@codemirror/search';
+  import { closeSearchPanel, openSearchPanel, searchKeymap, highlightSelectionMatches } from '@codemirror/search';
   import { parentId, ROOT, type Workspace, type StateNode } from '../workspace';
   import { isMissing, type LocalFile } from '../filesystem';
   import { decodedChunks, encodedChunks, inspectText, type TextFormat } from '../text-resource';
@@ -43,6 +43,7 @@
     onMissing: () => void;
   } = $props();
   let container: HTMLDivElement;
+  let toolbar = $state<HTMLDivElement>();
   let nextLink = $state<string>();
   let followingLink = false;
   const catalogController = new AbortController();
@@ -332,6 +333,30 @@
     if (view) openSearchPanel(view);
   }
 
+  function focusTools(editor: EditorView) {
+    closeCompletion(editor);
+    closeSearchPanel(editor);
+    toolbar?.focus({ preventScroll: true });
+  }
+
+  function escapeToTools(event: KeyboardEvent, editor: EditorView) {
+    if (event.key !== 'Escape' || event.isComposing || editor.composing || event.repeat ||
+        event.ctrlKey || event.metaKey || event.altKey || event.shiftKey ||
+        !editor.hasFocus || inlineDrawing || exportSource) return false;
+    if (vimMode) {
+      const cm = getCM(editor);
+      if (cm?.state.vim?.visualMode) {
+        // Let Vim process Escape and collapse the Visual selection before moving focus.
+        queueMicrotask(() => {
+          if (active && editor.hasFocus && !cm.state.vim?.visualMode) focusTools(editor);
+        });
+      }
+      return false;
+    }
+    focusTools(editor);
+    return true;
+  }
+
   function shortcuts(event: KeyboardEvent) {
     if (inlineDrawing || event.isComposing || event.altKey || !(event.ctrlKey || event.metaKey)) return;
     const key = event.key.toLowerCase();
@@ -409,6 +434,7 @@
         view = new EditorView({
           parent: container,
           state: EditorState.create({ doc, extensions: [
+            Prec.highest(EditorView.domEventHandlers({ keydown: escapeToTools })),
             autocompletion({ override: [completeWiki], activateOnTypingDelay: 60, interactionDelay: 0, defaultKeymap: false }),
             Prec.highest(keymap.of(completionKeymap.map((binding) => ({
               ...binding,
@@ -486,7 +512,7 @@
 <div class="document-editor">
   <div class="editor-toolbar-slot">
     {#if !inlineDrawing}
-    <div class="editor-controls" role="group" aria-label="Editor toolbar">
+    <div class="editor-controls" role="group" aria-label="Editor toolbar" tabindex="-1" bind:this={toolbar}>
       <Control aria-keyshortcuts="Control+Escape" onclick={requestExit} disabled={saving}>Exit<span class="shortcut-hint" aria-hidden="true">Ctrl+Esc</span></Control>
       <Control aria-keyshortcuts={vimMode ? undefined : 'Control+F'} onclick={find} disabled={loading}><span class="visually-hidden">Find and replace</span><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="10" cy="10" r="6" /><path d="m14.5 14.5 5 5" /></svg>{#if !vimMode}<span class="shortcut-hint" aria-hidden="true">Ctrl+F</span>{/if}</Control>
       <Control onclick={() => { void insertDrawing(); }} disabled={loading || saving} aria-keyshortcuts="Meta+B">Brush<span class="shortcut-hint" aria-hidden="true">Command+B</span></Control>

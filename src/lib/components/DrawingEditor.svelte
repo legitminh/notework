@@ -27,6 +27,7 @@
   let dirty = $state(false);
   let error = $state('');
   let waitingForPermission = $state(false);
+  let toolbar: HTMLDivElement;
   let canvas: SVGSVGElement;
   let pageViewport: HTMLDivElement;
   const touches = new Set<number>();
@@ -117,6 +118,7 @@
     if (stylusOnly && event.pointerType !== 'pen') return;
     if (event.button !== 0 || gesture || saving) return;
     event.preventDefault();
+    canvas.focus({ preventScroll: true });
     canvas.setPointerCapture(event.pointerId);
     gesture = { pointer: event.pointerId, limit: height, before: strokes, tool };
     sample(event);
@@ -196,8 +198,17 @@
     saved = initial;
     lastSaveAt = Date.now();
     const shortcuts = (event: KeyboardEvent) => {
-      if (!(event.metaKey || event.ctrlKey) || event.altKey || event.isComposing) return;
+      if (event.altKey || event.isComposing) return;
       const key = event.key.toLowerCase();
+      if (!(event.metaKey || event.ctrlKey)) {
+        if (key !== 'escape' || event.shiftKey || (!gesture && document.activeElement !== canvas)) return;
+        event.preventDefault();
+        if (!event.repeat) {
+          cancelStroke();
+          toolbar.focus({ preventScroll: true });
+        }
+        return;
+      }
       if (!['b', 's', 'z', 'y', 'escape'].includes(key)) return;
       event.preventDefault();
       event.stopImmediatePropagation();
@@ -237,7 +248,7 @@
   });
 </script>
 
-<div class="editor-controls drawing-controls" role="group" aria-label="Drawing toolbar">
+<div class="editor-controls drawing-controls" role="group" aria-label="Drawing toolbar" tabindex="-1" bind:this={toolbar}>
   <Control onclick={exit} disabled={saving}>Exit<span class="shortcut-hint" aria-hidden="true">Ctrl+Esc</span></Control>
   <Control onclick={() => { tool = 'brush'; }} aria-pressed={tool === 'brush'}>Brush<span class="shortcut-hint" aria-hidden="true">Command+B</span></Control>
   <Control onclick={() => { tool = 'eraser'; }} aria-pressed={tool === 'eraser'}>Eraser</Control>
@@ -251,7 +262,7 @@
   <p class="muted" role="status">{saving ? 'saving drawing…' : waitingForPermission ? 'autosave is waiting for write permission; exit to save' : dirty ? 'unsaved drawing changes' : 'drawing saved'}</p>
   {#if error}<p class="notice" role="alert">{error}</p>{/if}
   <div class="drawing-page-viewport" bind:this={pageViewport}>
-  <svg bind:this={canvas} class:eraser={tool === 'eraser'} class="drawing-canvas" role="img" aria-label={`Drawing canvas for ${name}`}
+  <svg bind:this={canvas} class:eraser={tool === 'eraser'} class="drawing-canvas" role="img" aria-label={`Drawing canvas for ${name}`} tabindex="-1"
     viewBox={`0 0 ${DRAWING_WIDTH} ${gesture?.limit ?? height}`} preserveAspectRatio="xMinYMin meet"
     width={DRAWING_WIDTH} height={gesture?.limit ?? height}
     style:touch-action={stylusOnly ? 'pan-x pan-y pinch-zoom' : 'none'} onpointerdown={begin} onpointermove={move}

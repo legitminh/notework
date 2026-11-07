@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Locator, type Page } from '@playwright/test';
 import type { WorkspaceData } from '../src/lib/workspace';
 
 declare global {
@@ -15,6 +15,12 @@ const toolbar = (page: Page, name: string) =>
   page.getByRole('group', { name: 'Editor toolbar' }).getByRole('button', { name, exact: true });
 const openEditor = (page: Page) => button(page, 'open').click();
 const forceSave = (page: Page) => page.keyboard.press('ControlOrMeta+s');
+async function pressShortcut(page: Page, control: Locator) {
+  const route = control.locator('.pending_route');
+  await expect(route).not.toHaveText('');
+  for (const key of (await route.innerText()).trim()) await page.keyboard.press(key);
+}
+
 async function startCreate(page: Page) {
   await page.locator('[data-action="configure folder"] button, [data-action="app settings"] button').click();
   await button(page, 'create new file/folder').click();
@@ -750,6 +756,92 @@ test('editor toolbar omits Save, isolates navigation, and supports find, replace
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'toolbar.txt' })).toBeVisible();
 });
+
+test('Escape moves plain text focus to the toolbar so shortcuts do not edit the draft', async ({ page }) => {
+  await createNote(page, 'draft.txt');
+  const editor = page.getByRole('textbox', { name: 'Edit draft.txt' });
+  const tools = page.getByRole('group', { name: 'Editor toolbar' });
+  await expect(editor).toBeFocused();
+  await page.keyboard.insertText('my draft');
+  await page.keyboard.press('Escape');
+  await expect(tools).toBeFocused();
+  await pressShortcut(page, toolbar(page, 'Export'));
+  const dialog = page.getByRole('dialog', { name: 'Export', exact: true });
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(dialog).not.toBeVisible();
+  await expect(editor).toHaveText('my draft');
+
+  await editor.click();
+  await expect(editor).toBeFocused();
+  await page.keyboard.press('End');
+  await page.keyboard.insertText(' continues');
+  await expect(editor).toHaveText('my draft continues');
+});
+
+test('Vim Escape keeps Insert and Normal mode in the editor, and hands Visual mode to the toolbar', async ({ page }) => {
+  await page.evaluate(() => localStorage.setItem('notework:vim-mode', 'true'));
+  await page.reload();
+  await createNote(page, 'visual.txt');
+  const editor = page.getByRole('textbox', { name: 'Edit visual.txt' });
+  await expect(editor).toBeFocused();
+  await page.keyboard.press('i');
+  await page.keyboard.insertText('first line\nsecond line');
+  await page.keyboard.press('Escape');
+  await expect(editor).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(editor).toBeFocused();
+  await page.keyboard.type('gg0vll');
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('group', { name: 'Editor toolbar' })).toBeFocused();
+  await pressShortcut(page, toolbar(page, 'Export'));
+  const dialog = page.getByRole('dialog', { name: 'Export', exact: true });
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(dialog).not.toBeVisible();
+  await expect(editor.locator('.cm-line')).toHaveText(['first line', 'second line']);
+  await editor.click();
+  await page.keyboard.type('ggdd');
+  await expect(editor).toHaveText('second line');
+});
+
+for (const kind of ['inline', 'standalone']) {
+  test(`Escape cancels a stroke and focuses the ${kind} SVG drawing toolbar`, async ({ page }) => {
+    if (kind === 'inline') {
+      await createNote(page, 'sketch.txt');
+      await toolbar(page, 'Brush').click();
+      await page.getByRole('button', { name: /^Edit drawing drawing-/ }).click();
+    } else {
+      await startCreate(page);
+      await page.getByLabel('name', { exact: true }).fill('sketch.svg');
+      await button(page, 'create svg file').click();
+      await openEditor(page);
+    }
+    const tools = page.getByRole('group', { name: 'Drawing toolbar' });
+    const canvas = page.getByRole('img', { name: /^Drawing canvas for / });
+    const strokes = canvas.locator('polyline');
+    await expect(canvas).toBeVisible();
+    const { x, y } = (await canvas.boundingBox())!;
+    await page.mouse.click(x + 40, y + 40);
+    await expect(strokes).toHaveCount(1);
+    await page.mouse.move(x + 60, y + 60);
+    await page.mouse.down();
+    await page.mouse.move(x + 100, y + 80);
+    await expect(strokes).toHaveCount(2);
+    await expect(canvas).toBeFocused();
+    await page.keyboard.press('Escape');
+    await page.mouse.up();
+    await expect(tools).toBeFocused();
+    await expect(strokes).toHaveCount(1);
+    await pressShortcut(page, tools.getByRole('button', { name: 'Export', exact: true }));
+    const dialog = page.getByRole('dialog', { name: 'Export', exact: true });
+    await expect(dialog).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(dialog).not.toBeVisible();
+    await page.mouse.click(x + 100, y + 80);
+    await expect(strokes).toHaveCount(2);
+  });
+}
 
 test('text and SVG files autosave at the configured maximum frequency', async ({ page }) => {
   await button(page, 'app settings').click();

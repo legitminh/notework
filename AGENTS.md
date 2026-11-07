@@ -8,3 +8,4 @@ This project uses SvelteKit 3 and Svelte 5, with Vite and TypeScript. Configurat
 - Root is a virtual folder with children from multiple sources and no filesystem resource of its own. Filesystem direct children and configured directed links define transitions; parent navigation is not part of search traversal.
 - Handles, resource URIs, and directed graph metadata are saved in IndexedDB; new document contents live in OPFS. Do not upload file contents. Hide non-text resources and `.git` metadata. Prune confirmed missing resources and all their graph edges; permission denial is not deletion.
 - Run `pnpm check`, `pnpm build`, and relevant Playwright tests after functional changes. Browser fixtures must use isolated test storage, not personal filesystem paths.
+- Once a feature is finished and verified, commit it and push the commit to GitHub.

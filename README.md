@@ -33,6 +33,7 @@ Readable files use the plain-text CodeMirror editor unless they are Notework dra
 - **App settings → Appearance → Vim mode** enables standard Vim editing keys and is off by default. In Vim mode, `:w` saves, Esc returns to Normal mode, and Ctrl+F pages forward; use the magnifying glass for Find and Replace.
 - Selecting a file keeps navigation available. **Open** switches to an isolated editor whose toolbar stays at the top while the document scrolls beneath it.
 - **Exit** (Ctrl+Esc), **Find and replace** (Ctrl+F), **Brush**, and **Export** are the text toolbar actions. The shortcut labels appear on hover. There is no Save button.
+- Press **Esc** while typing with Vim off, or from Vim's Visual mode, to move focus to the toolbar and use its shortcuts. In Vim Insert mode, Esc still returns to Normal mode in the editor. Click the document to resume editing.
 - Text and SVG files autosave after changes, at most once per the interval configured in **App settings → Autosave** (4 seconds by default). Exit always finishes saving before returning to navigation. A machine file only prompts for write permission from an explicit exit or save shortcut; if saving fails, the editor stays open with the edits available for retry or export. Ctrl+S and Vim `:w` remain available as immediate saves.
 
 The editor virtualizes its viewport and streams text reads/writes instead of rendering a collection or converting an entire collection into one string. There is no former 2 MB preview truncation. A multi-megabyte/60,000-line document is covered by browser tests. A single open document still uses editor memory, so capacity is not unlimited.
@@ -56,6 +57,8 @@ Use **Brush** (Command+B) while editing text to insert a movable `\svgpage[filen
 Drawings are sibling SVG files in the note’s own storage: a local note creates a local SVG beside it, and a browser note creates an SVG in the same OPFS folder. A local drawing may request write permission when Brush creates it or when the editor exits. Existing browser drawings from older versions remain accessible through their directed links. Drawing pages fit the available text page width, capped at 32 min-boxes. Both axes and stroke widths scale together when the screen rotates. One extra working page is 16 min-boxes tall at full page width and scales proportionally on smaller screens. Saves contain only the area used.
 
 In a drawing, tap with **two fingers** to undo and **three fingers** to redo. Drag with two fingers to scroll, or pinch to zoom. Adding a second finger cancels the tentative drawing stroke. **App settings → draw with only physical stylus** is disabled by default and persists across reloads. When enabled, fingers use native scrolling/zooming and only pen input draws or erases; toolbar buttons still work with any input device.
+
+Press **Esc** on an inline or standalone drawing canvas to cancel any stroke in progress and move focus to the drawing toolbar. Start another stroke on the canvas to resume drawing.
 
 ## Create files and folders
 
