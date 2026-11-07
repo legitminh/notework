@@ -761,10 +761,14 @@ test('Escape moves plain text focus to the toolbar so shortcuts do not edit the 
   await createNote(page, 'draft.txt');
   const editor = page.getByRole('textbox', { name: 'Edit draft.txt' });
   const tools = page.getByRole('group', { name: 'Editor toolbar' });
+  const title = page.getByRole('heading', { name: 'draft.txt', exact: true });
+  const edit = page.getByRole('button', { name: 'Edit draft.txt', exact: true });
   await expect(editor).toBeFocused();
   await page.keyboard.insertText('my draft');
   await page.keyboard.press('Escape');
   await expect(tools).toBeFocused();
+  await expect(title).toHaveCount(0);
+  await expect(edit).toHaveAttribute('aria-keyshortcuts', 'Escape');
   await pressShortcut(page, toolbar(page, 'Export'));
   const dialog = page.getByRole('dialog', { name: 'Export', exact: true });
   await expect(dialog).toBeVisible();
@@ -772,14 +776,21 @@ test('Escape moves plain text focus to the toolbar so shortcuts do not edit the 
   await expect(dialog).not.toBeVisible();
   await expect(editor).toHaveText('my draft');
 
-  await editor.click();
+  await toolbar(page, 'Find and replace').click();
+  await expect(page.getByRole('textbox', { name: 'Find', exact: true })).toBeFocused();
+  await expect(edit).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(tools).toBeFocused();
+  await page.keyboard.press('Escape');
   await expect(editor).toBeFocused();
+  await expect(title).toBeVisible();
+  await expect(edit).toHaveCount(0);
   await page.keyboard.press('End');
   await page.keyboard.insertText(' continues');
   await expect(editor).toHaveText('my draft continues');
 });
 
-test('Vim Escape keeps Insert and Normal mode in the editor, and hands Visual mode to the toolbar', async ({ page }) => {
+test('Vim Escape returns Insert and Visual to Normal, and leaves Normal for tool mode', async ({ page }) => {
   await page.evaluate(() => localStorage.setItem('notework:vim-mode', 'true'));
   await page.reload();
   await createNote(page, 'visual.txt');
@@ -789,21 +800,46 @@ test('Vim Escape keeps Insert and Normal mode in the editor, and hands Visual mo
   await page.keyboard.insertText('first line\nsecond line');
   await page.keyboard.press('Escape');
   await expect(editor).toBeFocused();
-  await page.keyboard.press('Escape');
-  await expect(editor).toBeFocused();
   await page.keyboard.type('gg0vll');
   await page.keyboard.press('Escape');
+  await expect(editor).toBeFocused();
+  const edit = page.getByRole('button', { name: 'Edit visual.txt', exact: true });
+  await expect(edit).toHaveCount(0);
+  await page.keyboard.press('Escape');
   await expect(page.getByRole('group', { name: 'Editor toolbar' })).toBeFocused();
+  await expect(edit).toBeVisible();
   await pressShortcut(page, toolbar(page, 'Export'));
   const dialog = page.getByRole('dialog', { name: 'Export', exact: true });
   await expect(dialog).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(dialog).not.toBeVisible();
   await expect(editor.locator('.cm-line')).toHaveText(['first line', 'second line']);
-  await editor.click();
+  await edit.click();
+  await expect(editor).toBeFocused();
   await page.keyboard.type('ggdd');
   await expect(editor).toHaveText('second line');
 });
+
+for (const action of ['click', 'tap'] as const) {
+  test.describe(`toolbar ${action}`, () => {
+    test.use({ hasTouch: action === 'tap' });
+
+    test('Export preserves edit mode and returns focus to the draft', async ({ page }) => {
+      await createNote(page, 'pointer.txt');
+      const editor = page.getByRole('textbox', { name: 'Edit pointer.txt' });
+      await expect(editor).toBeFocused();
+      await page.keyboard.insertText('before');
+      await toolbar(page, 'Export')[action]();
+      const dialog = page.getByRole('dialog', { name: 'Export', exact: true });
+      await expect(dialog).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'pointer.txt', exact: true })).toHaveCount(1);
+      await dialog.getByRole('button', { name: 'Cancel', exact: true })[action]();
+      await expect(editor).toBeFocused();
+      await page.keyboard.insertText(' after');
+      await expect(editor).toHaveText('before after');
+    });
+  });
+}
 
 for (const kind of ['inline', 'standalone']) {
   test(`Escape cancels a stroke and focuses the ${kind} SVG drawing toolbar`, async ({ page }) => {
@@ -821,6 +857,10 @@ for (const kind of ['inline', 'standalone']) {
     const canvas = page.getByRole('img', { name: /^Drawing canvas for / });
     const strokes = canvas.locator('polyline');
     await expect(canvas).toBeVisible();
+    const name = (await canvas.getAttribute('aria-label'))!.slice('Drawing canvas for '.length);
+    const title = page.getByRole('heading', { name, exact: true });
+    const edit = page.getByRole('button', { name: `Edit ${name}`, exact: true });
+    await expect(title).toBeVisible();
     const { x, y } = (await canvas.boundingBox())!;
     await page.mouse.click(x + 40, y + 40);
     await expect(strokes).toHaveCount(1);
@@ -833,11 +873,18 @@ for (const kind of ['inline', 'standalone']) {
     await page.mouse.up();
     await expect(tools).toBeFocused();
     await expect(strokes).toHaveCount(1);
+    await expect(edit).toBeVisible();
+    await expect(title).toHaveCount(0);
     await pressShortcut(page, tools.getByRole('button', { name: 'Export', exact: true }));
     const dialog = page.getByRole('dialog', { name: 'Export', exact: true });
     await expect(dialog).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(dialog).not.toBeVisible();
+    if (kind === 'inline') await page.keyboard.press('Escape');
+    else await edit.click();
+    await expect(canvas).toBeFocused();
+    await expect(title).toBeVisible();
+    await expect(edit).toHaveCount(0);
     await page.mouse.click(x + 100, y + 80);
     await expect(strokes).toHaveCount(2);
   });

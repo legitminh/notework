@@ -30,6 +30,7 @@ hr { height: 1px; border: 0; background: var(--primary); opacity: .25; margin: c
 .state-display { margin-top: var(--min-box); }
 h1, h2, h3, p { font-size: inherit; font-weight: 400; margin: 0; }
 h1 { overflow-wrap: anywhere; }
+.edit-page-title .content { min-width: 0; overflow-wrap: anywhere; text-align: left; }
 h2 { margin-bottom: calc(var(--min-box) / 2); }
 h3 { font-size: .7em; margin-top: calc(var(--min-box) / 2); }
 .muted, .file-meta, .notice, .field, .config-row, .path { font-size: .5em; line-height: 1.7; }

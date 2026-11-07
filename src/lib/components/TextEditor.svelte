@@ -8,8 +8,10 @@
 
 <script lang="ts">
   import Control from './Control.svelte';
+  import EditorTitle from './EditorTitle.svelte';
+  import { preserveContentFocus } from '../editor-focus';
   import { onMount, tick } from 'svelte';
-  import { Compartment, EditorState, Prec, Text, Transaction } from '@codemirror/state';
+  import { Compartment, EditorState, Prec, Text, Transaction, type EditorSelection } from '@codemirror/state';
   import { EditorView, keymap, lineNumbers, drawSelection, highlightActiveLine } from '@codemirror/view';
   import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
   import { autocompletion, closeBrackets, closeBracketsKeymap, closeCompletion, completionKeymap, completionStatus, pickedCompletion, type Completion, type CompletionContext } from '@codemirror/autocomplete';
@@ -44,12 +46,15 @@
   } = $props();
   let container: HTMLDivElement;
   let toolbar = $state<HTMLDivElement>();
+  let usingTools = $state(false);
+  let drawingEditor = $state<{ resumeEditing: () => void }>();
   let nextLink = $state<string>();
   let followingLink = false;
   const catalogController = new AbortController();
   let catalogRequest: Promise<StateNode[]> | undefined;
   let inlineDrawing = $state.raw<{ page: SvgPage; host: HTMLDivElement; resource?: DrawingResource }>();
   let exportSource = $state.raw<PdfSource>();
+  let exportSelection: EditorSelection | undefined;
   let openingDrawing = false;
   const textLock = new Compartment();
   const pageWidgets = svgPages((page) => { void openDrawing(page); }, () => vimMode);
@@ -163,7 +168,7 @@
         annotations: Transaction.userEvent.of('input'),
         scrollIntoView: true
       });
-      view.focus();
+      if (!usingTools) view.focus();
     } catch (cause) { error = storageError(cause); }
   }
 
@@ -194,6 +199,7 @@
         pageWidgets.setActive.of({ from: page.from, host }),
         textLock.reconfigure([EditorState.readOnly.of(true), EditorView.editable.of(false)])
       ] });
+      usingTools = false;
       inlineDrawing = { page, host, resource };
       await tick();
       view.requestMeasure();
@@ -217,7 +223,7 @@
     view?.dispatch({ effects: [pageWidgets.setActive.of(undefined), textLock.reconfigure([])] });
     inlineDrawing = undefined;
     await tick();
-    view?.focus();
+    resumeEditing();
     scheduleAutosave();
   }
 
@@ -336,19 +342,30 @@
   function focusTools(editor: EditorView) {
     closeCompletion(editor);
     closeSearchPanel(editor);
+    usingTools = true;
     toolbar?.focus({ preventScroll: true });
+  }
+
+  function resumeEditing() {
+    usingTools = false;
+    view?.focus();
+  }
+
+  function resumePageEditing() {
+    if (inlineDrawing) drawingEditor?.resumeEditing();
+    else resumeEditing();
   }
 
   function escapeToTools(event: KeyboardEvent, editor: EditorView) {
     if (event.key !== 'Escape' || event.isComposing || editor.composing || event.repeat ||
         event.ctrlKey || event.metaKey || event.altKey || event.shiftKey ||
-        !editor.hasFocus || inlineDrawing || exportSource) return false;
+        usingTools || !editor.hasFocus || inlineDrawing || exportSource) return false;
     if (vimMode) {
-      const cm = getCM(editor);
-      if (cm?.state.vim?.visualMode) {
-        // Let Vim process Escape and collapse the Visual selection before moving focus.
+      const mode = getCM(editor)?.state.vim;
+      if (mode && !mode.insertMode && !mode.visualMode && !mode.exMode) {
+        // Let Normal-mode Escape clear any pending Vim command before moving focus.
         queueMicrotask(() => {
-          if (active && editor.hasFocus && !cm.state.vim?.visualMode) focusTools(editor);
+          if (active && editor.hasFocus) focusTools(editor);
         });
       }
       return false;
@@ -373,6 +390,12 @@
 
   function openExport(drawing?: Drawing) {
     if (!view || loading) return;
+    // Return through the toolbar when the modal closes so CodeMirror can
+    // regain focus and restore its caret itself.
+    if (!usingTools && !inlineDrawing) {
+      exportSelection = view.state.selection;
+      toolbar?.focus({ preventScroll: true });
+    }
     const snapshot = view.state.doc;
     const override = inlineDrawing && drawing ? { name: inlineDrawing.page.name, strokes: drawing } : undefined;
     const content = view.contentDOM;
@@ -389,6 +412,25 @@
         throw new Error(`Drawing “${name}” is unavailable. Restore it before exporting.`);
       }
     };
+  }
+
+  async function closeExport() {
+    const selection = exportSelection;
+    exportSelection = undefined;
+    exportSource = undefined;
+    // Restore CodeMirror's selection after the dialog has left the DOM.
+    await tick();
+    const editor = view;
+    if (!active || !editor || !selection || usingTools || inlineDrawing) return;
+    editor.focus();
+    editor.dispatch({ selection });
+    const { anchor, head } = selection.main;
+    const rendered = (pos: number) => editor.visibleRanges.some(({ from, to }) => from <= pos && pos <= to);
+    if (rendered(anchor) && rendered(head)) {
+      // Chromium can reset the native caret even when CodeMirror's selection is unchanged.
+      const start = editor.domAtPos(anchor), end = editor.domAtPos(head);
+      editor.dom.ownerDocument.getSelection()?.setBaseAndExtent(start.node, start.offset, end.node, end.offset);
+    }
   }
 
   $effect(() => {
@@ -434,7 +476,17 @@
         view = new EditorView({
           parent: container,
           state: EditorState.create({ doc, extensions: [
-            Prec.highest(EditorView.domEventHandlers({ keydown: escapeToTools })),
+            Prec.highest(EditorView.domEventHandlers({
+              keydown: escapeToTools,
+              mousedown: (event) => { if (event.button === 0 && !inlineDrawing) usingTools = false; },
+              focus: (_event, editor) => {
+                // Find can return focus to the content when its panel closes.
+                // Keep tool mode until the user explicitly resumes editing.
+                if (usingTools && !inlineDrawing) queueMicrotask(() => {
+                  if (active && usingTools && editor.hasFocus) toolbar?.focus({ preventScroll: true });
+                });
+              }
+            })),
             autocompletion({ override: [completeWiki], activateOnTypingDelay: 60, interactionDelay: 0, defaultKeymap: false }),
             Prec.highest(keymap.of(completionKeymap.map((binding) => ({
               ...binding,
@@ -512,7 +564,8 @@
 <div class="document-editor">
   <div class="editor-toolbar-slot">
     {#if !inlineDrawing}
-    <div class="editor-controls" role="group" aria-label="Editor toolbar" tabindex="-1" bind:this={toolbar}>
+    <div class="editor-controls" role="group" aria-label="Editor toolbar" tabindex="-1" bind:this={toolbar}
+      use:preserveContentFocus={() => !usingTools && !!view?.hasFocus}>
       <Control aria-keyshortcuts="Control+Escape" onclick={requestExit} disabled={saving}>Exit<span class="shortcut-hint" aria-hidden="true">Ctrl+Esc</span></Control>
       <Control aria-keyshortcuts={vimMode ? undefined : 'Control+F'} onclick={find} disabled={loading}><span class="visually-hidden">Find and replace</span><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="10" cy="10" r="6" /><path d="m14.5 14.5 5 5" /></svg>{#if !vimMode}<span class="shortcut-hint" aria-hidden="true">Ctrl+F</span>{/if}</Control>
       <Control onclick={() => { void insertDrawing(); }} disabled={loading || saving} aria-keyshortcuts="Meta+B">Brush<span class="shortcut-hint" aria-hidden="true">Command+B</span></Control>
@@ -521,14 +574,14 @@
     {/if}
     {#if inlineDrawing}
       <div class="inline-drawing-controller">
-        <DrawingEditor {stylusOnly} {autosaveMs} name={inlineDrawing.page.name} initial={inlineDrawing.resource?.strokes ?? []}
+        <DrawingEditor bind:this={drawingEditor} bind:usingTools {stylusOnly} {autosaveMs} name={inlineDrawing.page.name} initial={inlineDrawing.resource?.strokes ?? []}
           surfaceTarget={inlineDrawing.host}
           onExport={(strokes) => openExport(strokes)} onSave={saveInlineDrawing} onExit={closeInlineDrawing} />
       </div>
     {/if}
   </div>
   <div class="editor-scroll">
-    <h1>{node.name}</h1>
+    <EditorTitle name={inlineDrawing?.page.name ?? node.name} onEdit={usingTools ? resumePageEditing : undefined} />
     <p class="muted" role="status" aria-live="polite">
       {#if loading}loading text…{loadedBytes ? ` ${Math.round(loadedBytes / 1024)} KB` : ''}
       {:else if saving}saving…
@@ -542,5 +595,5 @@
 </div>
 
 {#if exportSource}
-  <ExportDialog source={exportSource} onClose={() => { exportSource = undefined; }} />
+  <ExportDialog source={exportSource} onClose={closeExport} />
 {/if}

@@ -40,15 +40,20 @@
     return () => preparation?.abort();
   });
 
+  function close() {
+    dialog.close();
+    onClose();
+  }
+
   async function deliver() {
     if (!file || sharing) return;
     error = ''; status = '';
-    if (!canShare) { downloadExport(file); onClose(); return; }
+    if (!canShare) { downloadExport(file); close(); return; }
     sharing = true;
     try {
       // The PDF is already prepared: call share synchronously from this fresh tap.
       await navigator.share({ files: [file], title: file.name });
-      onClose();
+      close();
     } catch (cause) {
       if (cause instanceof DOMException && cause.name === 'AbortError') status = 'Sharing cancelled.';
       else error = `The share sheet could not open. Try again or download the ${label()}.`;
@@ -62,7 +67,7 @@
 </script>
 
 <dialog use:dialogShortcuts class="local-picker editor-exit" bind:this={dialog} aria-labelledby="export-heading"
-  oncancel={(event) => { if (sharing) event.preventDefault(); else onClose(); }}>
+  oncancel={(event) => { event.preventDefault(); if (!sharing) close(); }}>
   <h2 id="export-heading">Export</h2>
   <label class="field">format <select aria-label="Export format" value={format} onchange={selectFormat} disabled={sharing}>
     <option value="pdf">PDF</option><option value="png">PNG</option><option value="jpeg">JPEG</option>
@@ -74,7 +79,7 @@
   {#if error}<p class="notice" role="alert">{error}</p>{/if}
   <div class="editor-controls">
     <Control disabled={!file || sharing} onclick={deliver}>{canShare ? `Share ${label()}` : `Download ${label()}`}</Control>
-    {#if canShare}<Control disabled={!file || sharing} onclick={() => { downloadExport(file!); onClose(); }}>Download {label()}</Control>{/if}
-    <Control onclick={onClose} disabled={sharing}>Cancel</Control>
+    {#if canShare}<Control disabled={!file || sharing} onclick={() => { downloadExport(file!); close(); }}>Download {label()}</Control>{/if}
+    <Control onclick={close} disabled={sharing}>Cancel</Control>
   </div>
 </dialog>

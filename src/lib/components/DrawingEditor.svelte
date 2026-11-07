@@ -1,12 +1,14 @@
 <script lang="ts">
   import Control from './Control.svelte';
+  import EditorTitle from './EditorTitle.svelte';
+  import { preserveContentFocus } from '../editor-focus';
   import { onMount } from 'svelte';
   import { DRAWING_WIDTH, DRAWING_PAGE_HEIGHT, STROKE_WIDTH, drawingBottom, strokePoints, touchesStroke, type Drawing, type Point } from '../drawing';
   import { drawingGestures } from '../drawing-gestures';
   import { storageError } from '../browser-documents';
   import { WritePermissionRequired } from '../wiki';
 
-  let { name, initial, onSave, onExit, surfaceTarget, stylusOnly, onExport, autosaveMs }: {
+  let { name, initial, onSave, onExit, surfaceTarget, stylusOnly, onExport, autosaveMs, usingTools = $bindable(false) }: {
     name: string;
     stylusOnly: boolean;
     autosaveMs: number;
@@ -15,6 +17,7 @@
     onExport: (strokes: Drawing) => void;
     onExit: () => void;
     surfaceTarget?: HTMLElement;
+    usingTools?: boolean;
   } = $props();
 
   let strokes = $state.raw<Drawing>([]);
@@ -109,6 +112,11 @@
     if (canvas.hasPointerCapture(pointer)) canvas.releasePointerCapture(pointer);
   }
 
+  export function resumeEditing() {
+    usingTools = false;
+    canvas.focus({ preventScroll: true });
+  }
+
   function begin(event: PointerEvent) {
     if (event.pointerType === 'touch') {
       touches.add(event.pointerId);
@@ -118,7 +126,7 @@
     if (stylusOnly && event.pointerType !== 'pen') return;
     if (event.button !== 0 || gesture || saving) return;
     event.preventDefault();
-    canvas.focus({ preventScroll: true });
+    resumeEditing();
     canvas.setPointerCapture(event.pointerId);
     gesture = { pointer: event.pointerId, limit: height, before: strokes, tool };
     sample(event);
@@ -201,10 +209,11 @@
       if (event.altKey || event.isComposing) return;
       const key = event.key.toLowerCase();
       if (!(event.metaKey || event.ctrlKey)) {
-        if (key !== 'escape' || event.shiftKey || (!gesture && document.activeElement !== canvas)) return;
+        if (key !== 'escape' || event.shiftKey || usingTools || document.querySelector('dialog[open]')) return;
         event.preventDefault();
         if (!event.repeat) {
           cancelStroke();
+          usingTools = true;
           toolbar.focus({ preventScroll: true });
         }
         return;
@@ -248,7 +257,8 @@
   });
 </script>
 
-<div class="editor-controls drawing-controls" role="group" aria-label="Drawing toolbar" tabindex="-1" bind:this={toolbar}>
+<div class="editor-controls drawing-controls" role="group" aria-label="Drawing toolbar" tabindex="-1" bind:this={toolbar}
+  use:preserveContentFocus={() => !usingTools && document.activeElement === canvas}>
   <Control onclick={exit} disabled={saving}>Exit<span class="shortcut-hint" aria-hidden="true">Ctrl+Esc</span></Control>
   <Control onclick={() => { tool = 'brush'; }} aria-pressed={tool === 'brush'}>Brush<span class="shortcut-hint" aria-hidden="true">Command+B</span></Control>
   <Control onclick={() => { tool = 'eraser'; }} aria-pressed={tool === 'eraser'}>Eraser</Control>
@@ -258,7 +268,7 @@
 </div>
 
 <div class="drawing-surface" use:portal={surfaceTarget}>
-  {#if !surfaceTarget}<h1>{name}</h1>{/if}
+  {#if !surfaceTarget}<EditorTitle {name} onEdit={usingTools ? resumeEditing : undefined} />{/if}
   <p class="muted" role="status">{saving ? 'saving drawing…' : waitingForPermission ? 'autosave is waiting for write permission; exit to save' : dirty ? 'unsaved drawing changes' : 'drawing saved'}</p>
   {#if error}<p class="notice" role="alert">{error}</p>{/if}
   <div class="drawing-page-viewport" bind:this={pageViewport}>

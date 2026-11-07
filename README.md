@@ -30,10 +30,10 @@ Readable files use the plain-text CodeMirror editor unless they are Notework dra
 - **Tab** indents with **two spaces**; **Shift-Tab** outdents.
 - Parentheses, brackets, braces, and quotes pair automatically.
 - Undo/redo and Ctrl/Cmd-F search use standard editor bindings.
-- **App settings → Appearance → Vim mode** enables standard Vim editing keys and is off by default. In Vim mode, `:w` saves, Esc returns to Normal mode, and Ctrl+F pages forward; use the magnifying glass for Find and Replace.
+- **App settings → Appearance → Vim mode** enables standard Vim editing keys and is off by default. In Vim mode, `:w` saves and Ctrl+F pages forward; use the magnifying glass for Find and Replace.
 - Selecting a file keeps navigation available. **Open** switches to an isolated editor whose toolbar stays at the top while the document scrolls beneath it.
 - **Exit** (Ctrl+Esc), **Find and replace** (Ctrl+F), **Brush**, and **Export** are the text toolbar actions. The shortcut labels appear on hover. There is no Save button.
-- Press **Esc** while typing with Vim off, or from Vim's Visual mode, to move focus to the toolbar and use its shortcuts. In Vim Insert mode, Esc still returns to Normal mode in the editor. Click the document to resume editing.
+- Press **Esc** while editing with Vim off or from Vim's Normal mode to use toolbar shortcuts. Vim Insert and Visual modes still return to Normal first. In tool mode the title becomes **Edit {page name}**; click it or press **Esc** again to resume. Clicking or tapping a toolbar tool keeps the current mode.
 - Text and SVG files autosave after changes, at most once per the interval configured in **App settings → Autosave** (4 seconds by default). Exit always finishes saving before returning to navigation. A machine file only prompts for write permission from an explicit exit or save shortcut; if saving fails, the editor stays open with the edits available for retry or export. Ctrl+S and Vim `:w` remain available as immediate saves.
 
 The editor virtualizes its viewport and streams text reads/writes instead of rendering a collection or converting an entire collection into one string. There is no former 2 MB preview truncation. A multi-megabyte/60,000-line document is covered by browser tests. A single open document still uses editor memory, so capacity is not unlimited.
@@ -58,7 +58,7 @@ Drawings are sibling SVG files in the note’s own storage: a local note creates
 
 In a drawing, tap with **two fingers** to undo and **three fingers** to redo. Drag with two fingers to scroll, or pinch to zoom. Adding a second finger cancels the tentative drawing stroke. **App settings → draw with only physical stylus** is disabled by default and persists across reloads. When enabled, fingers use native scrolling/zooming and only pen input draws or erases; toolbar buttons still work with any input device.
 
-Press **Esc** on an inline or standalone drawing canvas to cancel any stroke in progress and move focus to the drawing toolbar. Start another stroke on the canvas to resume drawing.
+Press **Esc** in an inline or standalone drawing to cancel any stroke in progress and switch to tool mode. Press **Esc** again, choose **Edit {page name}**, or start another stroke on the canvas to resume drawing.
 
 ## Create files and folders
 
