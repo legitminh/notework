@@ -1,4 +1,5 @@
 import { test, expect, type Locator, type Page } from '@playwright/test';
+import { serializeDrawing } from '../src/lib/drawing';
 import type { WorkspaceData } from '../src/lib/workspace';
 
 declare global {
@@ -1215,6 +1216,62 @@ test('wiki completion uses arrow selection and creates machine-file siblings in 
   await expect(editor).toContainText('[[renamed sibling.txt]]');
 });
 
+test('command completion uses Tab and ranks drawing targets by match and graph proximity', async ({ page }) => {
+  await connectDocuments(page);
+  await page.evaluate(async (drawing) => {
+    const documents = await (await navigator.storage.getDirectory()).getDirectoryHandle('Documents');
+    const adobe = await documents.getDirectoryHandle('Adobe');
+    const near = await adobe.getDirectoryHandle('Near', { create: true });
+    const deep = await near.getDirectoryHandle('Deep', { create: true });
+    for (const [folder, name, content] of [
+      [adobe, 'delta.svg', drawing], [adobe, 'zebra.svg', drawing], [near, 'beta.svg', drawing],
+      [documents, 'alpha.svg', drawing], [deep, 'first.svg', drawing], [adobe, 'fake.svg', '<svg/>']
+    ] as const) {
+      const stream = await (await folder.getFileHandle(name, { create: true })).createWritable();
+      await stream.write(content); await stream.close();
+    }
+  }, serializeDrawing([]));
+  await button(page, 'Documents/').click();
+  await button(page, 'Adobe/').click();
+  await button(page, 'notes.txt').click();
+  await openEditor(page);
+  const editor = page.getByRole('textbox', { name: 'Edit notes.txt' });
+  const list = page.getByRole('listbox');
+  const command = list.getByRole('option', { name: /^\\svgpage/ });
+  const labels = list.locator('.cm-completionLabel');
+  await editor.press('ControlOrMeta+End');
+  await editor.press('Enter');
+  await page.keyboard.type('\\');
+  await expect(command).toBeVisible();
+  await page.keyboard.type('svgp');
+  await expect(command).toHaveAttribute('aria-selected', 'true');
+  await page.keyboard.press('Tab');
+  await expect(editor.locator('.cm-line').last()).toHaveText('\\svgpage[]');
+  await expect(labels).toHaveText(['delta.svg', 'zebra.svg', 'beta.svg', 'alpha.svg', 'first.svg']);
+  await page.keyboard.press('ArrowDown');
+  await expect(list.getByRole('option', { name: /^zebra\.svg/ })).toHaveAttribute('aria-selected', 'true');
+  await page.keyboard.press('ArrowUp');
+  await expect(list.getByRole('option', { name: /^delta\.svg/ })).toHaveAttribute('aria-selected', 'true');
+
+  await page.keyboard.type('first');
+  await expect(labels).toHaveText(['first.svg']);
+  await page.keyboard.press('Tab');
+  const target = 'Documents/Adobe/Near/Deep/first.svg';
+  await expect(editor.locator('.cm-line').last()).toHaveText(`\\svgpage[${target}]`);
+  await forceSave(page);
+  await expect(page.getByText('saved on your computer', { exact: true })).toBeVisible();
+  const graph = await storedGraph(page);
+  const { id } = graph.sources.find((source) => source.name === 'Documents')!;
+  expect(graph.wiki?.[JSON.stringify([id, 'Adobe', 'notes.txt'])]?.[target]).toBe(JSON.stringify([id, 'Adobe', 'Near', 'Deep', 'first.svg']));
+
+  await editor.press('Enter');
+  await page.keyboard.type('\\svgpage[b');
+  await expect(labels.first()).toHaveText('beta.svg');
+  await page.keyboard.press('Backspace');
+  // The saved outgoing link is now a shortcut to the drawing two folders down.
+  await expect(labels).toHaveText(['delta.svg', 'zebra.svg', 'beta.svg', 'first.svg', 'alpha.svg']);
+});
+
 test('brush inserts a movable SVG page, swaps the inline toolbar, and saves an exact drawing extent', async ({ page }) => {
   await page.setViewportSize({ width: 1050, height: 1500 });
   await createNote(page, 'sketch.txt');
@@ -1758,7 +1815,11 @@ test('SVG page references resolve and rename drawings across folders and storage
   await connectDocuments(page);
   await button(page, 'Documents/').click(); await button(page, 'readme.txt').click(); await openEditor(page);
   const editor = page.getByRole('textbox', { name: 'Edit readme.txt' });
-  await editor.fill('before\n\\svgpage[Art/shared.svg]\nafter');
+  await editor.fill('before\n');
+  await page.keyboard.type('\\svgpage[shared');
+  await expect(page.getByRole('option', { name: /^shared\.svg/ })).toBeVisible();
+  await page.keyboard.press('Tab');
+  await page.keyboard.insertText('\nafter');
   const preview = page.getByRole('button', { name: 'Edit drawing Art/shared.svg', exact: true });
   await expect(preview.locator('polyline')).toHaveCount(1);
   await forceSave(page);

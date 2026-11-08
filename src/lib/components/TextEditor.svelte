@@ -14,7 +14,7 @@
   import { Compartment, EditorState, Prec, Text, Transaction, type EditorSelection } from '@codemirror/state';
   import { EditorView, keymap, lineNumbers, drawSelection, highlightActiveLine } from '@codemirror/view';
   import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
-  import { autocompletion, closeBrackets, closeBracketsKeymap, closeCompletion, completionKeymap, completionStatus, pickedCompletion, type Completion, type CompletionContext } from '@codemirror/autocomplete';
+  import { acceptCompletion, autocompletion, closeBrackets, closeBracketsKeymap, closeCompletion, completionKeymap, completionStatus, pickedCompletion, type Completion, type CompletionContext } from '@codemirror/autocomplete';
   import { bracketMatching, indentUnit } from '@codemirror/language';
   import { closeSearchPanel, openSearchPanel, searchKeymap, highlightSelectionMatches } from '@codemirror/search';
   import { parentId, ROOT, type Workspace, type StateNode } from '../workspace';
@@ -32,6 +32,7 @@
   import { canCreateSiblingDrawing, loadDrawingReference, prepareSvgPages, saveDrawing, saveSiblingDrawing, type DrawingResource } from '../drawing-files';
   import { wikiDisplay } from '../wiki-display';
   import { containingFolder, findWikiTarget, prepareWikiSave, requireWrite, validFilename, wikiCatalog, wikiScore, wikiToken, wikiTokens, WritePermissionRequired } from '../wiki';
+  import { commandCompletion, opensCommandArguments } from '../command-completion';
 
   let { workspace, node, wrapLines, vimMode, stylusOnly, pdfMargins, autosaveMs, onExit, onMissing, onOpenLink }: {
     workspace: Workspace; node: StateNode;
@@ -473,6 +474,7 @@
         savedTokens = wikiTokens(doc);
         savedPages = svgPageNames(doc);
         if (!active) return;
+        const completeCommand = commandCompletion(workspace, node, catalog);
         view = new EditorView({
           parent: container,
           state: EditorState.create({ doc, extensions: [
@@ -487,8 +489,9 @@
                 });
               }
             })),
-            autocompletion({ override: [completeWiki], activateOnTypingDelay: 60, interactionDelay: 0, defaultKeymap: false }),
-            Prec.highest(keymap.of(completionKeymap.map((binding) => ({
+            autocompletion({ override: [(context) => completeCommand(context) ?? completeWiki(context)],
+              activateOnCompletion: opensCommandArguments, activateOnTypingDelay: 60, interactionDelay: 0, defaultKeymap: false }),
+            Prec.highest(keymap.of([...completionKeymap, { key: 'Tab', run: acceptCompletion }].map((binding) => ({
               ...binding,
               run: (editor) => {
                 if (binding.key === 'Escape' && vimMode) {

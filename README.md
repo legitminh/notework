@@ -27,7 +27,7 @@ Search matches file and folder names/paths along outgoing graph transitions, inc
 
 Readable files use the plain-text CodeMirror editor unless they are Notework drawings. Byte validation accepts UTF-8 and BOM-marked UTF-16, preserves encoding/BOM and line endings on save, and hides invalid Unicode, binary control-byte data, and `.git` directories. HTML and ordinary SVG remain inert editable source.
 
-- **Tab** indents with **two spaces**; **Shift-Tab** outdents.
+- **Tab** accepts the selected suggestion or indents with **two spaces** when there is no suggestion; **Shift-Tab** outdents.
 - Parentheses, brackets, braces, and quotes pair automatically.
 - Undo/redo and Ctrl/Cmd-F search use standard editor bindings.
 - **App settings → Appearance → Vim mode** enables standard Vim editing keys and is off by default. In Vim mode, `:w` saves and Ctrl+F pages forward; use the magnifying glass for Find and Replace.
@@ -53,6 +53,8 @@ Use **Configure file → rename** or **Configure folder → rename** in navigati
 ## Drawings
 
 Use **Brush** (Command+B) while editing text to insert a movable `\svgpage[filename.svg]` line. A new Brush drawing is created beside the text file for convenience, but the directive is a graph resource reference like `[[FILE]]`: it may instead contain a unique name, graph path, or resource URI for a Notework SVG drawing in another folder or storage source. Move the caret off the line to see the drawing, then click it to draw inline. The drawing toolbar supports brush, whole-stroke erasing, undo, redo, autosave, and export. Exit saves and returns to the open text draft. Text autosave records the referenced drawing as an outgoing navigation target, where it can also be opened on its own; rename updates the directive even across folders and storage sources.
+
+To link an existing drawing, type `\` on its own line, select `\svgpage` with the arrow keys, and press **Tab**. You can also type `\svgpage[` directly. Inside the brackets, suggestions favor matching names and paths, then nearby drawings. Siblings come first among equally good matches, and downstream paths come before equally short upstream paths. Press **Tab** to insert the selected drawing reference.
 
 Drawings are sibling SVG files in the note’s own storage: a local note creates a local SVG beside it, and a browser note creates an SVG in the same OPFS folder. A local drawing may request write permission when Brush creates it or when the editor exits. Existing browser drawings from older versions remain accessible through their directed links. Drawing pages fit the available text page width, capped at 32 min-boxes. Both axes and stroke widths scale together when the screen rotates. One extra working page is 16 min-boxes tall at full page width and scales proportionally on smaller screens. Saves contain only the area used.
 
