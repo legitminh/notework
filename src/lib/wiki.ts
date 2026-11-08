@@ -92,6 +92,7 @@ export async function containingFolder(workspace: Workspace, node: StateNode, fi
     const parent = await workspace.handle(JSON.stringify([node.sourceId, ...node.path.slice(0, -1)]));
     if (parent.kind === 'directory') return parent as unknown as FileSystemDirectoryHandle;
   }
+  if (node.storage === 'github') throw new Error('Open the GitHub file through its repository folder.');
   for (const source of workspace.data.sources) {
     if (source.handle.kind !== 'directory') continue;
     const path = await source.handle.resolve(file).catch(() => null);
@@ -137,7 +138,7 @@ export async function connectSibling(workspace: Workspace, source: StateNode, ha
 
 export async function prepareWikiSave(
   workspace: Workspace, source: StateNode, file: LocalFile, tokens: Set<string>, catalog: StateNode[],
-  canCreate: (token: string) => boolean, requestWrite = true
+  canCreate: (token: string) => boolean, requestWrite = true, allowUnresolved = false
 ) {
   catalog = [...catalog];
   const targets: Record<string, string> = Object.create(null);
@@ -151,7 +152,9 @@ export async function prepareWikiSave(
   }
   try {
     for (const token of tokens) {
-      let target = await resolveFileReference(workspace, source, token, catalog);
+      let target: StateNode | undefined;
+      try { target = await resolveFileReference(workspace, source, token, catalog); }
+      catch (error) { if (allowUnresolved) continue; throw error; }
       if (!target) {
         if (!canCreate(token)) continue;
         if (!validFilename(token)) throw new Error(`Cannot create “${token}”. Use a filename without a path or choose an existing file.`);

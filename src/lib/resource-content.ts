@@ -1,9 +1,10 @@
 import type { LocalFile } from './filesystem';
 import { writeBrowserContent } from './browser-documents';
+import type { Storage } from './workspace';
 
 /** Callers acquire local write permission from an explicit Create, Rename, save shortcut, or saving Exit action. */
 export async function writeResourceContent(
-  handle: LocalFile, storage: 'local' | 'browser',
+  handle: LocalFile, storage: Storage,
   chunks: Iterable<string | Uint8Array> | AsyncIterable<string | Uint8Array>
 ) {
   if (storage === 'browser') return writeBrowserContent(handle, chunks);

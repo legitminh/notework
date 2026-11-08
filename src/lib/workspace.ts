@@ -1,12 +1,17 @@
 import { isMissing, type LocalDirectory, type LocalHandle } from './filesystem';
 import { isDrawingFile } from './drawing';
 import { HiddenResource, inspectText, type TextFormat } from './text-resource';
+import { GitHubDirectory, type GitHubRepository } from './github/repository';
+import type { GitHubConnection } from './github/api';
 
 export const ROOT = 'root';
+export type Storage = 'local' | 'browser' | 'github';
+export const storageLabel = (storage: Storage) => storage === 'github' ? 'GitHub' : storage === 'browser' ? 'browser storage' : 'computer storage';
 export interface Source {
   id: string;
   handle: LocalHandle;
-  storage?: 'local' | 'browser';
+  storage?: Storage;
+  github?: GitHubConnection;
   uri?: string;
   /** Physical parent retained for a machine resource connected directly at home. */
   physicalParent?: LocalDirectory;
@@ -31,7 +36,7 @@ export interface StateNode {
   name: string;
   kind: 'file' | 'directory';
   drawing?: boolean;
-  storage: 'local' | 'browser';
+  storage: Storage;
   uri: string;
 }
 export const emptyWorkspace = (): WorkspaceData => ({ sources: [], rootIds: [], links: {}, hidden: {} });
@@ -182,6 +187,21 @@ export class Workspace {
   }
 
   cachedHandle(id: string) { return this.handles.get(id); }
+
+  github(sourceId: string): GitHubRepository | undefined {
+    const handle = this.data.sources.find((source) => source.id === sourceId)?.handle;
+    return handle instanceof GitHubDirectory ? handle.repository : undefined;
+  }
+
+  connectGitHub(repository: GitHubRepository) {
+    const { owner, repo, branch } = repository.connection;
+    const id = nodeId(repository.id);
+    this.data.sources.push({ id: repository.id, storage: 'github', github: repository.connection,
+      uri: `github://${owner.toLowerCase()}/${repo.toLowerCase()}/${encodeURIComponent(branch)}`, handle: repository.root });
+    this.link(ROOT, id);
+    this.revision++;
+    return id;
+  }
 
   deletionParent(node: StateNode) {
     if (node.path.length) {

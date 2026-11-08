@@ -1,6 +1,6 @@
 # Notework
 
-A local network of text documents and folders, built with SvelteKit 3, Svelte 5, TypeScript, Vite, CodeMirror, and the [Keyflow](https://github.com/legitminh/keyflow) library. Nothing is uploaded.
+A local-first network of text documents and folders, built with SvelteKit 3, Svelte 5, TypeScript, Vite, CodeMirror, and the [Keyflow](https://github.com/legitminh/keyflow) library. You can also connect a GitHub repository as a folder.
 
 ## Run
 
@@ -75,7 +75,13 @@ IndexedDB stores machine source handles, resource locations, root edges, and dir
 - `notework-local://SOURCE_ID/name/path` identifies a user-selected machine handle. It is an opaque app identifier, not an invented `file://` path; browsers do not expose arbitrary absolute machine paths.
 - `opfs://notework/documents/DOCUMENT_ID/name` identifies an app-created document in browser-owned OPFS storage.
 
-Creating a resource at home allocates its contents in OPFS before committing a child node under the virtual root. Failed metadata commits roll the new resource back. Existing machine files are tracked by handle, never copied into browser storage. Text classification reads bytes locally to hide binary resources; neither these reads nor editor saves upload anything.
+Creating a resource at home allocates its contents in OPFS before committing a child node under the virtual root. Failed metadata commits roll the new resource back. Existing machine files are tracked by handle. Text classification reads bytes in the browser to hide binary resources. Files on your computer and in browser storage stay there unless you explicitly move them into a GitHub folder.
+
+## GitHub folders
+
+Open **App settings → GitHub repositories** and enter a repository and an optional branch. [Create a fine-grained personal access token](https://github.com/settings/personal-access-tokens/new), limit it to that repository, and grant **Contents: Read and write**. The repository needs an initial commit and a branch that accepts direct pushes. Notework saves the token in this browser and sends it only to GitHub's API.
+
+The repository appears under Home. Notework checks for upstream changes on startup and before opening a repository file. Autosave keeps a draft in the browser. **Exit** or an explicit save publishes an edit as `edit: filename`. If GitHub has changed the same file since it was opened, edit either version in the side-by-side dialog and choose which to keep. Cancel or a failed push leaves your draft available for retry. Empty folders use a hidden `.gitkeep` file so they persist in Git.
 
 Missing resources are checked on startup, navigation/refresh, window focus, and every five seconds while the app is visible. Confirmed missing files/folders, descendants, incoming/outgoing edges, root shortcuts, and caches are pruned and the cleaned graph is saved. If the active resource disappears, navigation returns home. A denied permission or quota error does not count as deletion. OS changes between checks can only be discovered at the next check.
 

@@ -3,9 +3,15 @@ import { assertAvailable, containingFolder, requireWrite, validFilename, wikiPat
 import { decodedChunks, encodedChunks, inspectText, type TextFormat } from './text-resource';
 import { saveWorkspace, snapshotWorkspace } from './persistence';
 import { Workspace, ROOT, nodeId, type StateNode } from './workspace';
+import { GitHubDirectory, GitHubFile, type GitHubRepository } from './github/repository';
+import { GitHubWriteUncertain } from './github/api';
 
 const native = (handle: LocalHandle) => handle as unknown as FileSystemHandle;
 const startsWith = (path: string[], prefix: string[]) => prefix.every((part, i) => path[i] === part);
+const remote = (handle: unknown) => handle instanceof GitHubDirectory || handle instanceof GitHubFile;
+const sameEntry = async (a: FileSystemHandle, b: FileSystemHandle) => remote(a) === remote(b) && await a.isSameEntry(b);
+const resolveEntry = async (folder: FileSystemDirectoryHandle, handle: FileSystemHandle) =>
+  remote(folder) === remote(handle) ? await folder.resolve(handle) : null;
 
 async function at(root: FileSystemHandle, path: string[]): Promise<FileSystemHandle> {
   let handle = root;
@@ -31,6 +37,10 @@ async function writeText(handle: LocalFile, text: string, format: TextFormat) {
 /** Copy, rebind graph references, then remove the original; shared by rename and relocate. */
 export async function transferResource(workspace: Workspace, source: StateNode, name: string, target?: StateNode | null) {
   const relocating = target !== undefined;
+  const sourceRepo = workspace.github(source.sourceId);
+  const destinationRepo = relocating ? (target ? workspace.github(target.sourceId) : undefined) : sourceRepo;
+  if (sourceRepo && !source.path.length) throw new Error('Manage the repository itself in GitHub settings.');
+  sourceRepo?.assertTransferable(source.path.join('/'));
   if (!relocating) name = name.trim();
   if (!relocating && (!validFilename(name) || name.toLowerCase() === '.git')) throw new Error('Enter a valid name without a folder path.');
   if (!relocating && name === source.name) return { node: source, warning: '', remap: (id: string) => id };
@@ -56,10 +66,10 @@ export async function transferResource(workspace: Workspace, source: StateNode, 
   if (relocating && target) {
     destinationFolder = await workspace.handle(target.id) as unknown as FileSystemDirectoryHandle;
     if (!await destinationFolder.isSameEntry(native(selected!))) throw new Error('The destination changed. Reopen it before relocating.');
-    if (original.kind === 'directory' && await original.resolve(selected!) !== null) {
+    if (original.kind === 'directory' && await resolveEntry(native(original) as FileSystemDirectoryHandle, native(selected!)) !== null) {
       throw new Error('A folder cannot be relocated into itself or one of its subfolders.');
     }
-    if (await folder.isSameEntry(destinationFolder)) return { node: source, warning: '', remap: (id: string) => id };
+    if (await sameEntry(folder, destinationFolder)) return { node: source, warning: '', remap: (id: string) => id };
     destinationSource = target.sourceId;
     destinationPath = [...target.path, name];
     destinationUri = target.uri + '/' + encodeURIComponent(name);
@@ -85,9 +95,9 @@ export async function transferResource(workspace: Workspace, source: StateNode, 
   const next = new Workspace(snapshotWorkspace(workspace.data));
   const aliases = new Map<string, string[]>();
   for (const grant of previous.sources) {
-    if (await grant.handle.isSameEntry(original)) aliases.set(grant.id, []);
+    if (await sameEntry(native(grant.handle), native(original))) aliases.set(grant.id, []);
     else if (original.kind === 'directory') {
-      const path = await original.resolve(grant.handle).catch(() => null);
+      const path = await resolveEntry(native(original) as FileSystemDirectoryHandle, native(grant.handle)).catch(() => null);
       if (path) aliases.set(grant.id, path);
     }
   }
@@ -99,7 +109,7 @@ export async function transferResource(workspace: Workspace, source: StateNode, 
     const alias = aliases.get(grant.id);
     if (alias) prefixes.set(grant.id, { before: [], after: alias });
     else if (grant.handle.kind === 'directory') {
-      const path = await grant.handle.resolve(original).catch(() => null);
+      const path = await resolveEntry(native(grant.handle) as FileSystemDirectoryHandle, native(original)).catch(() => null);
       if (path) prefixes.set(grant.id, { before: path, after: [] });
     }
   }
@@ -121,13 +131,22 @@ export async function transferResource(workspace: Workspace, source: StateNode, 
   let destinationCreated = false;
   let committed = false;
   let installed = false;
+  let published = false;
+  const repositories = workspace.data.sources.flatMap((source) => workspace.github(source.id) ?? []);
+  const checkpoints = new Map(repositories.map((repository) => [repository, repository.checkpoint()]));
+  const publish = async (repository: GitHubRepository) => {
+    if (await repository.commit(checkpoints.get(repository)!, `${relocating ? 'move' : 'rename'}: ${source.name}`)) published = true;
+  };
   try {
     async function copy(handle: FileSystemHandle, parent: FileSystemDirectoryHandle, filename: string) {
+      if (destinationRepo && filename.toLowerCase() === '.git') throw new Error('A folder containing .git metadata cannot be moved into GitHub.');
       if (handle.kind === 'file') {
         const file = await (handle as FileSystemFileHandle).getFile();
         snapshots.push({ handle: handle as FileSystemFileHandle, size: file.size, modified: file.lastModified });
         const target = await parent.getFileHandle(filename, { create: true });
-        await file.stream().pipeTo(await target.createWritable());
+        if (target instanceof GitHubFile && handle instanceof GitHubFile) {
+          target.repository.stage(target.path, file, handle.repository.entryMode(handle.path));
+        } else await file.stream().pipeTo(await target.createWritable());
         return target;
       }
       const target = await parent.getDirectoryHandle(filename, { create: true });
@@ -194,7 +213,8 @@ export async function transferResource(workspace: Workspace, source: StateNode, 
         (raw, prefix: string, token: string, suffix: string) => replacements.has(token) ? prefix + replacements.get(token) + suffix : raw);
       if (before === after) continue;
       const targetHandle = await next.handle(afterNode.id) as LocalFile;
-      const outside = await handle.isSameEntry(targetHandle);
+      const outside = await sameEntry(native(handle), native(targetHandle));
+      if (outside && targetHandle instanceof GitHubFile) targetHandle.repository.assertTransferable(targetHandle.path);
       if (afterNode.storage === 'local' && outside) await requireWrite(handle);
       // URI canonicalization deduplicates independently selected handles to one file.
       writes.set(afterNode.uri, { handle: targetHandle, before: pending?.before ?? before, after, format, outside });
@@ -223,17 +243,28 @@ export async function transferResource(workspace: Workspace, source: StateNode, 
     // Drop cached handles to the old tree. Node reads rebuild them from new locations.
     workspace.clearCaches();
     let warning = '';
-    try { await folder.removeEntry(source.name, { recursive: source.kind === 'directory' }); }
+    if (sourceRepo) await folder.removeEntry(source.name, { recursive: source.kind === 'directory' });
+    // Publish the destination and backlink changes before removing an original
+    // in a different location. Within one repository the move is one commit.
+    if (destinationRepo) await publish(destinationRepo);
+    for (const repository of repositories) if (repository !== destinationRepo && repository !== sourceRepo) await publish(repository);
+    if (sourceRepo && sourceRepo !== destinationRepo) await publish(sourceRepo);
+    try { if (!sourceRepo) await folder.removeEntry(source.name, { recursive: source.kind === 'directory' }); }
     catch (error) {
-      if (source.kind === 'file') throw error;
+      if (source.kind === 'file' && !published) throw error;
       warning = `${relocating ? 'Relocated' : 'Renamed'} successfully, but the original could not be removed. Both copies were kept; remove the old copy after checking the new one.`; }
     committed = true;
     workspace.revision++;
     return { node: await workspace.node(remap(source.id)), warning, remap };
   } catch (error) {
+    for (const [repository, checkpoint] of checkpoints) repository.restore(checkpoint);
+    if (published || error instanceof GitHubWriteUncertain) {
+      throw new Error(`${error instanceof Error ? error.message + ' ' : ''}Notework kept the destination copy because part of the move may already be on GitHub.`);
+    }
     if (!committed) {
       let rollbackFailed = false;
       for (const item of backups.reverse()) {
+        if (item.handle instanceof GitHubFile) continue;
         try { await writeText(item.handle, item.before, item.format); } catch { rollbackFailed = true; }
       }
       if (installed) {
@@ -241,7 +272,7 @@ export async function transferResource(workspace: Workspace, source: StateNode, 
         workspace.data = previous;
         workspace.clearCaches();
       }
-      if (destinationCreated && !rollbackFailed) await destinationFolder.removeEntry(name, { recursive: true }).catch(() => {});
+      if (destinationCreated && !destinationRepo && !rollbackFailed) await destinationFolder.removeEntry(name, { recursive: true }).catch(() => {});
       if (!rollbackFailed) await discardBucket?.().catch(() => {});
       if (rollbackFailed) throw new Error(`${relocating ? 'Relocation' : 'Rename'} could not be fully rolled back. Both copies were kept. Check the affected files before retrying.`);
     }

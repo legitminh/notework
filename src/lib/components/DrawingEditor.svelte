@@ -7,13 +7,15 @@
   import { drawingGestures } from '../drawing-gestures';
   import { storageError } from '../browser-documents';
   import { WritePermissionRequired } from '../wiki';
+  import { GitHubEditCancelled } from '../github/repository';
 
-  let { name, initial, onSave, onExit, surfaceTarget, stylusOnly, onExport, autosaveMs, usingTools = $bindable(false) }: {
+  let { name, initial, onSave, onCommit, onExit, surfaceTarget, stylusOnly, onExport, autosaveMs, usingTools = $bindable(false) }: {
     name: string;
     stylusOnly: boolean;
     autosaveMs: number;
     initial: Drawing;
     onSave: (strokes: Drawing, requestWrite: boolean) => Promise<void>;
+    onCommit?: () => Promise<Drawing | undefined>;
     onExport: (strokes: Drawing) => void;
     onExit: () => void;
     surfaceTarget?: HTMLElement;
@@ -166,7 +168,7 @@
 
   async function save(exit = false, requestWrite = true) {
     if (saving || gesture) return;
-    if (!dirty) {
+    if (!dirty && !(requestWrite && onCommit)) {
       if (exit) onExit();
       return;
     }
@@ -174,14 +176,20 @@
     saving = true; error = '';
     try {
       const snapshot = strokes;
-      await onSave(snapshot, requestWrite);
-      saved = snapshot; dirty = strokes !== saved; waitingForPermission = false;
+      if (dirty) await onSave(snapshot, requestWrite);
+      saved = snapshot;
+      dirty = strokes !== saved;
+      if (requestWrite && onCommit) {
+        const committed = await onCommit();
+        if (committed) saved = strokes = committed;
+      }
+      dirty = strokes !== saved; waitingForPermission = false;
       lastSaveAt = Date.now();
       if (exit) onExit();
     } catch (cause) {
       lastSaveAt = Date.now();
       if (cause instanceof WritePermissionRequired) waitingForPermission = true;
-      else error = storageError(cause);
+      else if (!(cause instanceof GitHubEditCancelled)) error = storageError(cause);
     } finally {
       saving = false;
       if (dirty && !waitingForPermission) scheduleAutosave();
@@ -206,7 +214,7 @@
     saved = initial;
     lastSaveAt = Date.now();
     const shortcuts = (event: KeyboardEvent) => {
-      if (event.altKey || event.isComposing) return;
+      if (event.altKey || event.isComposing || document.querySelector('.github-conflict[open]')) return;
       const key = event.key.toLowerCase();
       if (!(event.metaKey || event.ctrlKey)) {
         if (key !== 'escape' || event.shiftKey || usingTools || document.querySelector('dialog[open]')) return;

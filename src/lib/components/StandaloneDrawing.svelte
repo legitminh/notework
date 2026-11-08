@@ -2,7 +2,8 @@
   import Control from './Control.svelte';
   import { onMount } from 'svelte';
   import type { Workspace, StateNode } from '../workspace';
-  import { loadDrawing, saveDrawing, type DrawingResource } from '../drawing-files';
+  import { commitDrawing, loadDrawing, saveDrawing, type DrawingResource } from '../drawing-files';
+  import type { ResolveGitHubConflict } from '../github/repository';
   import { isMissing } from '../filesystem';
   import { storageError } from '../browser-documents';
   import ExportDialog from './ExportDialog.svelte';
@@ -12,9 +13,10 @@
   import type { Drawing } from '../drawing';
   import DrawingEditor from './DrawingEditor.svelte';
 
-  let { workspace, node, onExit, onMissing, stylusOnly, pdfMargins, autosaveMs }: {
+  let { workspace, node, onExit, onMissing, stylusOnly, pdfMargins, autosaveMs, resolveGitHubConflict }: {
     stylusOnly: boolean;
     autosaveMs: number;
+    resolveGitHubConflict: ResolveGitHubConflict;
     pdfMargins: PdfMargins;
     workspace: Workspace; node: StateNode; onExit: () => void; onMissing: () => void;
   } = $props();
@@ -49,7 +51,13 @@
 {#if resource}
   <div class="standalone-drawing-editor" bind:this={editor}>
   <DrawingEditor {stylusOnly} {autosaveMs} name={node.name} initial={resource.strokes} {onExit} onExport={exportDrawing}
-    onSave={async (strokes, requestWrite) => { resource = await saveDrawing(resource!, strokes, requestWrite); }} />
+    onSave={async (strokes, requestWrite) => { resource = await saveDrawing(resource!, strokes, requestWrite); }}
+    onCommit={node.storage === 'github' ? async () => {
+      const saved = await commitDrawing(resource!, resolveGitHubConflict);
+      if (!saved) { onMissing(); return; }
+      resource = saved;
+      return saved.strokes;
+    } : undefined} />
   </div>
 {:else if error}
   <Control onclick={onExit}>Exit</Control>

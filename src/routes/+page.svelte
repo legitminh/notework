@@ -8,6 +8,8 @@
   import Action from '../lib/components/Action.svelte';
   import SearchPanel from '../lib/components/SearchPanel.svelte';
   import CreateAsset from '../lib/components/CreateAsset.svelte';
+  import GitHubSettings from '../lib/components/GitHubSettings.svelte';
+  import GitHubConflictDialog from '../lib/components/GitHubConflictDialog.svelte';
   import { defaultPdfMargins, readPdfMargins, pdfMarginSides, PDF_MARGINS_KEY, type PdfMarginSide } from '../lib/export-preferences';
   import { AUTOSAVE_SECONDS_KEY, DEFAULT_AUTOSAVE_SECONDS, MIN_AUTOSAVE_SECONDS, normalizeAutosaveSeconds, readAutosaveSeconds } from '../lib/autosave-preferences';
   import { createAsset } from '../lib/create-asset';
@@ -17,7 +19,9 @@
   import { renameResource } from '../lib/rename-resource';
   import { relocateResource } from '../lib/relocate-resource';
   import LocalPicker from '../lib/components/LocalPicker.svelte';
-  import { Workspace, ROOT, nodeId, parentId, type StateNode } from '../lib/workspace';
+  import { Workspace, ROOT, nodeId, parentId, storageLabel, type StateNode } from '../lib/workspace';
+  import { GitHubRepository, type GitHubConflict, type ResolveGitHubConflict } from '../lib/github/repository';
+  import { clearRepository } from '../lib/github/storage';
   import { loadWorkspace, saveWorkspace } from '../lib/persistence';
   import { supportsBrowserDocuments, storageInfo, storageError } from '../lib/browser-documents';
   import { canDeleteResource, deleteResource } from '../lib/delete-resource';
@@ -30,7 +34,7 @@
   let children = $state.raw<StateNode[]>([]);
   let rootIds = $state.raw<string[]>([]);
   let permissions = $state<Record<string, PermissionState>>({});
-  let panel = $state<'search' | 'settings' | 'configure' | null>(null);
+  let panel = $state<'search' | 'settings' | 'configure' | 'github' | null>(null);
   let loading = $state(true);
   let busy = $state(false);
   let picking = $state(false);
@@ -48,6 +52,16 @@
   let graphRevision = $state(0);
   let message = $state('');
   let storageMessage = $state('');
+  let githubError = $state('');
+  let githubConflict = $state.raw<{ conflict: GitHubConflict; choose: (value?: Blob | null) => void }>();
+  const resolveGitHubConflict: ResolveGitHubConflict = (conflict) => new Promise((choose) => {
+    githubConflict = { conflict, choose };
+  });
+  function finishGitHubConflict(value?: Blob | null) {
+    const current = githubConflict;
+    githubConflict = undefined;
+    current?.choose(value);
+  }
   let panelElement = $state<HTMLDivElement>();
   let renameDialog: HTMLDialogElement;
   let renameName = $state('');
@@ -64,9 +78,11 @@
   let pendingHistory: string | undefined;
   let refreshVersion = 0;
   const currentId = $derived(current?.id ?? ROOT);
-  const canCreateHere = $derived(current?.storage === 'local' ? supported : browserDocuments);
+  const canCreateHere = $derived(current?.storage === 'github' || (current?.storage === 'local' ? supported : browserDocuments));
   const source = $derived(workspace.data.sources.find((item) => item.id === current?.sourceId));
-  const needsPermission = $derived(source && source.storage !== 'browser' && permissions[source.id] !== 'granted');
+  const githubSources = $derived.by(() => { graphRevision; return workspace.data.sources.filter((item) => item.storage === 'github'); });
+  const githubRoot = $derived(current?.storage === 'github' && !current.path.length);
+  const needsPermission = $derived(source?.storage === 'local' && permissions[source.id] !== 'granted');
   const canDeleteCurrent = $derived(!!current && canDeleteResource(workspace, current));
   const directChildIds = $derived(new Set(current ? children.map((child) => child.id) : rootIds));
 
@@ -85,9 +101,12 @@
     void (async () => {
       try { workspace = new Workspace(await loadWorkspace()); }
       catch { storageMessage = 'Browser storage is unavailable. Connections and settings will last only for this tab.'; }
+      const synced = await Promise.allSettled(workspace.data.sources.map((item) => workspace.github(item.id)?.sync()));
+      const failed = synced.find((result) => result.status === 'rejected');
+      if (failed?.status === 'rejected') githubError = storageError(failed.reason);
       await workspace.pruneMissing();
       await Promise.all(workspace.data.sources.map(async (source) => {
-        permissions[source.id] = source.storage === 'browser' ? 'granted' : await source.handle.queryPermission({ mode: 'read' }).catch(() => 'prompt' as const);
+        permissions[source.id] = source.storage !== 'local' ? 'granted' : await source.handle.queryPermission({ mode: 'read' }).catch(() => 'prompt' as const);
       }));
       await refresh();
       await goto(location.pathname, { state: { notework: ROOT }, shallow: true, replace: true, reset: false });
@@ -187,6 +206,14 @@
   async function openFile() {
     if (current?.kind !== 'file' || busy || relocateTarget) return;
     const id = current.id;
+    const repository = workspace.github(current.sourceId);
+    if (repository) {
+      busy = true;
+      try { await repository.sync(); githubError = ''; }
+      catch (error) { githubError = storageError(error); }
+      finally { busy = false; }
+      await refresh();
+    }
     if (needsPermission && source) await reconnect(source.id);
     if (current?.id !== id || needsPermission) return;
     panel = null;
@@ -206,7 +233,7 @@
   }
 
   function askRename() {
-    if (!current || busy) return;
+    if (!current || busy || githubRoot) return;
     renameTarget = current;
     renameName = current.name;
     renameError = '';
@@ -230,7 +257,7 @@
   }
 
   function startRelocate() {
-    if (!current || busy || relocateTarget) return;
+    if (!current || busy || relocateTarget || githubRoot) return;
     relocateTarget = current;
     panel = null; message = '';
     state_viewport.viewport?.scrollTo({ top: 0 });
@@ -246,7 +273,8 @@
   function chooseLocation(destination: StateNode | null) {
     if (!relocateTarget || busy || (destination && destination.kind !== 'directory')) return;
     relocateDestination = destination;
-    if (relocateTarget.storage !== (destination?.storage ?? 'browser')) relocateDialog.showModal();
+    if (relocateTarget.storage !== (destination?.storage ?? 'browser') ||
+      (relocateTarget.storage === 'github' && relocateTarget.sourceId !== destination?.sourceId)) relocateDialog.showModal();
     else void finishRelocate();
   }
 
@@ -424,6 +452,61 @@
   async function remove(from: string, to: string) {
     workspace.unlink(from, to); await persist();
   }
+
+  async function connectGitHub(owner: string, repo: string, branch: string, token: string) {
+    if (busy) return false;
+    busy = true; githubError = '';
+    const id = crypto.randomUUID();
+    try {
+      const repository = await GitHubRepository.connect(id, owner, repo, branch, token);
+      if (githubSources.some(({ github }) => github && github.owner.toLowerCase() === owner.toLowerCase() &&
+        github.repo.toLowerCase() === repo.toLowerCase() && github.branch === repository.connection.branch)) {
+        throw new Error('This repository branch is already connected. Use Update token to change its credentials.');
+      }
+      const node = workspace.connectGitHub(repository);
+      try { await saveWorkspace(workspace.data); }
+      catch (error) { workspace.forget(node); throw error; }
+      await refresh();
+      return true;
+    } catch (error) {
+      await clearRepository(id).catch(() => {});
+      githubError = storageError(error);
+      return false;
+    } finally { busy = false; }
+  }
+
+  async function updateGitHubToken(id: string, token: string) {
+    if (busy) return false;
+    busy = true; githubError = '';
+    try { await workspace.github(id)?.replaceToken(token); await refresh(); return true; }
+    catch (error) { githubError = storageError(error); return false; }
+    finally { busy = false; }
+  }
+
+  async function disconnectGitHub(id: string) {
+    if (busy || !confirm('Disconnect this repository? Notework will remove its token, cached files, and any unpublished drafts from this browser. Files on GitHub will stay as they are.')) return;
+    busy = true; githubError = '';
+    try {
+      await clearRepository(id);
+      workspace.forget(nodeId(id));
+      await saveWorkspace(workspace.data);
+      await refresh();
+    } catch (error) { githubError = storageError(error); }
+    finally { busy = false; }
+  }
+
+  async function refreshFolder() {
+    if (busy) return;
+    message = '';
+    const repository = current && workspace.github(current.sourceId);
+    if (repository) {
+      busy = true;
+      try { await repository.sync(); githubError = ''; }
+      catch (error) { githubError = storageError(error); }
+      finally { busy = false; }
+    }
+    await refresh();
+  }
 </script>
 
 <svelte:head>
@@ -441,15 +524,15 @@
         </aside>
       {/if}
       {#if creating && (!current || current.kind === 'directory')}
-        <CreateAsset path={current ? workspace.label(current) : 'home'} machineFolder={current?.storage === 'local'}
+        <CreateAsset path={current ? workspace.label(current) : 'home'} machineFolder={current?.storage === 'local'} githubFolder={current?.storage === 'github'}
           {busy} supported={canCreateHere} error={message} onCreate={createAtFolder}
           onCancel={() => { creating = false; message = ''; }} />
       {:else if editing && current}
         {#key current.uri}
           {#if current.drawing}
-            <StandaloneDrawing {pdfMargins} {stylusOnly} autosaveMs={autosaveSeconds * 1000} {workspace} node={current} onExit={exitEditor} onMissing={() => { void missingCurrent(); }} />
+            <StandaloneDrawing {pdfMargins} {stylusOnly} {resolveGitHubConflict} autosaveMs={autosaveSeconds * 1000} {workspace} node={current} onExit={exitEditor} onMissing={() => { void missingCurrent(); }} />
           {:else}
-            <TextEditor {workspace} node={current} {wrapLines} {vimMode} {stylusOnly} {pdfMargins} autosaveMs={autosaveSeconds * 1000} onExit={exitEditor}
+            <TextEditor {workspace} node={current} {wrapLines} {vimMode} {stylusOnly} {pdfMargins} {resolveGitHubConflict} autosaveMs={autosaveSeconds * 1000} onExit={exitEditor}
               onMissing={() => { void missingCurrent(); }} onOpenLink={openLinkedFile} />
           {/if}
         {/key}
@@ -492,6 +575,7 @@
         <p class="notice" role="status">Local filesystem access needs Chrome or Edge on HTTPS or localhost. Open Notework there to select files and folders from your computer.</p>
       {/if}
       {#if storageMessage}<p class="notice" role="status">{storageMessage}</p>{/if}
+      {#if githubError && panel !== 'github'}<p class="notice" role="status">{githubError}</p>{/if}
       {#if message}<p class="notice" role="alert">{message}</p>{/if}
       <div bind:this={panelElement}>
         {#if panel}
@@ -505,25 +589,29 @@
             <h2 id="configure-heading">configure {resourceType}</h2>
             {#if current.kind === 'directory'}
               <Action label="create new file/folder" onSelect={startCreating} disabled={loading || busy || !canCreateHere} />
-              <Action label="refresh folder" onSelect={() => { message = ''; void refresh(); }} />
+              <Action label="refresh folder" onSelect={refreshFolder} disabled={busy} />
             {/if}
             {#if needsPermission}
               <Action label={`reconnect ${source!.handle.name}`} onSelect={() => reconnect(source!.id)} disabled={busy} />
             {/if}
-            <Action label="rename" onSelect={askRename} disabled={busy} />
-            <Action label={`relocate this ${resourceType}`} onSelect={startRelocate} disabled={busy || !!relocateTarget} />
-            <Action label={`delete this ${resourceType}`} onSelect={confirmDelete}
-              disabled={busy || !canDeleteCurrent} />
-            {#if !canDeleteCurrent}
+            {#if githubRoot}
+              <Action label="GitHub repositories" onSelect={() => togglePanel('github')} disabled={busy} />
+            {:else}
+              <Action label="rename" onSelect={askRename} disabled={busy} />
+              <Action label={`relocate this ${resourceType}`} onSelect={startRelocate} disabled={busy || !!relocateTarget} />
+              <Action label={`delete this ${resourceType}`} onSelect={confirmDelete} disabled={busy || !canDeleteCurrent} />
+            {/if}
+            {#if !githubRoot && !canDeleteCurrent}
               <p class="muted">Reconnect this {resourceType} through its containing folder to delete it from Notework.</p>
             {/if}
           </section>
         {:else if panel === 'settings'}
           <section class="panel" aria-labelledby="settings-heading">
             <h2 id="settings-heading">app settings</h2>
-            <p class="muted">Choose which files and folders are directly reachable from home. Files stay on your computer.</p>
+            <p class="muted">Choose which files and folders are directly reachable from home.</p>
             <Action label="create new file/folder" onSelect={startCreating} disabled={loading || busy || !canCreateHere} />
             <Action label="add existing folder/file" onSelect={() => { picking = true; }} disabled={!supported || busy} />
+            <Action label="GitHub repositories" onSelect={() => togglePanel('github')} disabled={loading || busy} />
 
             {#if capacity}
               <p class="muted">{(capacity.usage / 1048576).toFixed(1)} MB used · {(capacity.quota / 1073741824).toFixed(1)} GB estimated quota · {capacity.persistent ? 'persistent storage' : 'best-effort storage'}</p>
@@ -542,8 +630,8 @@
               <h3>connected sources</h3>
               <div class="source-list">
                 {#each workspace.data.sources as grant (grant.id)}
-                  <div class="config-row"><span>{grant.handle.name} · {grant.storage === 'browser' ? 'browser storage' : permissions[grant.id] === 'granted' ? 'read access granted' : 'needs permission'}</span></div>
-                  {#if grant.storage !== 'browser' && permissions[grant.id] !== 'granted'}
+                  <div class="config-row"><span>{grant.handle.name} · {grant.storage !== 'local' ? storageLabel(grant.storage ?? 'local') : permissions[grant.id] === 'granted' ? 'read access granted' : 'needs permission'}</span></div>
+                  {#if grant.storage === 'local' && permissions[grant.id] !== 'granted'}
                     <Action label={`reconnect ${grant.handle.name}`} onSelect={() => reconnect(grant.id)} disabled={busy} />
                   {/if}
                   {#if !rootIds.includes(nodeId(grant.id))}
@@ -585,13 +673,17 @@
               </label>
             {/each}
           </section>
+        {:else if panel === 'github'}
+          <Action label="back to app settings" onSelect={() => togglePanel('settings')} disabled={busy} />
+          <GitHubSettings sources={githubSources} {busy} error={githubError}
+            onConnect={connectGitHub} onUpdate={updateGitHubToken} onDisconnect={disconnectGitHub} />
         {/if}
       </div>
 
       <section class="state-display" aria-label="current state" tabindex="-1" bind:this={displayElement}>
         {#if current}
           <h1>{current.name}{current.kind === 'directory' ? '/' : ''}</h1>
-          <p class="path">{workspace.label(current)} · {current.storage === 'browser' ? 'browser storage' : 'computer'} · {current.kind === 'directory' ? 'folder' : 'file'}</p>
+          <p class="path">{workspace.label(current)} · {current.storage === 'local' ? 'computer' : storageLabel(current.storage)} · {current.kind === 'directory' ? 'folder' : 'file'}</p>
           {#if relocateTarget && current.kind === 'directory'}
             <Action label="choose" onSelect={() => chooseLocation(current)} disabled={busy} />
           {/if}
@@ -623,8 +715,8 @@
   </dialog>
   <dialog use:dialogShortcuts class="local-picker editor-exit" bind:this={relocateDialog} aria-labelledby="relocate-heading"
     oncancel={(event) => { if (busy) event.preventDefault(); }}>
-    <h2 id="relocate-heading">Relocate {relocateTarget?.kind === 'directory' ? 'folder' : 'file'} to {relocateDestination?.storage === 'local' ? 'computer storage' : 'browser storage'}?</h2>
-    <p class="muted">This creates “{relocateTarget?.name}”{relocateTarget?.kind === 'directory' ? ' and all its contents' : ''} in {relocateDestination?.storage === 'local' ? 'computer storage' : 'browser storage'} at {relocateDestination ? workspace.label(relocateDestination) : 'home'}, then deletes the original from {relocateTarget?.storage === 'local' ? 'computer storage' : 'browser storage'}.</p>
+    <h2 id="relocate-heading">Relocate {relocateTarget?.kind === 'directory' ? 'folder' : 'file'} to {storageLabel(relocateDestination?.storage ?? 'browser')}?</h2>
+    <p class="muted">This creates “{relocateTarget?.name}”{relocateTarget?.kind === 'directory' ? ' and all its contents' : ''} in {storageLabel(relocateDestination?.storage ?? 'browser')} at {relocateDestination ? workspace.label(relocateDestination) : 'home'}, then deletes the original from {storageLabel(relocateTarget?.storage ?? 'browser')}.</p>
     <div class="editor-controls">
       <Control onclick={() => relocateDialog.close()} disabled={busy}>No</Control>
       <Control onclick={finishRelocate} disabled={busy}>Yes</Control>
@@ -641,5 +733,8 @@
   </dialog>
   {#if picking}
     <LocalPicker onSelect={add} onCancel={() => { picking = false; }} />
+  {/if}
+  {#if githubConflict}
+    <GitHubConflictDialog conflict={githubConflict.conflict} onChoose={finishGitHubConflict} />
   {/if}
 </Keyflow>

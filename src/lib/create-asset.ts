@@ -43,6 +43,8 @@ export async function createAsset(workspace: Workspace, parent: StateNode | null
   }
   let created = false;
   let createdId: string | undefined;
+  const repository = parent && workspace.github(parent.sourceId);
+  const checkpoint = repository?.checkpoint();
   try {
     // Check hidden resources too. Never open an existing file for writing.
     for await (const entry of directory.values()) {
@@ -56,10 +58,12 @@ export async function createAsset(workspace: Workspace, parent: StateNode | null
     createdId = parent ? nodeId(parent.sourceId, [...parent.path, name])
       : (await workspace.connect(handle as unknown as LocalHandle, ROOT, location)).id;
     const node = await workspace.node(createdId);
+    if (repository && checkpoint) await repository.commit(checkpoint, `create: ${name}`);
     await saveWorkspace(workspace.data);
     return node;
   } catch (error) {
-    if (created) await directory.removeEntry(name, { recursive: true }).catch(() => {});
+    if (repository && checkpoint) repository.restore(checkpoint);
+    else if (created) await directory.removeEntry(name, { recursive: true }).catch(() => {});
     await discardBucket?.().catch(() => {});
     if (createdId) workspace.forget(createdId);
     throw error;

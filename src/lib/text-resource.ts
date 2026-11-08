@@ -11,7 +11,10 @@ export class HiddenResource extends Error {}
 
 /** Validate actual bytes, not a filename extension. Never persist file contents. */
 export async function inspectText(handle: LocalFile, cached?: TextFormat): Promise<TextFormat | null> {
-  const file = await handle.getFile();
+  return inspectTextFile(await handle.getFile(), cached);
+}
+
+export async function inspectTextFile(file: File, cached?: TextFormat): Promise<TextFormat | null> {
   if (cached && cached.size === file.size && cached.modified === file.lastModified) return cached;
   const prefix = new Uint8Array(await file.slice(0, 3).arrayBuffer());
   const encoding = prefix[0] === 0xff && prefix[1] === 0xfe ? 'utf-16le' : prefix[0] === 0xfe && prefix[1] === 0xff ? 'utf-16be' : 'utf-8';

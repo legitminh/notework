@@ -19,7 +19,7 @@
   import { closeSearchPanel, openSearchPanel, searchKeymap, highlightSelectionMatches } from '@codemirror/search';
   import { parentId, ROOT, type Workspace, type StateNode } from '../workspace';
   import { isMissing, type LocalFile } from '../filesystem';
-  import { decodedChunks, encodedChunks, inspectText, type TextFormat } from '../text-resource';
+  import { decodedChunks, encodedChunks, inspectTextFile, type TextFormat } from '../text-resource';
   import { writeBrowserContent, storageError } from '../browser-documents';
   import { saveWorkspace } from '../persistence';
   import ExportDialog from './ExportDialog.svelte';
@@ -29,17 +29,19 @@
   import DrawingEditor from './DrawingEditor.svelte';
   import { svgPages, type SvgPage } from '../svg-pages';
   import { svgPageNames, type Drawing } from '../drawing';
-  import { canCreateSiblingDrawing, loadDrawingReference, prepareSvgPages, saveDrawing, saveSiblingDrawing, type DrawingResource } from '../drawing-files';
+  import { canCreateSiblingDrawing, commitDrawing, loadDrawingReference, prepareSvgPages, saveDrawing, saveSiblingDrawing, type DrawingResource } from '../drawing-files';
   import { wikiDisplay } from '../wiki-display';
   import { containingFolder, findWikiTarget, prepareWikiSave, requireWrite, validFilename, wikiCatalog, wikiScore, wikiToken, wikiTokens, WritePermissionRequired } from '../wiki';
   import { commandCompletion, opensCommandArguments } from '../command-completion';
+  import { GitHubChanged, GitHubEditCancelled, GitHubFile, type ResolveGitHubConflict } from '../github/repository';
 
-  let { workspace, node, wrapLines, vimMode, stylusOnly, pdfMargins, autosaveMs, onExit, onMissing, onOpenLink }: {
+  let { workspace, node, wrapLines, vimMode, stylusOnly, pdfMargins, autosaveMs, resolveGitHubConflict, onExit, onMissing, onOpenLink }: {
     workspace: Workspace; node: StateNode;
     wrapLines: boolean;
     vimMode: boolean;
     stylusOnly: boolean;
     autosaveMs: number;
+    resolveGitHubConflict: ResolveGitHubConflict;
     pdfMargins: PdfMargins;
     onExit: () => void;
     onOpenLink: (id: string) => Promise<void>;
@@ -78,6 +80,8 @@
   let active = false;
   let autosaveTimer: ReturnType<typeof setTimeout> | undefined;
   let lastSaveAt = 0;
+  let githubBase: string | null = null;
+  let githubPending = $state(false);
 
   function* chunks(doc: Text) {
     let buffer = '';
@@ -228,6 +232,16 @@
     scheduleAutosave();
   }
 
+  async function commitInlineDrawing() {
+    const drawing = inlineDrawing;
+    if (!drawing?.resource) return;
+    drawing.resource = await commitDrawing(drawing.resource, resolveGitHubConflict);
+    const { name } = drawing.page;
+    previews.set(name, Promise.resolve(drawing.resource));
+    view?.dispatch({ effects: pageWidgets.setPreview.of({ name, strokes: drawing.resource?.strokes ?? [] }) });
+    return drawing.resource?.strokes;
+  }
+
   function clearAutosave() {
     if (autosaveTimer) clearTimeout(autosaveTimer);
     autosaveTimer = undefined;
@@ -245,6 +259,10 @@
 
   async function save(leave = false, requestWrite = true) {
     if (!view || saving || inlineDrawing) return;
+    if (handle instanceof GitHubFile && (dirty || githubPending)) {
+      await saveGitHub(handle, leave, requestWrite);
+      return;
+    }
     if (!dirty) {
       if (leave) await finishExit();
       return;
@@ -308,6 +326,88 @@
     }
   }
 
+  async function saveGitHub(file: GitHubFile, leave: boolean, publish: boolean) {
+    const editor = view!;
+    const { repository, path } = file;
+    clearAutosave();
+    saving = true; error = '';
+    if (publish) editor.dispatch({ effects: textLock.reconfigure(EditorState.readOnly.of(true)) });
+    try {
+      const version = revision;
+      let snapshot = editor.state.doc;
+      let draft = repository.draft(path);
+      if (dirty || !draft) {
+        draft = { base: githubBase, content: new Blob([...encodedChunks(chunks(snapshot), format)]), modified: Date.now() };
+        await repository.saveDraft(path, draft);
+      }
+      githubPending = true;
+      savedRevision = version;
+      dirty = revision !== version;
+      if (!publish) return;
+      for (let attempt = 0; ; attempt++) {
+        const chosen = await repository.reconcile(path, draft, resolveGitHubConflict);
+        if (chosen.content !== draft.content) {
+          const selected = chosen.content && new File([chosen.content], node.name);
+          const selectedFormat = selected && await inspectTextFile(selected);
+          if (!selected || !selectedFormat) {
+            await repository.saveDraft(path);
+            githubPending = false;
+            onMissing();
+            return;
+          }
+          let text = '';
+          for await (const chunk of decodedChunks(selected, selectedFormat)) text += chunk;
+          snapshot = Text.of(text.replace(/\r\n?/g, '\n').split('\n'));
+          editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: snapshot } });
+          format = selectedFormat;
+          savedRevision = revision;
+          dirty = false;
+        }
+        githubBase = chosen.base;
+        draft = { base: chosen.base, content: chosen.content!, modified: Date.now() };
+        await repository.saveDraft(path, draft);
+        const checkpoint = repository.checkpoint();
+        const tokens = wikiTokens(snapshot), pages = svgPageNames(snapshot);
+        let wiki: Awaited<ReturnType<typeof prepareWikiSave>> | undefined;
+        let svg: Awaited<ReturnType<typeof prepareSvgPages>> | undefined;
+        try {
+          if (!chosen.unchanged) repository.stage(path, draft.content);
+          if (tokens.size || pages.size) {
+            catalogRequest = undefined;
+            const files = await catalog();
+            wiki = await prepareWikiSave(workspace, node, file, tokens, files,
+              (token) => !chosen.unchanged && (!savedTokens.has(token) || requestedCreates.has(token)), true, chosen.unchanged);
+            svg = await prepareSvgPages(workspace, node, file, pages,
+              (name) => !chosen.unchanged && (!savedPages.has(name) || newDrawings.has(name)), true, files, chosen.unchanged);
+          }
+          await repository.commit(checkpoint, `edit: ${node.name}`);
+        } catch (cause) {
+          await svg?.rollback(); await wiki?.rollback(); repository.restore(checkpoint);
+          if (cause instanceof GitHubChanged && cause.path === path && attempt < 2) continue;
+          throw cause;
+        }
+        workspace.replaceWikiLinks(node.id, { ...wiki?.targets, ...svg?.targets });
+        await repository.saveDraft(path);
+        githubPending = false;
+        githubBase = repository.editBase(path);
+        savedTokens = tokens; savedPages = pages; requestedCreates.clear();
+        for (const name of pages) { newDrawings.delete(name); previews.delete(name); }
+        catalogRequest = undefined;
+        refreshDrawingPreviews();
+        await saveWorkspace(workspace.data);
+        if (leave) await finishExit();
+        return;
+      }
+    } catch (cause) {
+      if (!(cause instanceof GitHubEditCancelled)) error = storageError(cause);
+    } finally {
+      if (publish && active) editor.dispatch({ effects: textLock.reconfigure([]) });
+      lastSaveAt = Date.now();
+      saving = false;
+      if (dirty) scheduleAutosave();
+    }
+  }
+
   async function finishExit() {
     const token = nextLink;
     if (!token) { onExit(); return; }
@@ -330,7 +430,7 @@
   function leaveEditor(token?: string) {
     if (saving || followingLink || inlineDrawing) return;
     nextLink = token;
-    if (dirty) void save(true, true);
+    if (dirty || githubPending) void save(true, true);
     else void finishExit();
   }
 
@@ -376,7 +476,7 @@
   }
 
   function shortcuts(event: KeyboardEvent) {
-    if (inlineDrawing || event.isComposing || event.altKey || !(event.ctrlKey || event.metaKey)) return;
+    if (inlineDrawing || event.isComposing || event.altKey || !(event.ctrlKey || event.metaKey) || document.querySelector('.github-conflict[open]')) return;
     const key = event.key.toLowerCase();
     if (key !== 'escape' && key !== 's' && key !== 'f' && !(key === 'b' && event.metaKey)) return;
     if (vimMode && key === 'f' && event.ctrlKey) return;
@@ -455,10 +555,15 @@
         const resource = await workspace.handle(node.id);
         if (resource.kind !== 'file') return;
         handle = resource;
-        const detected = await inspectText(handle, workspace.format(node.id));
+        const file = await handle.getFile();
+        const detected = await inspectTextFile(file, workspace.format(node.id));
         if (!detected) throw new Error('This resource is not decodable text.');
         format = detected;
-        const file = await handle.getFile();
+        if (handle instanceof GitHubFile) {
+          const draft = handle.repository.draft(handle.path);
+          githubBase = draft ? draft.base : handle.repository.editBase(handle.path);
+          githubPending = !!draft;
+        }
         let doc = Text.empty;
         let pendingCR = '';
         for await (const part of decodedChunks(file, format)) {
@@ -471,8 +576,7 @@
         }
         if (pendingCR) doc = doc.append(Text.of(['', '']));
         if (!active) return;
-        savedTokens = wikiTokens(doc);
-        savedPages = svgPageNames(doc);
+        if (!githubPending) { savedTokens = wikiTokens(doc); savedPages = svgPageNames(doc); }
         if (!active) return;
         const completeCommand = commandCompletion(workspace, node, catalog);
         view = new EditorView({
@@ -579,7 +683,8 @@
       <div class="inline-drawing-controller">
         <DrawingEditor bind:this={drawingEditor} bind:usingTools {stylusOnly} {autosaveMs} name={inlineDrawing.page.name} initial={inlineDrawing.resource?.strokes ?? []}
           surfaceTarget={inlineDrawing.host}
-          onExport={(strokes) => openExport(strokes)} onSave={saveInlineDrawing} onExit={closeInlineDrawing} />
+          onExport={(strokes) => openExport(strokes)} onSave={saveInlineDrawing} onExit={closeInlineDrawing}
+          onCommit={inlineDrawing.resource?.storage === 'github' || node.storage === 'github' ? commitInlineDrawing : undefined} />
       </div>
     {/if}
   </div>
@@ -590,6 +695,8 @@
       {:else if saving}saving…
       {:else if waitingForPermission}autosave is waiting for write permission; exit to save
       {:else if dirty}unsaved changes
+      {:else if githubPending}draft saved in this browser · Exit to save to GitHub
+      {:else if !error && node.storage === 'github'}saved on GitHub
       {:else if !error}saved {node.storage === 'browser' ? 'in browser storage' : 'on your computer'}{/if}
     </p>
     {#if error}<p class="notice" role="alert">{error}</p>{/if}

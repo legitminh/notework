@@ -1,10 +1,11 @@
 import type { LocalFile } from './filesystem';
 import { isMissing } from './filesystem';
-import { nodeId, parentId, ROOT, type StateNode, type Workspace } from './workspace';
+import { nodeId, parentId, ROOT, type StateNode, type Storage, type Workspace } from './workspace';
 import { assertAvailable, connectSibling, containingFolder, requireWrite, resolveFileReference, validFilename, wikiCatalog } from './wiki';
 import { readDrawing, serializeDrawing, type Drawing } from './drawing';
 import { writeResourceContent } from './resource-content';
 import { saveWorkspace } from './persistence';
+import { GitHubChanged, GitHubFile, type ResolveGitHubConflict } from './github/repository';
 
 function drawingScope(source: StateNode) {
   const parent = parentId(source);
@@ -19,12 +20,15 @@ export interface DrawingResource {
   handle: LocalFile;
   strokes: Drawing;
   file: File;
-  storage: 'local' | 'browser';
+  storage: Storage;
+  githubBase?: string | null;
 }
 
-export async function loadDrawing(handle: LocalFile, storage: 'local' | 'browser'): Promise<DrawingResource> {
+export async function loadDrawing(handle: LocalFile, storage: Storage): Promise<DrawingResource> {
   const file = await handle.getFile();
-  return { handle, file, strokes: await readDrawing(file), storage };
+  const draft = handle instanceof GitHubFile ? handle.repository.draft(handle.path) : undefined;
+  const githubBase = handle instanceof GitHubFile ? (draft ? draft.base : handle.repository.editBase(handle.path)) : undefined;
+  return { handle, file, strokes: await readDrawing(file), storage, githubBase };
 }
 
 export function canCreateSiblingDrawing(reference: string) {
@@ -61,11 +65,18 @@ export async function loadDrawingReference(
   return (await resolveDrawing(workspace, source, file, reference, catalog))?.resource;
 }
 
-async function writeDrawing(handle: LocalFile, strokes: Drawing, storage: 'local' | 'browser') {
+async function writeDrawing(handle: LocalFile, strokes: Drawing, storage: Storage) {
   await writeResourceContent(handle, storage, [serializeDrawing(strokes)]);
 }
 
 export async function saveDrawing(resource: DrawingResource, strokes: Drawing, requestWrite = true) {
+  if (resource.handle instanceof GitHubFile) {
+    const { repository, path } = resource.handle;
+    const draft = repository.draft(path);
+    await repository.saveDraft(path, { base: draft ? draft.base : resource.githubBase ?? null,
+      content: new Blob([serializeDrawing(strokes)]), modified: Date.now() });
+    return { ...resource, file: await resource.handle.getFile(), strokes };
+  }
   if (resource.storage === 'local') await requireWrite(resource.handle, requestWrite);
   const latest = await resource.handle.getFile();
   if (latest.lastModified !== resource.file.lastModified || latest.size !== resource.file.size) {
@@ -73,6 +84,31 @@ export async function saveDrawing(resource: DrawingResource, strokes: Drawing, r
   }
   await writeDrawing(resource.handle, strokes, resource.storage);
   return { handle: resource.handle, file: await resource.handle.getFile(), strokes, storage: resource.storage };
+}
+
+export async function commitDrawing(resource: DrawingResource, resolve: ResolveGitHubConflict) {
+  if (!(resource.handle instanceof GitHubFile)) return resource;
+  const { repository, path } = resource.handle;
+  for (let attempt = 0; ; attempt++) {
+    const draft = repository.draft(path);
+    if (!draft) return resource;
+    const chosen = await repository.reconcile(path, draft, resolve);
+    if (!chosen.content) { await repository.saveDraft(path); return undefined; }
+    const file = new File([chosen.content], resource.handle.name);
+    const strokes = await readDrawing(file);
+    await repository.saveDraft(path, { base: chosen.base, content: chosen.content, modified: Date.now() });
+    const checkpoint = repository.checkpoint();
+    try {
+      if (!chosen.unchanged) repository.stage(path, chosen.content);
+      await repository.commit(checkpoint, `edit: ${resource.handle.name}`);
+    } catch (error) {
+      repository.restore(checkpoint);
+      if (error instanceof GitHubChanged && error.path === path && attempt < 2) continue;
+      throw error;
+    }
+    await repository.saveDraft(path);
+    return { ...resource, file: await resource.handle.getFile(), strokes, githubBase: repository.editBase(path) };
+  }
 }
 
 async function stageSibling(
@@ -98,6 +134,16 @@ async function stageSibling(
 export async function saveSiblingDrawing(
   workspace: Workspace, source: StateNode, file: LocalFile, name: string, strokes: Drawing, requestWrite = true
 ) {
+  if (file instanceof GitHubFile) {
+    if (!canCreateSiblingDrawing(name)) throw new Error('A new drawing must use an SVG filename without a folder path.');
+    const { repository } = file;
+    const folder = await containingFolder(workspace, source, file);
+    await assertAvailable(folder, name);
+    const path = [...source.path.slice(0, -1), name].join('/');
+    const handle = new GitHubFile(repository, path);
+    await repository.saveDraft(path, { base: null, content: new Blob([serializeDrawing(strokes)]), modified: Date.now() });
+    return loadDrawing(handle, 'github');
+  }
   const staged = await stageSibling(workspace, source, file, name, strokes, requestWrite);
   try { await saveWorkspace(workspace.data); return staged.resource; }
   catch (error) { await staged.rollback(); throw error; }
@@ -105,7 +151,7 @@ export async function saveSiblingDrawing(
 
 export async function prepareSvgPages(
   workspace: Workspace, source: StateNode, file: LocalFile, names: Set<string>, canCreate: (name: string) => boolean,
-  requestWrite = true, catalog?: StateNode[]
+  requestWrite = true, catalog?: StateNode[], allowMissing = false
 ) {
   const targets: Record<string, string> = Object.create(null);
   const staged: Awaited<ReturnType<typeof stageSibling>>[] = [];
@@ -114,13 +160,15 @@ export async function prepareSvgPages(
   }
   try {
     for (const name of names) {
-      const existing = await resolveDrawing(workspace, source, file, name, catalog);
+      let existing: Awaited<ReturnType<typeof resolveDrawing>>;
+      try { existing = await resolveDrawing(workspace, source, file, name, catalog); }
+      catch (error) { if (allowMissing) continue; throw error; }
       if (existing) targets[name] = existing.node?.id ?? (await connectSibling(workspace, source, existing.resource.handle)).id;
       else if (canCreate(name) && canCreateSiblingDrawing(name)) {
         const item = await stageSibling(workspace, source, file, name, [], requestWrite);
         staged.push(item);
         targets[name] = item.id;
-      } else throw new Error(`Drawing resource “${name}” could not be found.`);
+      } else if (!allowMissing) throw new Error(`Drawing resource “${name}” could not be found.`);
     }
     return { targets, rollback };
   } catch (error) { await rollback(); throw error; }

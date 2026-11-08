@@ -20,6 +20,17 @@ export async function deleteResource(workspace: Workspace, node: StateNode) {
     await deleteBrowserResource(handle);
     return;
   }
+  const repository = workspace.github(node.sourceId);
+  if (repository) {
+    if (!node.path.length) throw new Error('Disconnect the repository in GitHub settings.');
+    const checkpoint = repository.checkpoint();
+    try {
+      repository.remove(node.path.join('/'), node.kind === 'directory');
+      await repository.commit(checkpoint, `delete: ${node.name}`);
+      await repository.discardDrafts(node.path.join('/'));
+    } catch (error) { repository.restore(checkpoint); throw error; }
+    return;
+  }
 
   const knownParent = workspace.deletionParent(node);
   if (knownParent) {
@@ -43,6 +54,7 @@ export async function deleteResource(workspace: Workspace, node: StateNode) {
 }
 
 export function canDeleteResource(workspace: Workspace, node: StateNode) {
+  if (node.storage === 'github') return !!node.path.length;
   if (node.storage === 'browser' || workspace.deletionParent(node)) return true;
   return typeof workspace.cachedHandle(node.id)?.remove === 'function';
 }

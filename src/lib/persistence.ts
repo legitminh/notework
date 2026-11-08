@@ -1,4 +1,5 @@
 import { emptyWorkspace, type Source, type WorkspaceData } from './workspace';
+import { GitHubRepository } from './github/repository';
 
 let database: Promise<IDBDatabase> | undefined;
 function openDatabase(): Promise<IDBDatabase> {
@@ -17,7 +18,7 @@ type StoredWorkspace = Omit<WorkspaceData, 'sources'> & { sources: StoredSource[
 // Safari cannot structured-clone OPFS handles. Persist their locations instead.
 function storedWorkspace(data: WorkspaceData): StoredWorkspace {
   return { ...data, sources: data.sources.map(({ handle, ...source }) =>
-    source.storage === 'browser' ? { ...source, kind: handle.kind } : { ...source, handle }) };
+    source.storage !== 'local' && source.storage !== undefined ? { ...source, kind: handle.kind } : { ...source, handle }) };
 }
 
 export function snapshotWorkspace(data: WorkspaceData): WorkspaceData {
@@ -27,6 +28,10 @@ export function snapshotWorkspace(data: WorkspaceData): WorkspaceData {
 }
 
 async function restoreSource(source: StoredSource): Promise<Source> {
+  if (source.storage === 'github') {
+    if (!source.github) throw new Error('Missing GitHub connection.');
+    return { ...source, handle: (await GitHubRepository.restore(source.id, source.github)).root };
+  }
   if (source.storage !== 'browser') {
     if (!source.handle) throw new Error('Missing machine resource handle.');
     return { ...source, handle: source.handle };
