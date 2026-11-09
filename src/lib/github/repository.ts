@@ -287,14 +287,6 @@ export class GitHubRepository {
     this.directoryIndex = undefined;
   }
 
-  async rebaseDraft(path: string, base: string | null) {
-    const previous = this.drafts.get(path);
-    if (!previous || previous.base === base) return;
-    const next = { ...previous, base, id: crypto.randomUUID() };
-    await replaceDraft(this.id, path, previous.id, next);
-    this.drafts.set(path, next);
-  }
-
   async discardDrafts(path: string) {
     for (const draft of this.drafts.keys()) if (draft === path || draft.startsWith(path + '/')) await this.saveDraft(draft);
   }

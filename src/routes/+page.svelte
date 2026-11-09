@@ -197,6 +197,20 @@
     try {
       if (version !== navigationVersion) return;
       panel = null; message = ''; edges = []; children = [];
+      if (id !== ROOT && workspace.cachedHandle(id)?.kind !== 'file') {
+        const [sourceId] = JSON.parse(id) as string[];
+        const repository = workspace.github(sourceId);
+        if (repository) {
+          // Refresh the branch before listing a folder, even if the tab stayed open.
+          try {
+            await repository.sync();
+            if (version === navigationVersion) clearGitHubError(repository.id);
+          } catch (error) {
+            if (version === navigationVersion) githubError = error;
+          }
+        }
+      }
+      if (version !== navigationVersion) return;
       const node = id === ROOT ? null : await workspace.node(id);
       if (version !== navigationVersion) return;
       if (updateHistory) {
@@ -703,7 +717,7 @@
               <input type="number" min={MIN_AUTOSAVE_SECONDS} step="1" value={autosaveSeconds}
                 oninput={(event) => updateAutosaveInterval(event.currentTarget)} />
             </label>
-            <p class="muted">Default: {DEFAULT_AUTOSAVE_SECONDS} seconds. Exit always saves first. Local files may ask for write access when you exit.</p>
+            <p class="muted">Default: {DEFAULT_AUTOSAVE_SECONDS} seconds. Exit saves first and syncs GitHub drafts. Local files may ask for write access when you exit.</p>
             <h3>export margins</h3>
             <p class="muted" id="pdf-margin-units">Each side defaults to 1 min-box. Set 0 for no margin; fractions are allowed.</p>
             {#each pdfMarginSides as side}

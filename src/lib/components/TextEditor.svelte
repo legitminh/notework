@@ -9,6 +9,7 @@
 <script lang="ts">
   import Control from './Control.svelte';
   import StorageNotice from './StorageNotice.svelte';
+  import GitHubSyncProgress from './GitHubSyncProgress.svelte';
   import EditorTitle from './EditorTitle.svelte';
   import { preserveContentFocus } from '../editor-focus';
   import { onMount, tick } from 'svelte';
@@ -36,7 +37,7 @@
   import { commandCompletion, opensCommandArguments } from '../command-completion';
   import { prettyDisplay } from '../pretty-display';
   import { GitHubChanged, GitHubEditCancelled, GitHubFile, type ResolveGitHubConflict } from '../github/repository';
-  import { draftQueue, type DraftQueue } from '../github/storage';
+  import { draftQueue } from '../github/storage';
 
   let { workspace, node, wrapLines, prettyFontSize, vimMode, stylusOnly, pdfMargins, autosaveMs, resolveGitHubConflict, onExit, onMissing, onOpenLink }: {
     workspace: Workspace; node: StateNode;
@@ -87,10 +88,7 @@
   let githubBase: string | null = null;
   let githubPending = $state(false);
   let githubPublishing = $state(false);
-  let githubSaveRequested = false;
-  let githubExitRequested = false;
   const withGitHubDraft = draftQueue();
-  const newerGitHubEdit = Symbol();
 
   function* chunks(doc: Text) {
     let buffer = '';
@@ -159,7 +157,7 @@
   }
 
   async function insertDrawing() {
-    if (!view || saving || inlineDrawing) return;
+    if (!view || saving || githubPublishing || inlineDrawing) return;
     error = '';
     try {
       // Brush explicitly creates a sibling SVG, so acquire directory write access
@@ -241,20 +239,13 @@
     scheduleAutosave();
   }
 
-  async function commitInlineDrawing(beforeConflict: () => void, withDraft: DraftQueue) {
+  async function commitInlineDrawing() {
     const drawing = inlineDrawing;
     if (!drawing?.resource) return;
-    const finish = await commitDrawing(drawing.resource, (conflict) => {
-      beforeConflict();
-      return resolveGitHubConflict(conflict);
-    }, withDraft);
-    return withDraft(async () => {
-      drawing.resource = await finish();
-      const { name } = drawing.page;
-      previews.set(name, Promise.resolve(drawing.resource));
-      view?.dispatch({ effects: pageWidgets.setPreview.of({ name, strokes: drawing.resource?.strokes ?? [] }) });
-      return drawing.resource?.strokes;
-    });
+    drawing.resource = await commitDrawing(drawing.resource, resolveGitHubConflict);
+    const { name } = drawing.page;
+    previews.set(name, Promise.resolve(drawing.resource));
+    view?.dispatch({ effects: pageWidgets.setPreview.of({ name, strokes: drawing.resource?.strokes ?? [] }) });
   }
 
   function clearAutosave() {
@@ -264,7 +255,7 @@
 
   function scheduleAutosave() {
     clearAutosave();
-    if (!active || !dirty || saving || inlineDrawing || waitingForPermission) return;
+    if (!active || !dirty || saving || githubPublishing || inlineDrawing || waitingForPermission) return;
     const delay = Math.max(0, lastSaveAt + autosaveMs - Date.now());
     autosaveTimer = setTimeout(() => {
       autosaveTimer = undefined;
@@ -276,13 +267,12 @@
     if (!view || inlineDrawing) return;
     const file = handle;
     if (file instanceof GitHubFile) {
-      if (requestWrite) {
-        githubSaveRequested = true;
-        githubExitRequested ||= leave;
-        if (!githubPublishing) await publishGitHub(file);
-        else if (dirty) void save(false, false);
-      } else if (dirty && !saving) {
+      if (githubPublishing) return;
+      if (leave) await publishGitHub(file);
+      else if (dirty && !saving) {
+        clearAutosave();
         saving = true;
+        if (requestWrite) error = '';
         try { await withGitHubDraft(() => writeGitHubDraft(file)); }
         catch (cause) { error = cause; lastSaveAt = Date.now(); }
         finally { saving = false; if (dirty) scheduleAutosave(); }
@@ -364,26 +354,21 @@
       dirty = revision !== version;
       lastSaveAt = Date.now();
     }
-    return { version, snapshot, draft: repository.draft(path) };
+    return { snapshot, draft: repository.draft(path) };
   }
 
   async function publishGitHub(file: GitHubFile) {
+    const editor = view!;
     githubPublishing = true; error = '';
+    clearAutosave();
+    editor.dispatch({ effects: textLock.reconfigure([EditorState.readOnly.of(true), EditorView.editable.of(false)]) });
     try {
-      do {
-        githubSaveRequested = false;
-        try { await publishGitHubDraft(file); }
-        catch (cause) { if (cause !== newerGitHubEdit) throw cause; githubSaveRequested = true; }
-      } while (active && (githubSaveRequested || (githubExitRequested && (dirty || githubPending))));
-      if (active && githubExitRequested) {
-        view?.dispatch({ effects: textLock.reconfigure(EditorState.readOnly.of(true)) });
-        await finishExit();
-      }
+      if (await publishGitHubDraft(file) && active) await finishExit();
     } catch (cause) {
       if (!(cause instanceof GitHubEditCancelled)) error = cause;
     } finally {
-      if (active && githubExitRequested) view?.dispatch({ effects: textLock.reconfigure([]) });
-      githubPublishing = githubSaveRequested = githubExitRequested = false;
+      if (active) editor.dispatch({ effects: textLock.reconfigure([]) });
+      githubPublishing = false;
       if (dirty) scheduleAutosave();
     }
   }
@@ -391,77 +376,65 @@
   async function publishGitHubDraft(file: GitHubFile) {
     const editor = view!;
     const { repository, path } = file;
-    let { version, snapshot, draft } = await withGitHubDraft(() => writeGitHubDraft(file));
-    if (!draft) return;
-    let conflict = false;
-    try {
-      for (let attempt = 0; ; attempt++) {
-        const chosen = await repository.reconcile(path, draft, async (versions) => {
-          // Compare the latest local text, even if it changed while GitHub was responding.
-          if (revision !== version) throw newerGitHubEdit;
-          conflict = true;
-          editor.dispatch({ effects: textLock.reconfigure(EditorState.readOnly.of(true)) });
-          return resolveGitHubConflict(versions);
-        });
-        if (chosen.content !== draft.content) {
-          const selected = chosen.content && new File([chosen.content], node.name);
-          const selectedFormat = selected && await inspectTextFile(selected);
-          if (!selected || !selectedFormat) {
-            await withGitHubDraft(() => repository.saveDraft(path));
-            githubPending = false;
-            onMissing();
-            return;
-          }
-          let text = '';
-          for await (const chunk of decodedChunks(selected, selectedFormat)) text += chunk;
-          snapshot = Text.of(text.replace(/\r\n?/g, '\n').split('\n'));
-          editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: snapshot } });
-          format = selectedFormat;
+    let { snapshot, draft } = await withGitHubDraft(() => writeGitHubDraft(file));
+    if (!draft) return true;
+    for (let attempt = 0; ; attempt++) {
+      let conflict = false;
+      const chosen = await repository.reconcile(path, draft, async (versions) => {
+        conflict = true;
+        return resolveGitHubConflict(versions);
+      });
+      if (chosen.content !== draft.content) {
+        const selected = chosen.content && new File([chosen.content], node.name);
+        const selectedFormat = selected && await inspectTextFile(selected);
+        if (!selected || !selectedFormat) {
+          await repository.saveDraft(path);
+          githubPending = false;
+          onMissing();
+          return false;
         }
-        if (conflict) {
-          githubBase = chosen.base;
-          ({ version, snapshot, draft } = await withGitHubDraft(() => writeGitHubDraft(file, chosen.content!)));
-          if (!draft) return;
-        }
-        const checkpoint = repository.checkpoint();
-        const tokens = wikiTokens(snapshot), pages = svgPageNames(snapshot);
-        let wiki: Awaited<ReturnType<typeof prepareWikiSave>> | undefined;
-        let svg: Awaited<ReturnType<typeof prepareSvgPages>> | undefined;
-        try {
-          if (!chosen.unchanged) repository.stage(path, draft.content);
-          if (tokens.size || pages.size) {
-            catalogRequest = undefined;
-            const files = await catalog();
-            wiki = await prepareWikiSave(workspace, node, file, tokens, files,
-              (token) => !chosen.unchanged && (!savedTokens.has(token) || requestedCreates.has(token)), true, chosen.unchanged);
-            svg = await prepareSvgPages(workspace, node, file, pages,
-              (name) => !chosen.unchanged && (!savedPages.has(name) || newDrawings.has(name)), true, files, chosen.unchanged);
-          }
-          await repository.commit(checkpoint, `edit: ${node.name}`, chosen.head);
-        } catch (cause) {
-          await svg?.rollback(); await wiki?.rollback(); repository.restore(checkpoint);
-          if (cause instanceof GitHubChanged && cause.path === path && attempt < 2) continue;
-          throw cause;
-        }
-        workspace.replaceWikiLinks(node.id, { ...wiki?.targets, ...svg?.targets });
-        await withGitHubDraft(async () => {
-          githubBase = repository.editBase(path);
-          if (revision === version) {
-            await repository.saveDraft(path);
-            githubPending = false;
-          } else if (dirty) await writeGitHubDraft(file);
-          else await repository.rebaseDraft(path, githubBase);
-        });
-        savedTokens = tokens; savedPages = pages;
-        for (const token of tokens) requestedCreates.delete(token);
-        for (const name of pages) { newDrawings.delete(name); previews.delete(name); }
-        catalogRequest = undefined;
-        refreshDrawingPreviews();
-        await saveWorkspace(workspace.data);
-        return;
+        let text = '';
+        for await (const chunk of decodedChunks(selected, selectedFormat)) text += chunk;
+        snapshot = Text.of(text.replace(/\r\n?/g, '\n').split('\n'));
+        editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: snapshot } });
+        format = selectedFormat;
       }
-    } finally {
-      if (conflict && active) editor.dispatch({ effects: textLock.reconfigure([]) });
+      if (conflict) {
+        githubBase = chosen.base;
+        ({ snapshot, draft } = await writeGitHubDraft(file, chosen.content!));
+        if (!draft) return true;
+      }
+      const checkpoint = repository.checkpoint();
+      const tokens = wikiTokens(snapshot), pages = svgPageNames(snapshot);
+      let wiki: Awaited<ReturnType<typeof prepareWikiSave>> | undefined;
+      let svg: Awaited<ReturnType<typeof prepareSvgPages>> | undefined;
+      try {
+        if (!chosen.unchanged) repository.stage(path, draft.content);
+        if (tokens.size || pages.size) {
+          catalogRequest = undefined;
+          const files = await catalog();
+          wiki = await prepareWikiSave(workspace, node, file, tokens, files,
+            (token) => !chosen.unchanged && (!savedTokens.has(token) || requestedCreates.has(token)), true, chosen.unchanged);
+          svg = await prepareSvgPages(workspace, node, file, pages,
+            (name) => !chosen.unchanged && (!savedPages.has(name) || newDrawings.has(name)), true, files, chosen.unchanged);
+        }
+        await repository.commit(checkpoint, `edit: ${node.name}`, chosen.head);
+      } catch (cause) {
+        await svg?.rollback(); await wiki?.rollback(); repository.restore(checkpoint);
+        if (cause instanceof GitHubChanged && cause.path === path && attempt < 2) continue;
+        throw cause;
+      }
+      workspace.replaceWikiLinks(node.id, { ...wiki?.targets, ...svg?.targets });
+      githubBase = repository.editBase(path);
+      await repository.saveDraft(path);
+      githubPending = false;
+      savedTokens = tokens; savedPages = pages;
+      for (const token of tokens) requestedCreates.delete(token);
+      for (const name of pages) { newDrawings.delete(name); previews.delete(name); }
+      catalogRequest = undefined;
+      refreshDrawingPreviews();
+      await saveWorkspace(workspace.data);
+      return true;
     }
   }
 
@@ -485,9 +458,9 @@
   }
 
   function leaveEditor(token?: string) {
-    if ((saving && !(handle instanceof GitHubFile)) || followingLink || inlineDrawing) return;
+    if ((saving && !(handle instanceof GitHubFile)) || githubPublishing || followingLink || inlineDrawing) return;
     nextLink = token;
-    if (dirty || githubPending || githubPublishing) void save(true, true);
+    if (dirty || githubPending) void save(true, true);
     else void finishExit();
   }
 
@@ -539,7 +512,7 @@
     if (vimMode && key === 'f' && event.ctrlKey) return;
     event.preventDefault();
     event.stopImmediatePropagation();
-    if (event.repeat || exportSource) return;
+    if (event.repeat || exportSource || githubPublishing) return;
     if (key === 'b') void insertDrawing();
     else if (key === 'escape') requestExit();
     else if (key === 's') void save(false, true);
@@ -730,10 +703,10 @@
     {#if !inlineDrawing}
     <div class="editor-controls" role="group" aria-label="Editor toolbar" tabindex="-1" bind:this={toolbar}
       use:preserveContentFocus={() => !usingTools && !!view?.hasFocus}>
-      <Control aria-keyshortcuts="Control+Escape" onclick={requestExit} disabled={saving}>Exit<span class="shortcut-hint" aria-hidden="true">Ctrl+Esc</span></Control>
-      <Control aria-keyshortcuts={vimMode ? undefined : 'Control+F'} onclick={find} disabled={loading}><span class="visually-hidden">Find and replace</span><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="10" cy="10" r="6" /><path d="m14.5 14.5 5 5" /></svg>{#if !vimMode}<span class="shortcut-hint" aria-hidden="true">Ctrl+F</span>{/if}</Control>
-      <Control onclick={() => { void insertDrawing(); }} disabled={loading || saving} aria-keyshortcuts="Meta+B">Brush<span class="shortcut-hint" aria-hidden="true">Command+B</span></Control>
-      <Control onclick={() => openExport()} disabled={loading}>Export</Control>
+      <Control aria-keyshortcuts="Control+Escape" onclick={requestExit} disabled={saving || githubPublishing}>Exit<span class="shortcut-hint" aria-hidden="true">Ctrl+Esc</span></Control>
+      <Control aria-keyshortcuts={vimMode ? undefined : 'Control+F'} onclick={find} disabled={loading || githubPublishing}><span class="visually-hidden">Find and replace</span><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="10" cy="10" r="6" /><path d="m14.5 14.5 5 5" /></svg>{#if !vimMode}<span class="shortcut-hint" aria-hidden="true">Ctrl+F</span>{/if}</Control>
+      <Control onclick={() => { void insertDrawing(); }} disabled={loading || saving || githubPublishing} aria-keyshortcuts="Meta+B">Brush<span class="shortcut-hint" aria-hidden="true">Command+B</span></Control>
+      <Control onclick={() => openExport()} disabled={loading || githubPublishing}>Export</Control>
     </div>
     {/if}
     {#if inlineDrawing}
@@ -741,19 +714,18 @@
         <DrawingEditor bind:this={drawingEditor} bind:usingTools {stylusOnly} {autosaveMs} name={inlineDrawing.page.name} initial={inlineDrawing.resource?.strokes ?? []}
           initialDraft={hasDrawingDraft(inlineDrawing.resource)} surfaceTarget={inlineDrawing.host}
           onExport={(strokes) => openExport(strokes)} onSave={saveInlineDrawing} onExit={closeInlineDrawing}
-          onCommit={inlineDrawing.resource?.storage === 'github' || node.storage === 'github' ? commitInlineDrawing : undefined} />
+          onCommit={(inlineDrawing.resource?.storage ?? node.storage) === 'github' ? commitInlineDrawing : undefined} />
       </div>
     {/if}
   </div>
   <div class="editor-scroll">
     <EditorTitle name={inlineDrawing?.page.name ?? node.name} onEdit={usingTools ? resumePageEditing : undefined} />
-    <p class="muted" role="status" aria-live="polite">
+    <p class="muted" role="status" aria-live="polite" style:visibility={githubPublishing ? 'hidden' : undefined}>
       {#if loading}loading text…{loadedBytes ? ` ${Math.round(loadedBytes / 1024)} KB` : ''}
-      {:else if githubPublishing}syncing to GitHub…
       {:else if saving}saving…
       {:else if waitingForPermission}autosave is waiting for write permission; exit to save
       {:else if dirty}unsaved changes
-      {:else if githubPending}draft saved in this browser · Save or Exit to sync to GitHub
+      {:else if githubPending}draft saved in this browser · Exit to sync to GitHub
       {:else if !error && node.storage === 'github'}saved on GitHub
       {:else if !error}saved {node.storage === 'browser' ? 'in browser storage' : 'on your computer'}{/if}
     </p>
@@ -761,6 +733,8 @@
     <div class="editor-container" bind:this={container}></div>
   </div>
 </div>
+
+{#if githubPublishing}<GitHubSyncProgress />{/if}
 
 {#if exportSource}
   <ExportDialog source={exportSource} onClose={closeExport} />

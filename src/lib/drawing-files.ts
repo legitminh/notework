@@ -6,7 +6,6 @@ import { readDrawing, serializeDrawing, type Drawing } from './drawing';
 import { writeResourceContent } from './resource-content';
 import { saveWorkspace } from './persistence';
 import { GitHubChanged, GitHubFile, type ResolveGitHubConflict } from './github/repository';
-import type { DraftQueue } from './github/storage';
 
 function drawingScope(source: StateNode) {
   const parent = parentId(source);
@@ -91,22 +90,20 @@ export async function saveDrawing(resource: DrawingResource, strokes: Drawing, r
   return { handle: resource.handle, file: await resource.handle.getFile(), strokes, storage: resource.storage };
 }
 
-export async function commitDrawing(resource: DrawingResource, resolve: ResolveGitHubConflict, withDraft: DraftQueue) {
-  if (!(resource.handle instanceof GitHubFile)) return async () => resource;
+export async function commitDrawing(resource: DrawingResource, resolve: ResolveGitHubConflict) {
+  if (!(resource.handle instanceof GitHubFile)) return resource;
   const { repository, path } = resource.handle;
   let draft = repository.draft(path);
-  if (!draft) return async () => resource;
+  if (!draft) return resource;
   for (let attempt = 0; ; attempt++) {
     let conflict = false;
     const chosen = await repository.reconcile(path, draft, (versions) => { conflict = true; return resolve(versions); });
-    if (!chosen.content) return async () => { await repository.saveDraft(path); return undefined; };
+    if (!chosen.content) { await repository.saveDraft(path); return undefined; }
     if (conflict) {
       const content = chosen.content;
       await readDrawing(new File([content], resource.handle.name));
-      draft = await withDraft(async () => {
-        await repository.saveDraft(path, { base: chosen.base, content, modified: Date.now() });
-        return repository.draft(path)!;
-      });
+      await repository.saveDraft(path, { base: chosen.base, content, modified: Date.now() });
+      draft = repository.draft(path)!;
     }
     const checkpoint = repository.checkpoint();
     try {
@@ -117,11 +114,8 @@ export async function commitDrawing(resource: DrawingResource, resolve: ResolveG
       if (error instanceof GitHubChanged && error.path === path && attempt < 2) continue;
       throw error;
     }
-    return async () => {
-      if (repository.draft(path) === draft) await repository.saveDraft(path);
-      else await repository.rebaseDraft(path, repository.editBase(path));
-      return loadDrawing(resource.handle, 'github');
-    };
+    await repository.saveDraft(path);
+    return loadDrawing(resource.handle, 'github');
   }
 }
 

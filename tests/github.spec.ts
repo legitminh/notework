@@ -6,6 +6,7 @@ const api = 'https://api.github.com/repos/example/notebook';
 const action = (page: Page, name: string) => page.locator(`[data-action=${JSON.stringify(name)}] button`);
 const editor = (page: Page, file: string) => page.getByRole('textbox', { name: `Edit ${file}`, exact: true });
 const exit = (page: Page, group = 'Editor toolbar') => page.getByRole('group', { name: group }).getByRole('button', { name: 'Exit', exact: true });
+const syncProgress = (page: Page) => page.getByRole('progressbar', { name: 'Syncing to GitHub' });
 const sha = (buffer: Buffer) => createHash('sha1').update(`blob ${buffer.length}\0`).update(buffer).digest('hex');
 
 async function github(page: Page, initial: Record<string, string>) {
@@ -253,6 +254,25 @@ test('repository syncs on startup and Exit commits only the edit onto the latest
   expect(repo.messages).toEqual(['edit: note.txt']);
 });
 
+test('reopening a GitHub folder lists newly added text files without an app reload', async ({ page }) => {
+  const folder = 'output.creation/project/viet';
+  const repo = await github(page, { [`${folder}/viet.keyboard`]: 'existing text' });
+  await connect(page);
+  await action(page, 'output.creation/').click();
+  await action(page, 'project/').click();
+  await action(page, 'viet/').click();
+  await expect(action(page, 'viet.keyboard')).toBeVisible();
+  await expect(action(page, 'viet.phonetic.basis')).toHaveCount(0);
+  await action(page, '..').click();
+  repo.upstream({ [`${folder}/viet.phonetic.basis`]: 'Cơ sở ngữ âm tiếng Việt\n', [`${folder}/image.bin`]: '\u0000hidden' });
+  await action(page, 'viet/').click();
+  await expect(action(page, 'viet.phonetic.basis')).toBeVisible();
+  await expect(action(page, 'image.bin')).toHaveCount(0);
+  await openNote(page, 'viet.phonetic.basis');
+  await expect(editor(page, 'viet.phonetic.basis')).toContainText('Cơ sở ngữ âm tiếng Việt');
+  expect(repo.messages).toEqual([]);
+});
+
 test('same-file branch race opens two editable versions and publishes the selected variant', async ({ page }) => {
   const repo = await github(page, { 'note.txt': 'Original' });
   await connect(page);
@@ -274,53 +294,69 @@ test('same-file branch race opens two editable versions and publishes the select
   expect(repo.messages).toEqual(['edit: note.txt']);
 });
 
-test('a slow GitHub save leaves text editable and keeps newer work as a draft', async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem('notework:autosave-seconds', '1'));
+test('repeated saves keep a recoverable draft; Exit shows progress and publishes it once', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('notework:autosave-seconds', '60'));
   const repo = await github(page, { 'note.txt': 'Original' });
   await connect(page);
   await openNote(page);
   const text = editor(page, 'note.txt');
   await text.fill('First snapshot');
   repo.requests.length = 0;
-  const held = repo.holdPublish();
   await text.press('Control+s');
-  await held.started;
-  await text.press('End');
-  await page.keyboard.type(' plus later edits');
-  await expect(text).toHaveText('First snapshot plus later edits');
-  expect(repo.content('note.txt')).toBe('Original');
-  held.resume();
-  await expect(page.getByText(/draft saved in this browser/)).toBeVisible();
-  expect(repo.content('note.txt')).toBe('First snapshot');
-  expect(repo.requests).toEqual(['GET /git/ref/heads/main', 'POST /graphql']);
+  const draft = page.getByText(/draft saved in this browser/);
+  await expect(draft).toBeVisible();
+  await text.fill('First snapshot plus later edits');
+  await text.press('Meta+s');
+  await expect(draft).toBeVisible();
+  await expect(syncProgress(page)).toHaveCount(0);
+  expect(repo.requests).toEqual([]);
+  expect(repo.messages).toEqual([]);
 
   await page.reload();
   await action(page, 'notebook/').click();
   await openNote(page);
   await expect(text).toHaveText('First snapshot plus later edits');
-  await text.press('Control+s');
-  await expect(page.getByText('saved on GitHub', { exact: true })).toBeVisible();
+  const held = repo.holdPublish();
+  await exit(page).click();
+  try {
+    await held.started;
+    await expect(syncProgress(page)).toBeVisible();
+    await expect(page.getByRole('status').filter({ hasText: 'Keep Notework open' })).toBeVisible();
+    const bar = (await syncProgress(page).boundingBox())!;
+    expect(bar.y + bar.height).toBeGreaterThan(page.viewportSize()!.height - 20);
+    expect(await page.evaluate(() => !window.dispatchEvent(new Event('beforeunload', { cancelable: true })))).toBe(true);
+    await expect(text).not.toBeEditable();
+    await page.keyboard.press('Meta+b');
+    await expect(text).toHaveText('First snapshot plus later edits');
+    expect(repo.content('note.txt')).toBe('Original');
+  } finally { held.resume(); }
+  await expect(action(page, 'open')).toBeVisible();
+  await expect(syncProgress(page)).toHaveCount(0);
+  expect(await page.evaluate(() => window.dispatchEvent(new Event('beforeunload', { cancelable: true })))).toBe(true);
   expect(repo.content('note.txt')).toBe('First snapshot plus later edits');
+  expect(repo.messages).toEqual(['edit: note.txt']);
 });
 
-test('a conflict during background sync compares the newest local edit', async ({ page }) => {
+test('Vim :w saves a browser draft without publishing', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('notework:vim-mode', 'true');
+    localStorage.setItem('notework:autosave-seconds', '60');
+  });
   const repo = await github(page, { 'note.txt': 'Original' });
   await connect(page);
   await openNote(page);
-  const text = editor(page, 'note.txt');
-  await text.fill('First snapshot');
-  const held = repo.holdPublish();
-  repo.advance({ 'note.txt': 'Upstream change' });
-  await text.press('Control+s');
-  await held.started;
-  await text.fill('Latest local edit');
-  held.resume();
-  const conflict = page.getByRole('dialog', { name: 'GitHub conflict' });
-  await expect(conflict.getByRole('textbox', { name: 'Your version' })).toHaveValue('Latest local edit');
-  await expect(conflict.getByRole('textbox', { name: 'GitHub version' })).toHaveValue('Upstream change');
-  await conflict.getByRole('button', { name: 'Keep your version' }).click();
-  await expect(page.getByText('saved on GitHub', { exact: true })).toBeVisible();
-  expect(repo.content('note.txt')).toBe('Latest local edit');
+  await expect(editor(page, 'note.txt')).toBeFocused();
+  await page.keyboard.press('A');
+  await page.keyboard.insertText(' plus Vim edits');
+  await page.keyboard.press('Escape');
+  await page.keyboard.type(':w');
+  await page.keyboard.press('Enter');
+  await expect(page.getByText(/draft saved in this browser/)).toBeVisible();
+  expect(repo.messages).toEqual([]);
+  await exit(page).click();
+  await expect(action(page, 'open')).toBeVisible();
+  expect(repo.content('note.txt')).toBe('Original plus Vim edits');
+  expect(repo.messages).toEqual(['edit: note.txt']);
 });
 
 test('retry after an unconfirmed GitHub response does not duplicate the commit', async ({ page }) => {
@@ -330,15 +366,18 @@ test('retry after an unconfirmed GitHub response does not duplicate the commit',
   const text = editor(page, 'note.txt');
   await text.fill('Published once');
   repo.loseResponse();
-  await text.press('Control+s');
+  await exit(page).click();
   await expect(page.getByRole('alert')).toContainText('GitHub did not confirm');
-  await text.press('Control+s');
-  await expect(page.getByText('saved on GitHub', { exact: true })).toBeVisible();
+  await expect(syncProgress(page)).toHaveCount(0);
+  await expect(text).toBeEditable();
+  await exit(page).click();
+  await expect(action(page, 'open')).toBeVisible();
   expect(repo.content('note.txt')).toBe('Published once');
   expect(repo.messages).toEqual(['edit: note.txt']);
 });
 
-test('drawing during a slow publish works and the next save publishes the newer strokes', async ({ page }) => {
+test('drawing saves stay local until Exit publishes all strokes in one commit', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('notework:autosave-seconds', '60'));
   const repo = await github(page, { 'ink.svg': serializeDrawing([]) });
   await connect(page);
   await openNote(page, 'ink.svg');
@@ -350,18 +389,53 @@ test('drawing during a slow publish works and the next save publishes the newer 
     await page.mouse.move(box.x + 90, box.y + offset + 20, { steps: 4 }); await page.mouse.up();
   }
   await stroke(25);
-  const held = repo.holdPublish();
   await page.keyboard.press('Control+s');
-  await held.started;
+  const draft = page.getByText(/drawing draft saved in this browser/);
+  await expect(draft).toBeVisible();
   await stroke(75);
-  await expect(canvas.locator('polyline')).toHaveCount(2);
-  expect(repo.messages).toHaveLength(0);
   await page.keyboard.press('Control+s');
-  held.resume();
-  await expect(page.getByText('drawing saved', { exact: true })).toBeVisible();
-  await expect(canvas.locator('polyline')).toHaveCount(2);
-  expect(repo.messages).toEqual(['edit: ink.svg', 'edit: ink.svg']);
+  await expect(draft).toBeVisible();
+  expect(repo.messages).toEqual([]);
+  const held = repo.holdPublish();
+  await exit(page, 'Drawing toolbar').click();
+  try {
+    await held.started;
+    await expect(syncProgress(page)).toBeVisible();
+    await stroke(125);
+    await expect(canvas.locator('polyline')).toHaveCount(2);
+  } finally { held.resume(); }
+  await expect(action(page, 'open')).toBeVisible();
+  await expect(syncProgress(page)).toHaveCount(0);
+  expect(repo.messages).toEqual(['edit: ink.svg']);
   expect(repo.content('ink.svg')?.match(/<polyline/g)).toHaveLength(2);
+});
+
+test('exiting an inline drawing publishes the asset while the note stays in editing mode', async ({ page }) => {
+  const original = '\\svgpage[ink.svg]\nText below';
+  const repo = await github(page, { 'note.txt': original, 'ink.svg': serializeDrawing([]) });
+  await connect(page);
+  await openNote(page);
+  const note = editor(page, 'note.txt');
+  await note.press('ControlOrMeta+End');
+  await page.keyboard.insertText(' with edits');
+  await page.getByRole('button', { name: 'Edit drawing ink.svg' }).click();
+  const canvas = page.getByRole('img', { name: 'Drawing canvas for ink.svg' });
+  await expect(canvas).toBeVisible();
+  const box = (await canvas.boundingBox())!;
+  await page.mouse.move(box.x + 25, box.y + 30); await page.mouse.down();
+  await page.mouse.move(box.x + 90, box.y + 75, { steps: 4 }); await page.mouse.up();
+  await page.keyboard.press('Control+s');
+  await expect(page.getByText(/drawing draft saved in this browser/)).toBeVisible();
+  expect(repo.messages).toEqual([]);
+  await exit(page, 'Drawing toolbar').click();
+  await expect(note).toBeEditable();
+  expect(repo.messages).toEqual(['edit: ink.svg']);
+  expect(repo.content('ink.svg')).toContain('<polyline');
+  expect(repo.content('note.txt')).toBe(original);
+  await exit(page).click();
+  await expect(action(page, 'open')).toBeVisible();
+  expect(repo.content('note.txt')).toBe(original + ' with edits');
+  expect(repo.messages).toEqual(['edit: ink.svg', 'edit: note.txt']);
 });
 
 test('failed writes retain the draft across reload and accept an upstream deletion without recreating it', async ({ page }) => {

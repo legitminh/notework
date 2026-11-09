@@ -4,7 +4,7 @@ export interface GitHubDraft { base: string | null; content: Blob; modified: num
 
 export type DraftQueue = <T>(task: () => Promise<T>) => Promise<T>;
 
-// Serialize local draft writes and rebases without waiting for a remote publish.
+// Let Exit wait for any outstanding local autosave before capturing the draft.
 export function draftQueue(): DraftQueue {
   let tail = Promise.resolve();
   return (task) => {

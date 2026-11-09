@@ -52,17 +52,10 @@
   <div class="standalone-drawing-editor" bind:this={editor}>
   <DrawingEditor {stylusOnly} {autosaveMs} name={node.name} initial={resource.strokes} initialDraft={hasDrawingDraft(resource)} {onExit} onExport={exportDrawing}
     onSave={async (strokes, requestWrite) => { resource = await saveDrawing(resource!, strokes, requestWrite); }}
-    onCommit={node.storage === 'github' ? async (beforeConflict, withDraft) => {
-      const finish = await commitDrawing(resource!, (conflict) => {
-        beforeConflict();
-        return resolveGitHubConflict(conflict);
-      }, withDraft);
-      return withDraft(async () => {
-        const saved = await finish();
-        if (!saved) { onMissing(); return; }
-        resource = saved;
-        return saved.strokes;
-      });
+    onCommit={node.storage === 'github' ? async () => {
+      const saved = await commitDrawing(resource!, resolveGitHubConflict);
+      if (!saved) onMissing();
+      else resource = saved;
     } : undefined} />
   </div>
 {:else if error}

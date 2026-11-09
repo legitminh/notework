@@ -1,6 +1,7 @@
 <script lang="ts">
   import Control from './Control.svelte';
   import StorageNotice from './StorageNotice.svelte';
+  import GitHubSyncProgress from './GitHubSyncProgress.svelte';
   import EditorTitle from './EditorTitle.svelte';
   import { preserveContentFocus } from '../editor-focus';
   import { onMount } from 'svelte';
@@ -8,7 +9,7 @@
   import { drawingGestures } from '../drawing-gestures';
   import { WritePermissionRequired } from '../wiki';
   import { GitHubEditCancelled } from '../github/repository';
-  import { draftQueue, type DraftQueue } from '../github/storage';
+  import { draftQueue } from '../github/storage';
 
   let { name, initial, initialDraft = false, onSave, onCommit, onExit, surfaceTarget, stylusOnly, onExport, autosaveMs, usingTools = $bindable(false) }: {
     name: string;
@@ -17,7 +18,7 @@
     initial: Drawing;
     initialDraft?: boolean;
     onSave: (strokes: Drawing, requestWrite: boolean) => Promise<void>;
-    onCommit?: (beforeConflict: () => void, withDraft: DraftQueue) => Promise<Drawing | undefined>;
+    onCommit?: () => Promise<void>;
     onExport: (strokes: Drawing) => void;
     onExit: () => void | Promise<void>;
     surfaceTarget?: HTMLElement;
@@ -33,11 +34,7 @@
   let saving = $state(false);
   let publishing = $state(false);
   let githubPending = $state(false);
-  let resolving = $state(false);
-  let exitRequested = $state(false);
-  let publishRequested = false;
   const withDraft = draftQueue();
-  const newerDrawing = Symbol();
   let dirty = $state(false);
   let error = $state.raw<unknown>();
   let waitingForPermission = $state(false);
@@ -76,7 +73,7 @@
   }
 
   function undo() {
-    if (saving || resolving || exitRequested || gesture || !undoStack.length) return;
+    if (saving || publishing || gesture || !undoStack.length) return;
     redoStack = [...redoStack, strokes];
     strokes = undoStack.at(-1)!;
     undoStack = undoStack.slice(0, -1);
@@ -85,7 +82,7 @@
   }
 
   function redo() {
-    if (saving || resolving || exitRequested || gesture || !redoStack.length) return;
+    if (saving || publishing || gesture || !redoStack.length) return;
     undoStack = [...undoStack, strokes];
     strokes = redoStack.at(-1)!;
     redoStack = redoStack.slice(0, -1);
@@ -135,7 +132,7 @@
       if (multiTouch) return;
     }
     if (stylusOnly && event.pointerType !== 'pen') return;
-    if (event.button !== 0 || gesture || saving || resolving || exitRequested) return;
+    if (event.button !== 0 || gesture || saving || publishing) return;
     event.preventDefault();
     resumeEditing();
     canvas.setPointerCapture(event.pointerId);
@@ -168,7 +165,7 @@
 
   function scheduleAutosave() {
     clearAutosave();
-    if (!active || !dirty || saving || resolving || gesture) return;
+    if (!active || !dirty || saving || publishing || gesture) return;
     const delay = Math.max(0, lastSaveAt + autosaveMs - Date.now());
     autosaveTimer = setTimeout(() => {
       autosaveTimer = undefined;
@@ -177,12 +174,9 @@
   }
 
   async function save(exit = false, requestWrite = true) {
-    if (gesture || resolving) return;
-    if (requestWrite && onCommit) {
-      publishRequested = true;
-      exitRequested ||= exit;
-      if (!publishing) await publish(onCommit);
-      else if (dirty) void save(false, false);
+    if (gesture || publishing) return;
+    if (exit && onCommit && (dirty || githubPending)) {
+      await publish(onCommit);
       return;
     }
     if (saving) return;
@@ -192,7 +186,7 @@
     }
     clearAutosave();
     saving = true;
-    if (!onCommit) error = '';
+    if (requestWrite || !onCommit) error = '';
     try {
       if (onCommit) await withDraft(() => saveSnapshot(requestWrite));
       else await saveSnapshot(requestWrite);
@@ -218,45 +212,25 @@
     dirty = (gesture?.before ?? strokes) !== saved;
     waitingForPermission = false;
     lastSaveAt = Date.now();
-    return snapshot;
   }
 
-  async function publish(commitDrawing: NonNullable<typeof onCommit>) {
+  async function publish(commit: NonNullable<typeof onCommit>) {
     publishing = true; error = '';
+    clearAutosave();
     try {
-      do {
-        publishRequested = false;
-        try {
-          const { snapshot, publication } = await withDraft(async () => {
-            const snapshot = await saveSnapshot(true);
-            // Capture the draft before another local write can replace it.
-            const publication = commitDrawing(() => {
-              if ((gesture?.before ?? strokes) !== snapshot) throw newerDrawing;
-              cancelStroke();
-              resolving = true;
-            }, withDraft);
-            return { snapshot, publication };
-          });
-          const committed = await publication;
-          if (resolving && committed) { saved = strokes = committed; dirty = false; }
-          if (resolving || saved === snapshot) githubPending = false;
-          if (exitRequested && (dirty || (!resolving && strokes !== snapshot))) publishRequested = true;
-        } catch (cause) {
-          if (cause !== newerDrawing) throw cause;
-          publishRequested = true;
-        } finally { resolving = false; }
-      } while (active && publishRequested);
-      if (active && exitRequested) await onExit();
+      await withDraft(() => saveSnapshot(true));
+      await commit();
+      githubPending = false;
+      if (active) await onExit();
     } catch (cause) {
       if (!(cause instanceof GitHubEditCancelled)) error = cause;
     } finally {
-      publishing = publishRequested = exitRequested = false;
+      publishing = false;
       if (dirty) scheduleAutosave();
     }
   }
 
   function exit() {
-    if ((saving && !onCommit) || exitRequested || resolving || gesture) return;
     void save(true, true);
   }
 
@@ -327,17 +301,17 @@
 
 <div class="editor-controls drawing-controls" role="group" aria-label="Drawing toolbar" tabindex="-1" bind:this={toolbar}
   use:preserveContentFocus={() => !usingTools && document.activeElement === canvas}>
-  <Control onclick={exit} disabled={saving || resolving || exitRequested}>Exit<span class="shortcut-hint" aria-hidden="true">Ctrl+Esc</span></Control>
+  <Control onclick={exit} disabled={saving || publishing}>Exit<span class="shortcut-hint" aria-hidden="true">Ctrl+Esc</span></Control>
   <Control onclick={() => { tool = 'brush'; }} aria-pressed={tool === 'brush'}>Brush<span class="shortcut-hint" aria-hidden="true">Command+B</span></Control>
   <Control onclick={() => { tool = 'eraser'; }} aria-pressed={tool === 'eraser'}>Eraser</Control>
-  <Control onclick={undo} disabled={!undoStack.length || saving}>Undo<span class="shortcut-hint" aria-hidden="true">Command+Z</span></Control>
-  <Control onclick={redo} disabled={!redoStack.length || saving}>Redo<span class="shortcut-hint" aria-hidden="true">Command+Shift+Z</span></Control>
-  <Control onclick={() => onExport(strokes)} disabled={saving || !!gesture}>Export</Control>
+  <Control onclick={undo} disabled={!undoStack.length || saving || publishing}>Undo<span class="shortcut-hint" aria-hidden="true">Command+Z</span></Control>
+  <Control onclick={redo} disabled={!redoStack.length || saving || publishing}>Redo<span class="shortcut-hint" aria-hidden="true">Command+Shift+Z</span></Control>
+  <Control onclick={() => onExport(strokes)} disabled={saving || publishing || !!gesture}>Export</Control>
 </div>
 
 <div class="drawing-surface" use:portal={surfaceTarget}>
   {#if !surfaceTarget}<EditorTitle {name} onEdit={usingTools ? resumeEditing : undefined} />{/if}
-  <p class="muted" role="status">{publishing ? 'syncing drawing to GitHub…' : saving ? 'saving drawing…' : waitingForPermission ? 'autosave is waiting for write permission; exit to save' : dirty ? 'unsaved drawing changes' : githubPending ? 'drawing draft saved in this browser' : 'drawing saved'}</p>
+  <p class="muted" role="status" style:visibility={publishing ? 'hidden' : undefined}>{saving ? 'saving drawing…' : waitingForPermission ? 'autosave is waiting for write permission; exit to save' : dirty ? 'unsaved drawing changes' : githubPending ? 'drawing draft saved in this browser · Exit to sync to GitHub' : 'drawing saved'}</p>
   {#if error}<StorageNotice {error} />{/if}
   <div class="drawing-page-viewport" bind:this={pageViewport}>
   <svg bind:this={canvas} class:eraser={tool === 'eraser'} class="drawing-canvas" role="img" aria-label={`Drawing canvas for ${name}`} tabindex="-1"
@@ -353,3 +327,5 @@
   </svg>
   </div>
 </div>
+
+{#if publishing}<GitHubSyncProgress />{/if}
