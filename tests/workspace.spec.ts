@@ -1305,10 +1305,23 @@ test('pretty headings use their indentation order for size and spacing, with min
   const editor = page.getByRole('textbox', { name: 'Edit pretty.txt' });
   const lines = editor.locator('.cm-line');
   const line = (name: string) => lines.filter({ hasText: new RegExp(`^\\s*${name}$`) });
+  const title = (name: string) => line(name).locator('.cm-pretty-text');
+  const textInset = (row: Locator) => row.evaluate((element) => {
+    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+    for (let node; (node = walker.nextNode());) {
+      const start = node.textContent!.search(/\S/);
+      if (start < 0) continue;
+      const range = document.createRange();
+      range.setStart(node, start);
+      range.setEnd(node, start + 1);
+      return range.getBoundingClientRect().left - element.getBoundingClientRect().left;
+    }
+    throw new Error('The line has no visible text.');
+  });
   await page.keyboard.type('\\pretty1');
   await expect(page.getByRole('option', { name: /^\\pretty1/ })).toHaveAttribute('aria-selected', 'true');
   await page.keyboard.press('Enter');
-  await page.keyboard.insertText('Scoped title\n  Scoped body');
+  await page.keyboard.insertText('  Scoped title\n    Scoped body');
   await page.keyboard.press('ArrowRight');
   await page.keyboard.insertText([
     '', 'Regular', '  Regular child', '\\pretty', 'Title', '\tSubheading', '    Body', '  Peer',
@@ -1324,10 +1337,10 @@ test('pretty headings use their indentation order for size and spacing, with min
     box: parseFloat(getComputedStyle(element).getPropertyValue('--min-box'))
   }));
   for (const [name, size, spacing] of [
-    ['Scoped title', 4, 3], ['Title', 4, 3], ['Subheading', 3.75, 2.75], ['After block', 4, 3], ['Deep heading', 1.25, 0]
+    ['Scoped title', 3.75, 2.75], ['Title', 4, 3], ['Subheading', 3.75, 2.75], ['After block', 4, 3], ['Deep heading', 1.25, 0]
   ] as const) {
-    await expect(line(name)).toHaveCSS('font-size', `${base.box * size}px`);
-    await expect(line(name)).toHaveCSS('font-weight', '700');
+    await expect(title(name)).toHaveCSS('font-size', `${base.box * size}px`);
+    await expect(title(name)).toHaveCSS('font-weight', '700');
     await expect(line(name)).toHaveCSS('padding-top', `${base.box * spacing}px`);
   }
   for (const name of ['Scoped body', 'Regular', 'Body', 'Peer', 'Not a heading', 'Plain block', 'Deep child', 'After switch']) {
@@ -1336,12 +1349,44 @@ test('pretty headings use their indentation order for size and spacing, with min
     await expect(line(name)).toHaveCSS('padding-top', '0px');
   }
 
+  // One tab and two spaces keep the same width in headings and regular lines.
+  const peerInset = await textInset(line('Peer'));
+  expect(await textInset(line('Scoped title'))).toBeCloseTo(peerInset, 1);
+  expect(await textInset(line('Subheading'))).toBeCloseTo(peerInset, 1);
+  expect(await textInset(line('Body'))).toBeGreaterThan(peerInset);
+
   // The title keeps its size when it loses a level of descendants.
   await line('Body').click();
   await page.keyboard.press('Shift+Tab');
   await expect(line('Body')).toHaveText(/^  Body$/);
-  await expect(line('Title')).toHaveCSS('font-size', `${base.box * 4}px`);
+  await expect(title('Title')).toHaveCSS('font-size', `${base.box * 4}px`);
+  await expect(title('Subheading')).toHaveCount(0);
   await expect(line('Subheading')).toHaveCSS('font-size', `${base.font}px`);
+});
+
+test('pretty font sizing can be turned off without losing bold headings or spacing', async ({ page }) => {
+  await createNote(page, 'fixed-size.txt');
+  const editor = page.getByRole('textbox', { name: 'Edit fixed-size.txt' });
+  const heading = editor.locator('.cm-pretty-heading');
+  const title = heading.locator('.cm-pretty-text');
+  await page.keyboard.insertText('\\pretty\n  Heading\n    Child');
+  const { fontSize, minBox } = await editor.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { fontSize: style.fontSize, minBox: parseFloat(style.getPropertyValue('--min-box')) };
+  });
+  await expect(title).toHaveCSS('font-size', `${minBox * 3.75}px`);
+
+  await toolbar(page, 'Exit').click();
+  await button(page, '..').click();
+  await button(page, 'app settings').click();
+  await button(page, 'pretty font sizing: on').press('Enter');
+  await expect(button(page, 'pretty font sizing: off')).toBeVisible();
+  await page.reload();
+  await button(page, 'fixed-size.txt').click();
+  await openEditor(page);
+  await expect(title).toHaveCSS('font-size', fontSize);
+  await expect(title).toHaveCSS('font-weight', '700');
+  await expect(heading).toHaveCSS('padding-top', `${minBox * 2.75}px`);
 });
 
 test('brush inserts a movable SVG page, swaps the inline toolbar, and saves an exact drawing extent', async ({ page }) => {

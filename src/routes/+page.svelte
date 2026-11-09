@@ -50,6 +50,7 @@
   let editing = $state(false);
   let creating = $state(false);
   let wrapLines = $state(true);
+  let prettyFontSize = $state(true);
   let vimMode = $state(false);
   let stylusOnly = $state(false);
   let autosaveSeconds = $state(DEFAULT_AUTOSAVE_SECONDS);
@@ -99,6 +100,8 @@
 
   onMount(() => {
     try { wrapLines = localStorage.getItem('notework:wrap-lines') !== 'false'; }
+    catch { /* Use the default when storage is unavailable. */ }
+    try { prettyFontSize = localStorage.getItem('notework:pretty-font-size') !== 'false'; }
     catch { /* Use the default when storage is unavailable. */ }
     try { vimMode = localStorage.getItem('notework:vim-mode') === 'true'; }
     catch { /* Use the default when storage is unavailable. */ }
@@ -563,7 +566,7 @@
           {#if current.drawing}
             <StandaloneDrawing {pdfMargins} {stylusOnly} {resolveGitHubConflict} autosaveMs={autosaveSeconds * 1000} {workspace} node={current} onExit={exitEditor} onMissing={() => { void missingCurrent(); }} />
           {:else}
-            <TextEditor {workspace} node={current} {wrapLines} {vimMode} {stylusOnly} {pdfMargins} {resolveGitHubConflict} autosaveMs={autosaveSeconds * 1000} onExit={exitEditor}
+            <TextEditor {workspace} node={current} {wrapLines} {prettyFontSize} {vimMode} {stylusOnly} {pdfMargins} {resolveGitHubConflict} autosaveMs={autosaveSeconds * 1000} onExit={exitEditor}
               onMissing={() => { void missingCurrent(); }} onOpenLink={openLinkedFile} />
           {/if}
         {/key}
@@ -683,6 +686,10 @@
             <Action label={`wrap long lines: ${wrapLines ? 'on' : 'off'}`} onSelect={() => {
               wrapLines = !wrapLines;
               saveAppearancePreference('notework:wrap-lines', wrapLines);
+            }} />
+            <Action label={`pretty font sizing: ${prettyFontSize ? 'on' : 'off'}`} onSelect={() => {
+              prettyFontSize = !prettyFontSize;
+              saveAppearancePreference('notework:pretty-font-size', prettyFontSize);
             }} />
             <Action label={`draw with only physical stylus: ${stylusOnly ? 'enabled' : 'disabled'}`} onSelect={() => {
               stylusOnly = !stylusOnly;

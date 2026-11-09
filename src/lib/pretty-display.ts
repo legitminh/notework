@@ -7,6 +7,7 @@ const modeSwitch = /^[ \t]*\\(pretty|unpretty)(?:\[\])?[ \t]*$/i;
 const blockStart = /^[ \t]*\\(pretty1|unpretty1)\[/i;
 const hideLine = Decoration.replace({ block: true });
 const hideSyntax = Decoration.replace({});
+const headingText = Decoration.mark({ class: 'cm-pretty-text' });
 
 interface PrettyBlock { start: number; end: number; pretty: boolean }
 interface SourceLine { from: number; to: number; content?: { from: number; to: number } }
@@ -54,14 +55,14 @@ function layout(state: EditorState) {
   const scopes: PrettyBlock[] = [];
   const source: SourceLine[] = [];
   const headings: Range<Decoration>[] = [];
-  let previousFrom: number | undefined;
-  let pretty = false, previousIndent = 0, from = 0;
+  let previous: { from: number; indent: number; textFrom: number; textTo: number } | undefined;
+  let pretty = false, from = 0;
 
   for (const raw of doc.iterLines()) {
     const to = from + raw.length;
     const opening = blocks.get(from);
     if (opening) {
-      previousFrom = undefined;
+      previous = undefined;
       scopes.push(opening);
       pretty = opening.pretty;
     }
@@ -78,26 +79,28 @@ function layout(state: EditorState) {
     }
 
     if (toggle) {
-      previousFrom = undefined;
+      previous = undefined;
       pretty = toggle[1].toLowerCase() === 'pretty';
     } else if (pretty && line.trim() && !svgPagePattern.test(line)) {
-      const indent = countColumn(line, tabSize, /^[ \t]*/.exec(line)![0].length);
+      const indentLength = /^[ \t]*/.exec(line)![0].length;
+      const indent = countColumn(line, tabSize, indentLength);
       // A line has positive degree as soon as the next line is more indented.
-      if (previousFrom !== undefined && indent > previousIndent) {
-        const order = Math.floor(previousIndent / indentWidth);
+      if (previous && indent > previous.indent) {
+        const order = Math.floor(previous.indent / indentWidth);
         headings.push(Decoration.line({
           class: 'cm-pretty-heading',
           attributes: { style: `--pretty-order: ${order}` }
-        }).range(previousFrom));
+        }).range(previous.from));
+        // Keep leading spaces and tabs in the editor's normal font.
+        headings.push(headingText.range(previous.textFrom, previous.textTo));
       }
-      previousFrom = from;
-      previousIndent = indent;
+      previous = { from, indent, textFrom: contentFrom + indentLength, textTo: contentTo };
     } else {
-      previousFrom = undefined;
+      previous = undefined;
     }
 
     if (closing) {
-      previousFrom = undefined;
+      previous = undefined;
       scopes.pop();
       // The utility commands expand to explicit mode switches on both sides.
       pretty = !closing.pretty;
@@ -139,11 +142,17 @@ const prettyField = StateField.define({
   ]
 });
 
-export const prettyDisplay = [prettyField, EditorView.baseTheme({
+const prettyTheme = EditorView.baseTheme({
   '.cm-line.cm-pretty-heading': {
-    fontWeight: 'bold',
-    fontSize: 'max(calc(var(--min-box) * 1.25), calc(var(--min-box) * (4 - var(--pretty-order) / 4)))',
     // Padding adds space inside the block measured by CodeMirror.
     paddingBlockStart: 'max(0px, calc(var(--min-box) * (3 - var(--pretty-order) / 4)))'
+  },
+  '.cm-pretty-text': { fontWeight: 'bold' },
+  '&.cm-pretty-size .cm-pretty-text': {
+    fontSize: 'max(calc(var(--min-box) * 1.25), calc(var(--min-box) * (4 - var(--pretty-order) / 4)))'
   }
-})];
+});
+
+export function prettyDisplay(resizeText: boolean) {
+  return [prettyField, prettyTheme, resizeText ? EditorView.editorAttributes.of({ class: 'cm-pretty-size' }) : []];
+}

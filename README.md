@@ -40,6 +40,8 @@ The editor virtualizes its viewport and streams text reads/writes instead of ren
 
 On its own line, `\pretty` formats the text below it as an outline until `\unpretty`. A line becomes a bold heading when the next line is more indented. An unindented heading uses a font size of four min-boxes and gets three min-boxes of space above it. Each level of indentation subtracts a quarter min-box from both, down to a font size of 1.25 min-boxes and no extra space.
 
+Leading spaces and tabs keep their normal width. **App settings → Appearance → Pretty font sizing** is on by default. Turn it off to keep a consistent font size while retaining bold headings and extra space above them.
+
 Use `\pretty1[LINES]` to format a block and then return to regular text, or `\unpretty1[LINES]` to show a block as regular text and turn formatting on afterward. The brackets can enclose multiple lines.
 
 Type `\` on its own line and choose a command from autocomplete. Accepting `\pretty` moves the caret to the start of a new, unindented line. The editor hides the switch lines when the caret leaves them, while keeping their original line numbers in the document.

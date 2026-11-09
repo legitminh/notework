@@ -38,9 +38,10 @@
   import { GitHubChanged, GitHubEditCancelled, GitHubFile, type ResolveGitHubConflict } from '../github/repository';
   import { draftQueue, type DraftQueue } from '../github/storage';
 
-  let { workspace, node, wrapLines, vimMode, stylusOnly, pdfMargins, autosaveMs, resolveGitHubConflict, onExit, onMissing, onOpenLink }: {
+  let { workspace, node, wrapLines, prettyFontSize, vimMode, stylusOnly, pdfMargins, autosaveMs, resolveGitHubConflict, onExit, onMissing, onOpenLink }: {
     workspace: Workspace; node: StateNode;
     wrapLines: boolean;
+    prettyFontSize: boolean;
     vimMode: boolean;
     stylusOnly: boolean;
     autosaveMs: number;
@@ -663,7 +664,7 @@
               }
             })))),
             vimMode ? vim() : [],
-            wikiDisplay(leaveEditor), pageWidgets.field, prettyDisplay, textLock.of([]),
+            wikiDisplay(leaveEditor), pageWidgets.field, prettyDisplay(prettyFontSize), textLock.of([]),
             wrapLines ? EditorView.lineWrapping : [],
             lineNumbers(), drawSelection(), highlightActiveLine(), history(),
             bracketMatching(), closeBrackets(), highlightSelectionMatches(),
