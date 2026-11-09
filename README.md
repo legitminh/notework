@@ -38,7 +38,9 @@ Readable files use the plain-text CodeMirror editor unless they are Notework dra
 
 The editor virtualizes its viewport and streams text reads/writes instead of rendering a collection or converting an entire collection into one string. There is no former 2 MB preview truncation. A multi-megabyte/60,000-line document is covered by browser tests. A single open document still uses editor memory, so capacity is not unlimited.
 
-On its own line, `\pretty` formats the text below it as an outline until `\unpretty`. A line becomes a bold heading when the next line is more indented. Each consecutive increase in indentation adds a quarter min-box to the heading’s font size; every heading gets half a min-box of space above it. Use `\pretty1[LINES]` to format a block and then return to regular text, or `\unpretty1[LINES]` to show a block as regular text and turn formatting on afterward. The brackets can enclose multiple lines.
+On its own line, `\pretty` formats the text below it as an outline until `\unpretty`. A line becomes a bold heading when the next line is more indented. An unindented heading uses a font size of four min-boxes and gets three min-boxes of space above it. Each level of indentation subtracts a quarter min-box from both, down to a font size of 1.25 min-boxes and no extra space.
+
+Use `\pretty1[LINES]` to format a block and then return to regular text, or `\unpretty1[LINES]` to show a block as regular text and turn formatting on afterward. The brackets can enclose multiple lines.
 
 Type `\` on its own line and choose a command from autocomplete. Accepting `\pretty` moves the caret to the start of a new, unindented line. The editor hides the switch lines when the caret leaves them, while keeping their original line numbers in the document.
 

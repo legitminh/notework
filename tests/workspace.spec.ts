@@ -1299,7 +1299,8 @@ test('pretty completion lands at column one and hides the directive and its line
   await expect(numbers).toHaveText(['1', '3', '4']);
 });
 
-test('pretty display uses adjacent indentation and bracketed commands switch modes at both ends', async ({ page }) => {
+test('pretty headings use their indentation order for size and spacing, with minimums', async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 2400 });
   await createNote(page, 'pretty.txt');
   const editor = page.getByRole('textbox', { name: 'Edit pretty.txt' });
   const lines = editor.locator('.cm-line');
@@ -1312,7 +1313,8 @@ test('pretty display uses adjacent indentation and bracketed commands switch mod
   await page.keyboard.insertText([
     '', 'Regular', '  Regular child', '\\pretty', 'Title', '\tSubheading', '    Body', '  Peer',
     'Not a heading', '', '  After blank', '\\unpretty1[', 'Plain block', '  Plain [block] child', ']',
-    'After block', '  Detail', '\\unpretty', 'After switch', '  Last child'
+    'After block', '  Detail', '', `${' '.repeat(26)}Deep heading`, `${' '.repeat(28)}Deep child`,
+    '\\unpretty', 'After switch', '  Last child'
   ].join('\n'));
 
   await expect(editor).not.toContainText(/\\(?:un)?pretty/);
@@ -1321,21 +1323,24 @@ test('pretty display uses adjacent indentation and bracketed commands switch mod
     font: parseFloat(getComputedStyle(element).fontSize),
     box: parseFloat(getComputedStyle(element).getPropertyValue('--min-box'))
   }));
-  for (const [name, degree] of [['Scoped title', 1], ['Title', 2], ['Subheading', 1], ['After block', 1]] as const) {
-    await expect(line(name)).toHaveCSS('font-size', `${base.font + base.box / 4 * degree}px`);
+  for (const [name, size, spacing] of [
+    ['Scoped title', 4, 3], ['Title', 4, 3], ['Subheading', 3.75, 2.75], ['After block', 4, 3], ['Deep heading', 1.25, 0]
+  ] as const) {
+    await expect(line(name)).toHaveCSS('font-size', `${base.box * size}px`);
     await expect(line(name)).toHaveCSS('font-weight', '700');
-    await expect(line(name)).toHaveCSS('padding-top', `${base.box / 2}px`);
+    await expect(line(name)).toHaveCSS('padding-top', `${base.box * spacing}px`);
   }
-  for (const name of ['Scoped body', 'Regular', 'Body', 'Peer', 'Not a heading', 'Plain block', 'After switch']) {
+  for (const name of ['Scoped body', 'Regular', 'Body', 'Peer', 'Not a heading', 'Plain block', 'Deep child', 'After switch']) {
     await expect(line(name)).toHaveCSS('font-size', `${base.font}px`);
     await expect(line(name)).toHaveCSS('font-weight', '400');
+    await expect(line(name)).toHaveCSS('padding-top', '0px');
   }
 
-  // Changing the next line's indentation immediately changes its ancestors.
+  // The title keeps its size when it loses a level of descendants.
   await line('Body').click();
   await page.keyboard.press('Shift+Tab');
   await expect(line('Body')).toHaveText(/^  Body$/);
-  await expect(line('Title')).toHaveCSS('font-size', `${base.font + base.box / 4}px`);
+  await expect(line('Title')).toHaveCSS('font-size', `${base.box * 4}px`);
   await expect(line('Subheading')).toHaveCSS('font-size', `${base.font}px`);
 });
 

@@ -1,3 +1,4 @@
+import { getIndentUnit } from '@codemirror/language';
 import { countColumn, StateField, type EditorState, type Range, type Text } from '@codemirror/state';
 import { Decoration, EditorView } from '@codemirror/view';
 import { svgPagePattern } from './drawing';
@@ -46,30 +47,21 @@ function findBlocks(doc: Text) {
   return blocks;
 }
 
-function layout(doc: Text, tabSize: number) {
+function layout(state: EditorState) {
+  const { doc, tabSize } = state;
+  const indentWidth = getIndentUnit(state);
   const blocks = findBlocks(doc);
   const scopes: PrettyBlock[] = [];
   const source: SourceLine[] = [];
   const headings: Range<Decoration>[] = [];
-  const chain: number[] = [];
+  let previousFrom: number | undefined;
   let pretty = false, previousIndent = 0, from = 0;
-
-  function flushChain() {
-    // Each line's degree is the number of successive increases after it.
-    for (let i = 0; i < chain.length - 1; i++) {
-      headings.push(Decoration.line({
-        class: 'cm-pretty-heading',
-        attributes: { style: `--pretty-degree: ${chain.length - 1 - i}` }
-      }).range(chain[i]));
-    }
-    chain.length = 0;
-  }
 
   for (const raw of doc.iterLines()) {
     const to = from + raw.length;
     const opening = blocks.get(from);
     if (opening) {
-      flushChain();
+      previousFrom = undefined;
       scopes.push(opening);
       pretty = opening.pretty;
     }
@@ -86,26 +78,32 @@ function layout(doc: Text, tabSize: number) {
     }
 
     if (toggle) {
-      flushChain();
+      previousFrom = undefined;
       pretty = toggle[1].toLowerCase() === 'pretty';
     } else if (pretty && line.trim() && !svgPagePattern.test(line)) {
       const indent = countColumn(line, tabSize, /^[ \t]*/.exec(line)![0].length);
-      if (indent <= previousIndent) flushChain();
-      chain.push(from);
+      // A line has positive degree as soon as the next line is more indented.
+      if (previousFrom !== undefined && indent > previousIndent) {
+        const order = Math.floor(previousIndent / indentWidth);
+        headings.push(Decoration.line({
+          class: 'cm-pretty-heading',
+          attributes: { style: `--pretty-order: ${order}` }
+        }).range(previousFrom));
+      }
+      previousFrom = from;
       previousIndent = indent;
     } else {
-      flushChain();
+      previousFrom = undefined;
     }
 
     if (closing) {
-      flushChain();
+      previousFrom = undefined;
       scopes.pop();
       // The utility commands expand to explicit mode switches on both sides.
       pretty = !closing.pretty;
     }
     from = to + 1;
   }
-  flushChain();
   return { source, headings: Decoration.set(headings) };
 }
 
@@ -125,14 +123,15 @@ function hideInactiveSource(state: EditorState, source: SourceLine[]) {
 
 const prettyField = StateField.define({
   create(state) {
-    const display = layout(state.doc, state.tabSize);
+    const display = layout(state);
     return { ...display, hidden: hideInactiveSource(state, display.source) };
   },
   update(value, transaction) {
-    const changed = transaction.docChanged || transaction.startState.tabSize !== transaction.state.tabSize;
+    const { startState, state } = transaction;
+    const changed = transaction.docChanged || startState.tabSize !== state.tabSize || getIndentUnit(startState) !== getIndentUnit(state);
     if (!changed && !transaction.selection) return value;
-    const display = changed ? layout(transaction.newDoc, transaction.state.tabSize) : value;
-    return { ...display, hidden: hideInactiveSource(transaction.state, display.source) };
+    const display = changed ? layout(state) : value;
+    return { ...display, hidden: hideInactiveSource(state, display.source) };
   },
   provide: (field) => [
     EditorView.decorations.from(field, (value) => value.headings),
@@ -143,8 +142,8 @@ const prettyField = StateField.define({
 export const prettyDisplay = [prettyField, EditorView.baseTheme({
   '.cm-line.cm-pretty-heading': {
     fontWeight: 'bold',
-    fontSize: 'calc(1em + var(--min-box) * var(--pretty-degree) / 4)',
+    fontSize: 'max(calc(var(--min-box) * 1.25), calc(var(--min-box) * (4 - var(--pretty-order) / 4)))',
     // Padding adds space inside the block measured by CodeMirror.
-    paddingBlockStart: 'calc(var(--min-box) / 2)'
+    paddingBlockStart: 'max(0px, calc(var(--min-box) * (3 - var(--pretty-order) / 4)))'
   }
 })];
