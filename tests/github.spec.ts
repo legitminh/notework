@@ -197,12 +197,10 @@ test('failed writes retain the draft across reload and accept an upstream deleti
 test('normal folder actions and drawing editing publish to GitHub', async ({ page }) => {
   const repo = await github(page, { 'ink.svg': serializeDrawing([]) });
   await connect(page);
-  await action(page, 'configure folder').click();
   await action(page, 'create new file/folder').click();
   await page.getByLabel('name', { exact: true }).fill('Sketches');
   await action(page, 'create folder').click();
   await expect(page.getByRole('heading', { name: 'Sketches/', exact: true })).toBeVisible();
-  await action(page, 'configure folder').click();
   await action(page, 'create new file/folder').click();
   await page.getByLabel('name', { exact: true }).fill('idea.txt');
   await action(page, 'create text file').click();

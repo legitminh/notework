@@ -541,6 +541,9 @@
         <Action label="search" onSelect={() => togglePanel('search')} disabled={loading || busy} />
         {#if current}
           <Action label={`configure ${resourceType}`} onSelect={() => togglePanel('configure')} disabled={busy} />
+          {#if current.kind === 'directory'}
+            <Action label="create new file/folder" onSelect={startCreating} disabled={loading || busy || !canCreateHere} />
+          {/if}
         {:else}
           <Action label="app settings" onSelect={() => togglePanel('settings')} disabled={loading || busy} />
         {/if}
@@ -588,7 +591,6 @@
           <section class="panel" aria-labelledby="configure-heading">
             <h2 id="configure-heading">configure {resourceType}</h2>
             {#if current.kind === 'directory'}
-              <Action label="create new file/folder" onSelect={startCreating} disabled={loading || busy || !canCreateHere} />
               <Action label="refresh folder" onSelect={refreshFolder} disabled={busy} />
             {/if}
             {#if needsPermission}

@@ -15,7 +15,7 @@ New browser documents work in browsers with OPFS support. Connecting existing ma
 
 ## Navigation and selection
 
-Every state starts with non-navigation tools above a divider: **search**, then **app settings** at home or **configure folder/file** elsewhere. Below the divider are graph-navigation actions: a house icon for home, **..**, and outgoing state buttons. The state display sits underneath. Home is the virtual root folder: its children can come from different machine sources and browser storage. Home and other folders share the same creation screen.
+Every state starts with non-navigation tools above a divider: **search**, then **app settings** at home or **configure folder/file** elsewhere. Folder views also offer **create new file/folder** above the divider. Below the divider are graph-navigation actions: a house icon for home, **..**, and outgoing state buttons. The state display sits underneath. Home is the virtual root folder: its children can come from different machine sources and browser storage. Home and other folders share the same creation screen.
 
 In app settings, **add existing folder/file** opens one local chooser. Drop mixed files/folders and the app identifies their handles automatically. Or use **browse location…**, grant read access to a folder in the OS dialog, and select files or folders inside it. Browser APIs do not provide one mixed native OS picker. The browsing location is temporary; only confirmed item handles are remembered. Cancelling adds nothing.
 
@@ -64,7 +64,7 @@ Press **Esc** in an inline or standalone drawing to cancel any stroke in progres
 
 ## Create files and folders
 
-Home exposes **create new file/folder** inside app settings; physical and browser folders expose it inside **configure folder**, alongside **refresh folder**. Home is a virtual parent that holds items from multiple sources, with no filesystem folder of its own. App settings manages connected sources and preferences. The separate creation screen accepts a name and previews the path for each available type: folder, text file, or SVG drawing. Choose a creation action to open the new state in navigation mode. Existing names are rejected without changing their contents.
+Home exposes **create new file/folder** inside app settings. Computer, browser, and GitHub folders expose it directly in the folder view. Home is a virtual parent that holds items from multiple sources, with no filesystem folder of its own. App settings manages connected sources and preferences. The separate creation screen accepts a name and previews the path for each available type: folder, text file, or SVG drawing. Choose a creation action to open the new state in navigation mode. Existing names are rejected without changing their contents.
 
 New assets inherit the parent folder’s storage. Inside a selected machine folder, Create requests write permission and writes directly into that folder. Inside a browser folder, Create writes an actual OPFS child. Root has no backing folder, so new root assets use OPFS. Denied local write access never falls back to browser storage. Directed links may point across storage sources; they do not create child or parent relationships. Older browser-backed virtual children are preserved as explicit links without moving their files. The available actions come from `src/lib/asset-types.ts`; adding a supported type there adds its creation action and initializer.
 

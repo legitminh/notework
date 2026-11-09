@@ -22,15 +22,12 @@ test('WebKit persistent storage creates folders, text, and drawings without clon
     page.on('pageerror', (error) => errors.push(error.message));
     await page.goto(baseURL!);
     const action = (name: string) => page.locator(`[data-action=${JSON.stringify(name)}] button`);
-    const startCreate = async () => {
-      await page.locator('[data-action="configure folder"] button, [data-action="app settings"] button').click();
-      await action('create new file/folder').click();
-    };
-    await startCreate();
+    await action('app settings').click();
+    await action('create new file/folder').click();
     await page.getByLabel('name', { exact: true }).fill('iPad notes');
     await action('create folder').click();
     await expect(page.getByRole('heading', { name: 'iPad notes/', exact: true })).toBeVisible();
-    await startCreate();
+    await action('create new file/folder').click();
     await page.getByLabel('name', { exact: true }).fill('first.txt');
     await action('create text file').click();
     await action('open').click();
@@ -65,7 +62,7 @@ test('WebKit persistent storage creates folders, text, and drawings without clon
 
     await toolbar.getByRole('button', { name: 'Exit', exact: true }).click();
     await action('..').click();
-    await startCreate();
+    await action('create new file/folder').click();
     await page.getByLabel('name', { exact: true }).fill('sketch');
     await action('create svg file').click();
     await action('open').click();

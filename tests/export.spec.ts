@@ -5,7 +5,7 @@ import { PDFDocument, PDFArray, PDFRawStream, PDFName, decodePDFRawStream } from
 const action = (page: Page, name: string) => page.locator(`[data-action=${JSON.stringify(name)}] button`);
 const tools = (page: Page) => page.getByRole('group', { name: 'Editor toolbar' });
 async function startCreate(page: Page) {
-  await page.locator('[data-action="configure folder"] button, [data-action="app settings"] button').click();
+  await action(page, 'app settings').click();
   await action(page, 'create new file/folder').click();
 }
 async function note(page: Page, name: string) {

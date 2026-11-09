@@ -22,8 +22,8 @@ async function pressShortcut(page: Page, control: Locator) {
   for (const key of (await route.innerText()).trim()) await page.keyboard.press(key);
 }
 
-async function startCreate(page: Page) {
-  await page.locator('[data-action="configure folder"] button, [data-action="app settings"] button').click();
+async function startCreate(page: Page, location: 'home' | 'folder' = 'home') {
+  if (location === 'home') await button(page, 'app settings').click();
   await button(page, 'create new file/folder').click();
 }
 
@@ -173,7 +173,7 @@ test('folder direct children, file display, parent navigation, and browser back'
   await connectDocuments(page);
   await button(page, 'Documents/').click();
   await expect(button(page, 'Adobe/')).toBeVisible();
-  expect(await page.locator('nav [data-action]').evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-action')))).toEqual(['search', 'configure folder', 'home', '..', 'Adobe/', 'open', 'readme.txt', 'open', 'semantic proto-role inferences.pdf']);
+  expect(await page.locator('nav [data-action]').evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-action')))).toEqual(['search', 'configure folder', 'create new file/folder', 'home', '..', 'Adobe/', 'open', 'readme.txt', 'open', 'semantic proto-role inferences.pdf']);
   await expect(button(page, 'home').locator('svg')).toHaveCount(1);
   await expect(button(page, 'home')).toHaveAccessibleName(/home$/);
   await button(page, 'home').click();
@@ -1571,7 +1571,7 @@ test('configure recursively deletes a browser folder and prunes descendant links
 test('folder creation previews paths and opens new folders, text files, and SVG states', async ({ page }) => {
   await connectDocuments(page);
   await button(page, 'Documents/').click();
-  await startCreate(page);
+  await pressShortcut(page, button(page, 'create new file/folder'));
   await expect(page.getByRole('navigation', { name: 'state navigation' })).toHaveCount(0);
   await expect(button(page, 'create folder')).toBeDisabled();
   const name = page.getByLabel('name', { exact: true });
@@ -1584,7 +1584,7 @@ test('folder creation previews paths and opens new folders, text files, and SVG 
   await expect(button(page, 'Research/')).toBeVisible();
   await button(page, 'Research/').click();
 
-  await startCreate(page);
+  await startCreate(page, 'folder');
   await name.fill('notes.txt');
   await expect(page.getByLabel('Path for text file', { exact: true })).toHaveText('Documents/Research/notes.txt');
   await button(page, 'create text file').click();
@@ -1597,7 +1597,7 @@ test('folder creation previews paths and opens new folders, text files, and SVG 
   await toolbar(page, 'Exit').click();
   await button(page, '..').click();
 
-  await startCreate(page);
+  await startCreate(page, 'folder');
   await name.fill('diagram');
   await button(page, 'create svg file').click();
   await expect(page.getByRole('heading', { name: 'diagram.svg', exact: true })).toBeVisible();
@@ -1632,7 +1632,7 @@ test('folder creation previews paths and opens new folders, text files, and SVG 
 test('creation rejects invalid and duplicate names without overwriting existing resources', async ({ page }) => {
   await connectDocuments(page);
   await button(page, 'Documents/').click();
-  await startCreate(page);
+  await startCreate(page, 'folder');
   const name = page.getByLabel('name', { exact: true });
   for (const invalid of ['..', 'one/two', '.git']) {
     await name.fill(invalid);
@@ -1695,10 +1695,10 @@ test('folder configuration rename moves descendants and rewrites links through r
   await startCreate(page);
   await page.getByLabel('name', { exact: true }).fill('Project');
   await button(page, 'create folder').click();
-  await startCreate(page);
+  await startCreate(page, 'folder');
   await page.getByLabel('name', { exact: true }).fill('Nested');
   await button(page, 'create folder').click();
-  await startCreate(page);
+  await startCreate(page, 'folder');
   await page.getByLabel('name', { exact: true }).fill('note.txt');
   await button(page, 'create text file').click();
   await openEditor(page);
@@ -1800,7 +1800,7 @@ test('SVG page references resolve and rename drawings across folders and storage
   await startCreate(page);
   await page.getByLabel('name', { exact: true }).fill('Art');
   await button(page, 'create folder').click();
-  await startCreate(page);
+  await startCreate(page, 'folder');
   await page.getByLabel('name', { exact: true }).fill('shared');
   await button(page, 'create svg file').click();
   await openEditor(page);
@@ -1868,7 +1868,7 @@ test('home is a virtual folder with mixed sources and the shared creation screen
   await expect(page.getByLabel('Path for folder', { exact: true })).toHaveText('home/Notebook/');
   await button(page, 'create folder').click();
   await expect(page.getByRole('heading', { name: 'Notebook/', exact: true })).toBeVisible();
-  await startCreate(page);
+  await startCreate(page, 'folder');
   await page.getByLabel('name', { exact: true }).fill('entry.txt');
   await button(page, 'create text file').click();
   await expect(page.getByRole('heading', { name: 'entry.txt', exact: true })).toBeVisible();
@@ -2029,7 +2029,7 @@ test('drawing touch gestures undo, redo, pan and zoom; stylus-only mode persists
 
 test('local creation denial and failed metadata saves leave no child or browser fallback', async ({ page }) => {
   await connectDocuments(page); await button(page, 'Documents/').click();
-  await startCreate(page);
+  await startCreate(page, 'folder');
   await page.getByLabel('name', { exact: true }).fill('denied.txt');
   await page.evaluate(() => localStorage.setItem('test-deny-write', 'yes'));
   await button(page, 'create text file').click();
@@ -2172,8 +2172,8 @@ test('legacy browser-backed children become links and retain their original reso
   expect(resource.inLocal).toBe(false); expect(resource.content).toContain('<polyline');
 });
 
-async function createFolder(page: Page, name: string) {
-  await startCreate(page);
+async function createFolder(page: Page, name: string, location: 'home' | 'folder' = 'home') {
+  await startCreate(page, location);
   await page.getByLabel('name', { exact: true }).fill(name);
   await button(page, 'create folder').click();
   await expect(page.getByRole('heading', { name: name + '/', exact: true })).toBeVisible();
@@ -2279,8 +2279,8 @@ test('relocate across storage sources requires Yes and supports moving back to h
 
 test('relocate folders through search preserves descendants and rewrites saved backlinks', async ({ page }) => {
   await createFolder(page, 'Archive'); await button(page, 'home').click();
-  await createFolder(page, 'Project'); await createFolder(page, 'Nested');
-  await startCreate(page); await page.getByLabel('name', { exact: true }).fill('note.txt'); await button(page, 'create text file').click();
+  await createFolder(page, 'Project'); await createFolder(page, 'Nested', 'folder');
+  await startCreate(page, 'folder'); await page.getByLabel('name', { exact: true }).fill('note.txt'); await button(page, 'create text file').click();
   await openEditor(page); await page.getByRole('textbox', { name: 'Edit note.txt' }).fill('Folder content');
   await toolbar(page, 'Exit').click(); await button(page, 'home').click();
   await createNote(page, 'index.txt');
@@ -2303,7 +2303,7 @@ test('relocate folders through search preserves descendants and rewrites saved b
 });
 
 test('relocate rejects self and descendant folders and existing destination names', async ({ page }) => {
-  await createFolder(page, 'Project'); await createFolder(page, 'Nested');
+  await createFolder(page, 'Project'); await createFolder(page, 'Nested', 'folder');
   await button(page, '..').click(); await startRelocate(page, 'folder'); await chooseHere(page).click();
   await expect(page.getByRole('alert')).toContainText('cannot be relocated into itself');
   await button(page, 'Nested/').click(); await chooseHere(page).click();
