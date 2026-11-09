@@ -79,7 +79,7 @@ Creating a resource at home allocates its contents in OPFS before committing a c
 
 ## GitHub folders
 
-Open **App settings → GitHub repositories** and enter a repository and an optional branch. [Create a fine-grained personal access token](https://github.com/settings/personal-access-tokens/new), limit it to that repository, and grant **Contents: Read and write**. The repository needs an initial commit and a branch that accepts direct pushes. Notework saves the token in this browser and sends it only to GitHub's API.
+Open **App settings → GitHub repositories** and enter a repository and an optional branch. [Create a fine-grained personal access token](https://github.com/settings/personal-access-tokens/new) and limit it to that repository. Under repository permissions, click **Add permissions**, select **Contents**, then choose **Read and write**. The repository needs an initial commit and a branch that accepts direct pushes. Notework saves the token in this browser and sends it only to GitHub's API. If credentials stop working, use **Reconnect GitHub** in the error message to replace the token.
 
 The repository appears under Home. Notework checks for upstream changes on startup and before opening a repository file. Autosave keeps a draft in the browser. **Exit** or an explicit save publishes an edit as `edit: filename`. If GitHub has changed the same file since it was opened, edit either version in the side-by-side dialog and choose which to keep. Cancel or a failed push leaves your draft available for retry. Empty folders use a hidden `.gitkeep` file so they persist in Git.
 

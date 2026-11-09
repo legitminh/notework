@@ -4,12 +4,13 @@ export interface GitSnapshot { head: string; tree: string; entries: GitEntry[] }
 export type TreeChange = Pick<GitEntry, 'path' | 'mode' | 'type'> & { sha: string | null };
 
 export class GitHubApiError extends Error {
-  constructor(readonly status: number, action: string) {
-    super(status === 401 ? 'The GitHub token expired or was rejected. Update it in GitHub settings.'
+  constructor(readonly status: number, action: string, readonly repositoryId?: string) {
+    super(status === 401 ? 'The GitHub token is missing, expired, or was rejected.'
       : status === 403 ? 'GitHub refused access. Check the token permissions, branch rules, and API limits.'
       : status === 404 ? 'GitHub could not find the repository, branch, or object. Check the connection in settings.'
       : `GitHub could not ${action} (HTTP ${status}). Check the branch rules or try again.`);
   }
+  get canReconnect() { return [401, 403, 404].includes(this.status); }
 }
 
 export class GitHubWriteUncertain extends Error {
@@ -17,7 +18,7 @@ export class GitHubWriteUncertain extends Error {
 }
 
 export class GitHubApi {
-  constructor(readonly connection: GitHubConnection, private readonly token: string) {}
+  constructor(readonly connection: GitHubConnection, private readonly token: string, private readonly repositoryId: string) {}
 
   async request<T>(path: string, action: string, method = 'GET', body?: unknown): Promise<T> {
     const { owner, repo } = this.connection;
@@ -33,7 +34,7 @@ export class GitHubApi {
     } catch {
       throw new Error('Could not reach GitHub. Check your connection and try again.');
     }
-    if (!response.ok) throw new GitHubApiError(response.status, action);
+    if (!response.ok) throw new GitHubApiError(response.status, action, this.repositoryId);
     return response.json() as Promise<T>;
   }
 

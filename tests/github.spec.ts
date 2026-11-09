@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { serializeDrawing } from '../src/lib/drawing';
 
 const api = 'https://api.github.com/repos/example/notebook';
@@ -18,6 +18,7 @@ async function github(page: Page, initial: Record<string, string>) {
   let head: string;
   let advanceOnPush: Record<string, string | null> | undefined;
   let refuseWrites = false;
+  let token = 'test-token';
 
   function blob(content: Buffer) { const id = sha(content); blobs.set(id, content); return id; }
   function tree(files: Tree) { const id = `tree-${++sequence}`; trees.set(id, files); return id; }
@@ -48,6 +49,7 @@ async function github(page: Page, initial: Record<string, string>) {
     } });
     if (method === 'OPTIONS') return respond({});
     expect(request.headers().authorization).toMatch(/^Bearer test-token/);
+    if (request.headers().authorization !== `Bearer ${token}`) return respond({}, 401);
     if (method === 'GET' && !path) return respond({ default_branch: 'main', permissions: { push: true } });
     if (method === 'GET' && path === '/git/ref/heads/main') return respond({ object: { sha: head } });
     if (method === 'GET' && path.startsWith('/git/commits/')) {
@@ -97,17 +99,30 @@ async function github(page: Page, initial: Record<string, string>) {
     upstream, messages,
     advance(changes: Record<string, string | null>) { advanceOnPush = changes; },
     refuse(value: boolean) { refuseWrites = value; },
+    rotateToken(value: string) { token = value; },
     content(path: string) { const value = files().get(path); return value && blobs.get(value)?.toString(); }
   };
 }
 
-async function connect(page: Page) {
+async function pressShortcut(page: Page, button: Locator) {
+  const route = button.locator('.pending_route');
+  await expect(route).not.toHaveText('');
+  for (const key of (await route.innerText()).trim()) await page.keyboard.press(key);
+}
+
+async function connect(page: Page, keyboard = false) {
   await page.goto('/');
   await action(page, 'app settings').click();
   await action(page, 'GitHub repositories').click();
   await page.getByLabel('Repository', { exact: true }).fill('https://github.com/example/notebook');
-  await page.getByLabel('Personal access token', { exact: true }).fill('test-token');
-  await page.getByRole('button', { name: 'Connect repository', exact: true }).click();
+  const token = page.getByLabel('Personal access token', { exact: true });
+  const connect = page.getByRole('button', { name: 'Connect repository', exact: true });
+  await token.fill('test-token');
+  if (keyboard) {
+    await token.press('Tab');
+    await expect(connect).toBeFocused();
+    await pressShortcut(page, connect);
+  } else await connect.click();
   await expect(action(page, 'notebook/')).toBeEnabled();
   await action(page, 'notebook/').click();
 }
@@ -117,7 +132,71 @@ async function openNote(page: Page, name = 'note.txt') {
   await action(page, 'open').click();
 }
 
+test('setup instructions fit a narrow screen and GitHub form actions have keyboard shortcuts', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const repo = await github(page, { 'note.txt': 'Original' });
+  await connect(page, true);
+  await action(page, 'home').click();
+  await action(page, 'app settings').click();
+  await action(page, 'GitHub repositories').click();
+  const list = page.getByRole('region', { name: 'GitHub repositories' }).getByRole('list');
+  await expect(list).toContainText('Add permissions, select Contents');
+  expect(await list.evaluate((list) => {
+    const bounds = list.getBoundingClientRect();
+    const start = list.firstElementChild!.getBoundingClientRect().left;
+    return bounds.left >= 0 && bounds.right <= innerWidth && start - bounds.left >= 2 * parseFloat(getComputedStyle(list).fontSize) &&
+      list.scrollWidth <= list.clientWidth;
+  })).toBe(true);
+
+  repo.rotateToken('test-token-settings');
+  await page.getByRole('button', { name: 'Update token', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Reconnect GitHub' });
+  const token = dialog.getByLabel('New personal access token');
+  const save = dialog.getByRole('button', { name: 'Save token' });
+  await token.fill('test-token-settings');
+  await token.press('Tab');
+  await expect(save).toBeFocused();
+  await pressShortcut(page, save);
+  await expect(dialog).toHaveCount(0);
+  await page.reload();
+  await expect(action(page, 'notebook/')).toBeEnabled();
+  await expect(page.getByText(/GitHub token is missing/)).toHaveCount(0);
+});
+
+test('an expired token can be replaced from the error without losing the open draft', async ({ page }) => {
+  const repo = await github(page, { 'note.txt': 'Original' });
+  await connect(page);
+  await openNote(page);
+  await editor(page, 'note.txt').fill('Unpublished edit');
+  repo.rotateToken('test-token-renewed');
+  await exit(page).click();
+  const notice = page.locator('.notice').filter({ hasText: 'The GitHub token is missing, expired, or was rejected.' });
+  const reconnect = notice.getByRole('button', { name: 'Reconnect GitHub' });
+  await expect(reconnect).toBeVisible();
+  await reconnect.focus();
+  await pressShortcut(page, reconnect);
+  const dialog = page.getByRole('dialog', { name: 'Reconnect GitHub' });
+  await expect(dialog).toContainText('example/notebook · main');
+  const token = dialog.getByLabel('New personal access token');
+  await token.fill('test-token-renewed');
+  await token.press('Enter');
+  await expect(dialog).toHaveCount(0);
+  await expect(notice).toHaveCount(0);
+  await expect(editor(page, 'note.txt')).toHaveText('Unpublished edit');
+  await exit(page).click();
+  await expect(action(page, 'open')).toBeVisible();
+  expect(repo.messages).toEqual(['edit: note.txt']);
+  expect(repo.content('note.txt')).toBe('Unpublished edit');
+
+  repo.rotateToken('test-token-startup');
+  await page.reload();
+  await expect(reconnect).toBeVisible();
+  await reconnect.click();
+  await expect(dialog.getByLabel('New personal access token')).toBeFocused();
+});
+
 test('repository syncs on startup and Exit commits only the edit onto the latest branch', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('notework:autosave-seconds', '1'));
   const repo = await github(page, { 'note.txt': 'Original', 'notes/old.txt': 'Old note', 'image.bin': '\u0000hidden' });
   await connect(page);
   await expect(action(page, 'notes/')).toBeVisible();

@@ -1,11 +1,11 @@
 <script lang="ts">
   import Control from './Control.svelte';
+  import StorageNotice from './StorageNotice.svelte';
   import { onMount } from 'svelte';
   import type { Workspace, StateNode } from '../workspace';
   import { commitDrawing, loadDrawing, saveDrawing, type DrawingResource } from '../drawing-files';
   import type { ResolveGitHubConflict } from '../github/repository';
   import { isMissing } from '../filesystem';
-  import { storageError } from '../browser-documents';
   import ExportDialog from './ExportDialog.svelte';
   import type { PdfMargins } from '../export-preferences';
   import { exportStyle } from '../export-style';
@@ -21,7 +21,7 @@
     workspace: Workspace; node: StateNode; onExit: () => void; onMissing: () => void;
   } = $props();
   let resource = $state.raw<DrawingResource>();
-  let error = $state('');
+  let error = $state.raw<unknown>();
   let exportSource = $state.raw<PdfSource>();
   let editor = $state<HTMLDivElement>();
   function exportDrawing(strokes: Drawing) {
@@ -41,7 +41,7 @@
       } catch (cause) {
         if (!active) return;
         if (isMissing(cause)) onMissing();
-        else error = storageError(cause);
+        else error = cause;
       }
     })();
     return () => { active = false; };
@@ -61,7 +61,7 @@
   </div>
 {:else if error}
   <Control onclick={onExit}>Exit</Control>
-  <p class="notice" role="alert">{error}</p>
+  <StorageNotice {error} />
 {:else}
   <p class="muted" role="status">opening drawing…</p>
 {/if}

@@ -8,6 +8,7 @@
 
 <script lang="ts">
   import Control from './Control.svelte';
+  import StorageNotice from './StorageNotice.svelte';
   import EditorTitle from './EditorTitle.svelte';
   import { preserveContentFocus } from '../editor-focus';
   import { onMount, tick } from 'svelte';
@@ -20,7 +21,7 @@
   import { parentId, ROOT, type Workspace, type StateNode } from '../workspace';
   import { isMissing, type LocalFile } from '../filesystem';
   import { decodedChunks, encodedChunks, inspectTextFile, type TextFormat } from '../text-resource';
-  import { writeBrowserContent, storageError } from '../browser-documents';
+  import { writeBrowserContent } from '../browser-documents';
   import { saveWorkspace } from '../persistence';
   import ExportDialog from './ExportDialog.svelte';
   import type { PdfMargins } from '../export-preferences';
@@ -72,7 +73,7 @@
   let loading = $state(true);
   let dirty = $state(false);
   let saving = $state(false);
-  let error = $state('');
+  let error = $state.raw<unknown>();
   let waitingForPermission = $state(false);
   let loadedBytes = $state(0);
   let revision = 0;
@@ -174,7 +175,7 @@
         scrollIntoView: true
       });
       if (!usingTools) view.focus();
-    } catch (cause) { error = storageError(cause); }
+    } catch (cause) { error = cause; }
   }
 
   function refreshDrawingPreviews() {
@@ -208,7 +209,7 @@
       inlineDrawing = { page, host, resource };
       await tick();
       view.requestMeasure();
-    } catch (cause) { error = storageError(cause); }
+    } catch (cause) { error = cause; }
     finally { openingDrawing = false; }
   }
 
@@ -318,7 +319,7 @@
     } catch (cause) {
       lastSaveAt = Date.now();
       if (cause instanceof WritePermissionRequired) waitingForPermission = true;
-      else error = storageError(cause);
+      else error = cause;
     } finally {
       saving = false;
       if (leave && succeeded && dirty) void save(true, true);
@@ -399,7 +400,7 @@
         return;
       }
     } catch (cause) {
-      if (!(cause instanceof GitHubEditCancelled)) error = storageError(cause);
+      if (!(cause instanceof GitHubEditCancelled)) error = cause;
     } finally {
       if (publish && active) editor.dispatch({ effects: textLock.reconfigure([]) });
       lastSaveAt = Date.now();
@@ -423,7 +424,7 @@
       }
       await onOpenLink(id);
     } catch (cause) {
-      error = storageError(cause);
+      error = cause;
     } finally { followingLink = false; }
   }
 
@@ -476,7 +477,7 @@
   }
 
   function shortcuts(event: KeyboardEvent) {
-    if (inlineDrawing || event.isComposing || event.altKey || !(event.ctrlKey || event.metaKey) || document.querySelector('.github-conflict[open]')) return;
+    if (inlineDrawing || event.isComposing || event.altKey || !(event.ctrlKey || event.metaKey) || document.querySelector('.github-conflict[open], .github-reconnect[open]')) return;
     const key = event.key.toLowerCase();
     if (key !== 'escape' && key !== 's' && key !== 'f' && !(key === 'b' && event.metaKey)) return;
     if (vimMode && key === 'f' && event.ctrlKey) return;
@@ -649,7 +650,7 @@
         view.focus();
       } catch (cause) {
         if (!active) return;
-        loading = false; error = storageError(cause);
+        loading = false; error = cause;
         if (isMissing(cause)) onMissing();
       }
     })();
@@ -699,7 +700,7 @@
       {:else if !error && node.storage === 'github'}saved on GitHub
       {:else if !error}saved {node.storage === 'browser' ? 'in browser storage' : 'on your computer'}{/if}
     </p>
-    {#if error}<p class="notice" role="alert">{error}</p>{/if}
+    {#if error}<StorageNotice {error} />{/if}
     <div class="editor-container" bind:this={container}></div>
   </div>
 </div>

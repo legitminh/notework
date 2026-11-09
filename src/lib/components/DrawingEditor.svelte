@@ -1,11 +1,11 @@
 <script lang="ts">
   import Control from './Control.svelte';
+  import StorageNotice from './StorageNotice.svelte';
   import EditorTitle from './EditorTitle.svelte';
   import { preserveContentFocus } from '../editor-focus';
   import { onMount } from 'svelte';
   import { DRAWING_WIDTH, DRAWING_PAGE_HEIGHT, STROKE_WIDTH, drawingBottom, strokePoints, touchesStroke, type Drawing, type Point } from '../drawing';
   import { drawingGestures } from '../drawing-gestures';
-  import { storageError } from '../browser-documents';
   import { WritePermissionRequired } from '../wiki';
   import { GitHubEditCancelled } from '../github/repository';
 
@@ -30,7 +30,7 @@
   let tool = $state<'brush' | 'eraser'>('brush');
   let saving = $state(false);
   let dirty = $state(false);
-  let error = $state('');
+  let error = $state.raw<unknown>();
   let waitingForPermission = $state(false);
   let toolbar: HTMLDivElement;
   let canvas: SVGSVGElement;
@@ -189,7 +189,7 @@
     } catch (cause) {
       lastSaveAt = Date.now();
       if (cause instanceof WritePermissionRequired) waitingForPermission = true;
-      else if (!(cause instanceof GitHubEditCancelled)) error = storageError(cause);
+      else if (!(cause instanceof GitHubEditCancelled)) error = cause;
     } finally {
       saving = false;
       if (dirty && !waitingForPermission) scheduleAutosave();
@@ -214,7 +214,7 @@
     saved = initial;
     lastSaveAt = Date.now();
     const shortcuts = (event: KeyboardEvent) => {
-      if (event.altKey || event.isComposing || document.querySelector('.github-conflict[open]')) return;
+      if (event.altKey || event.isComposing || document.querySelector('.github-conflict[open], .github-reconnect[open]')) return;
       const key = event.key.toLowerCase();
       if (!(event.metaKey || event.ctrlKey)) {
         if (key !== 'escape' || event.shiftKey || usingTools || document.querySelector('dialog[open]')) return;
@@ -278,7 +278,7 @@
 <div class="drawing-surface" use:portal={surfaceTarget}>
   {#if !surfaceTarget}<EditorTitle {name} onEdit={usingTools ? resumeEditing : undefined} />{/if}
   <p class="muted" role="status">{saving ? 'saving drawing…' : waitingForPermission ? 'autosave is waiting for write permission; exit to save' : dirty ? 'unsaved drawing changes' : 'drawing saved'}</p>
-  {#if error}<p class="notice" role="alert">{error}</p>{/if}
+  {#if error}<StorageNotice {error} />{/if}
   <div class="drawing-page-viewport" bind:this={pageViewport}>
   <svg bind:this={canvas} class:eraser={tool === 'eraser'} class="drawing-canvas" role="img" aria-label={`Drawing canvas for ${name}`} tabindex="-1"
     viewBox={`0 0 ${DRAWING_WIDTH} ${gesture?.limit ?? height}`} preserveAspectRatio="xMinYMin meet"

@@ -10,6 +10,9 @@
   import CreateAsset from '../lib/components/CreateAsset.svelte';
   import GitHubSettings from '../lib/components/GitHubSettings.svelte';
   import GitHubConflictDialog from '../lib/components/GitHubConflictDialog.svelte';
+  import GitHubReconnectDialog from '../lib/components/GitHubReconnectDialog.svelte';
+  import StorageNotice from '../lib/components/StorageNotice.svelte';
+  import { submitOnEnter } from '../lib/form-shortcuts';
   import { defaultPdfMargins, readPdfMargins, pdfMarginSides, PDF_MARGINS_KEY, type PdfMarginSide } from '../lib/export-preferences';
   import { AUTOSAVE_SECONDS_KEY, DEFAULT_AUTOSAVE_SECONDS, MIN_AUTOSAVE_SECONDS, normalizeAutosaveSeconds, readAutosaveSeconds } from '../lib/autosave-preferences';
   import { createAsset } from '../lib/create-asset';
@@ -21,6 +24,8 @@
   import LocalPicker from '../lib/components/LocalPicker.svelte';
   import { Workspace, ROOT, nodeId, parentId, storageLabel, type StateNode } from '../lib/workspace';
   import { GitHubRepository, type GitHubConflict, type ResolveGitHubConflict } from '../lib/github/repository';
+  import { GitHubApiError, type GitHubConnection } from '../lib/github/api';
+  import { setGitHubRecovery } from '../lib/github/recovery';
   import { clearRepository } from '../lib/github/storage';
   import { loadWorkspace, saveWorkspace } from '../lib/persistence';
   import { supportsBrowserDocuments, storageInfo, storageError } from '../lib/browser-documents';
@@ -50,9 +55,10 @@
   let autosaveSeconds = $state(DEFAULT_AUTOSAVE_SECONDS);
   let pdfMargins = $state(defaultPdfMargins());
   let graphRevision = $state(0);
-  let message = $state('');
+  let message = $state.raw<unknown>();
   let storageMessage = $state('');
-  let githubError = $state('');
+  let githubError = $state.raw<unknown>();
+  let githubReconnect = $state.raw<{ id: string; connection: GitHubConnection; close: (reconnected: boolean) => void }>();
   let githubConflict = $state.raw<{ conflict: GitHubConflict; choose: (value?: Blob | null) => void }>();
   const resolveGitHubConflict: ResolveGitHubConflict = (conflict) => new Promise((choose) => {
     githubConflict = { conflict, choose };
@@ -64,8 +70,9 @@
   }
   let panelElement = $state<HTMLDivElement>();
   let renameDialog: HTMLDialogElement;
+  let renameForm: HTMLFormElement;
   let renameName = $state('');
-  let renameError = $state('');
+  let renameError = $state.raw<unknown>();
   let renameTarget = $state.raw<StateNode | null>(null);
   let relocateTarget = $state.raw<StateNode | null>(null);
   let relocateDestination = $state.raw<StateNode | null>(null);
@@ -85,6 +92,10 @@
   const needsPermission = $derived(source?.storage === 'local' && permissions[source.id] !== 'granted');
   const canDeleteCurrent = $derived(!!current && canDeleteResource(workspace, current));
   const directChildIds = $derived(new Set(current ? children.map((child) => child.id) : rootIds));
+  setGitHubRecovery({
+    available: (id) => githubSources.some((source) => source.id === id),
+    reconnect: reconnectGitHub
+  });
 
   onMount(() => {
     try { wrapLines = localStorage.getItem('notework:wrap-lines') !== 'false'; }
@@ -102,8 +113,9 @@
       try { workspace = new Workspace(await loadWorkspace()); }
       catch { storageMessage = 'Browser storage is unavailable. Connections and settings will last only for this tab.'; }
       const synced = await Promise.allSettled(workspace.data.sources.map((item) => workspace.github(item.id)?.sync()));
-      const failed = synced.find((result) => result.status === 'rejected');
-      if (failed?.status === 'rejected') githubError = storageError(failed.reason);
+      const failed = synced.find((result) => result.status === 'rejected' && result.reason instanceof GitHubApiError && result.reason.canReconnect)
+        ?? synced.find((result) => result.status === 'rejected');
+      if (failed?.status === 'rejected') githubError = failed.reason;
       await workspace.pruneMissing();
       await Promise.all(workspace.data.sources.map(async (source) => {
         permissions[source.id] = source.storage !== 'local' ? 'granted' : await source.handle.queryPermission({ mode: 'read' }).catch(() => 'prompt' as const);
@@ -159,7 +171,7 @@
     let direct: StateNode[] = [];
     if (current?.kind === 'directory') {
       try { direct = await workspace.children(id); }
-      catch (error) { if (version === refreshVersion) message = explainError(error); }
+      catch (error) { if (version === refreshVersion) message = error instanceof GitHubApiError ? error : explainError(error); }
     }
     if (version !== refreshVersion || id !== currentId) return;
     edges = reachable.nodes;
@@ -167,7 +179,7 @@
     rootIds = [...workspace.data.rootIds];
     // Persist pruning so missing nodes/edges do not reappear after reload.
     try { await saveWorkspace(workspace.data); } catch { /* Explicit saves report storage failures. */ }
-    if (reachable.errors.length) message = `${reachable.errors.length} connection(s) could not be read. Reconnect the source in app settings, or remove its shortcut. ${reachable.errors[0]}`;
+    if (reachable.errors.length && !(message instanceof GitHubApiError)) message = `${reachable.errors.length} connection(s) could not be read. Reconnect the source in app settings, or remove its shortcut. ${reachable.errors[0]}`;
   }
 
   async function persist() {
@@ -199,7 +211,7 @@
     } catch (error) {
       if (version !== navigationVersion) return;
       if (isMissing(error)) { workspace.forget(id); message = 'Missing resource removed from the graph.'; await refresh(); }
-      else message = explainError(error);
+      else message = error instanceof GitHubApiError ? error : explainError(error);
     }
   }
 
@@ -209,8 +221,11 @@
     const repository = workspace.github(current.sourceId);
     if (repository) {
       busy = true;
-      try { await repository.sync(); githubError = ''; }
-      catch (error) { githubError = storageError(error); }
+      try { await repository.sync(); clearGitHubError(repository.id); }
+      catch (error) {
+        githubError = error;
+        if (error instanceof GitHubApiError && error.canReconnect) return;
+      }
       finally { busy = false; }
       await refresh();
     }
@@ -229,7 +244,7 @@
 
   async function openLinkedFile(id: string) {
     await navigate(id);
-    if (currentId !== id) throw new Error(message || 'The linked file could not be opened.');
+    if (currentId !== id) throw message instanceof Error ? message : new Error(typeof message === 'string' && message || 'The linked file could not be opened.');
   }
 
   function askRename() {
@@ -252,7 +267,7 @@
       renameDialog.close();
       await refresh();
       message = result.warning;
-    } catch (error) { renameError = storageError(error); }
+    } catch (error) { renameError = error; }
     finally { busy = false; }
   }
 
@@ -291,7 +306,7 @@
       void updateStorage();
     } catch (error) {
       relocateDialog.close();
-      message = storageError(error);
+      message = error;
     } finally { busy = false; }
   }
 
@@ -391,7 +406,7 @@
       permissions[node.sourceId] = 'granted';
       await navigate(node.id);
       void updateStorage();
-    } catch (error) { message = storageError(error); }
+    } catch (error) { message = error; }
     finally { busy = false; }
   }
 
@@ -445,7 +460,7 @@
       await persist();
     } catch (error) {
       deleteDialog.close();
-      message = storageError(error);
+      message = error;
     } finally { busy = false; }
   }
 
@@ -470,17 +485,33 @@
       return true;
     } catch (error) {
       await clearRepository(id).catch(() => {});
-      githubError = storageError(error);
+      githubError = error;
       return false;
     } finally { busy = false; }
   }
 
+  function clearGitHubError(id: string) {
+    if (!(githubError instanceof GitHubApiError) || githubError.repositoryId === id) githubError = undefined;
+  }
+
+  function reconnectGitHub(id: string) {
+    const repository = workspace.github(id);
+    if (!repository || busy || githubReconnect) return Promise.resolve(false);
+    return new Promise<boolean>((close) => { githubReconnect = { id, connection: repository.connection, close }; });
+  }
+
   async function updateGitHubToken(id: string, token: string) {
-    if (busy) return false;
-    busy = true; githubError = '';
-    try { await workspace.github(id)?.replaceToken(token); await refresh(); return true; }
-    catch (error) { githubError = storageError(error); return false; }
-    finally { busy = false; }
+    const repository = workspace.github(id);
+    if (!repository) throw new Error('This GitHub repository is no longer connected.');
+    await repository.replaceToken(token);
+    clearGitHubError(id);
+    await refresh();
+  }
+
+  function finishGitHubReconnect(reconnected: boolean) {
+    const dialog = githubReconnect;
+    githubReconnect = undefined;
+    dialog?.close(reconnected);
   }
 
   async function disconnectGitHub(id: string) {
@@ -491,7 +522,7 @@
       workspace.forget(nodeId(id));
       await saveWorkspace(workspace.data);
       await refresh();
-    } catch (error) { githubError = storageError(error); }
+    } catch (error) { githubError = error; }
     finally { busy = false; }
   }
 
@@ -501,8 +532,8 @@
     const repository = current && workspace.github(current.sourceId);
     if (repository) {
       busy = true;
-      try { await repository.sync(); githubError = ''; }
-      catch (error) { githubError = storageError(error); }
+      try { await repository.sync(); clearGitHubError(repository.id); }
+      catch (error) { githubError = error; }
       finally { busy = false; }
     }
     await refresh();
@@ -578,8 +609,8 @@
         <p class="notice" role="status">Local filesystem access needs Chrome or Edge on HTTPS or localhost. Open Notework there to select files and folders from your computer.</p>
       {/if}
       {#if storageMessage}<p class="notice" role="status">{storageMessage}</p>{/if}
-      {#if githubError && panel !== 'github'}<p class="notice" role="status">{githubError}</p>{/if}
-      {#if message}<p class="notice" role="alert">{message}</p>{/if}
+      {#if githubError && panel !== 'github'}<StorageNotice error={githubError} role="status" />{/if}
+      {#if message}<StorageNotice error={message} />{/if}
       <div bind:this={panelElement}>
         {#if panel}
           <div class="panel-controls"><Action label={`close ${panel === 'settings' ? 'app settings' : panel === 'configure' ? `configure ${resourceType}` : panel}`} onSelect={() => { panel = null; state_viewport.viewport?.scrollTo({ top: 0 }); }} /></div>
@@ -678,7 +709,7 @@
         {:else if panel === 'github'}
           <Action label="back to app settings" onSelect={() => togglePanel('settings')} disabled={busy} />
           <GitHubSettings sources={githubSources} {busy} error={githubError}
-            onConnect={connectGitHub} onUpdate={updateGitHubToken} onDisconnect={disconnectGitHub} />
+            onConnect={connectGitHub} onUpdate={reconnectGitHub} onDisconnect={disconnectGitHub} />
         {/if}
       </div>
 
@@ -706,11 +737,11 @@
   <dialog use:dialogShortcuts class="local-picker editor-exit" bind:this={renameDialog} aria-labelledby="rename-title"
     oncancel={(event) => { if (busy) event.preventDefault(); }}>
     <h2 id="rename-title">Rename {renameTarget?.kind === 'directory' ? 'folder' : 'file'}</h2>
-    <form onsubmit={(event) => { event.preventDefault(); void renameCurrent(); }}>
+    <form bind:this={renameForm} use:submitOnEnter onsubmit={(event) => { event.preventDefault(); void renameCurrent(); }}>
       <label class="field">new name <input bind:value={renameName} required maxlength="255" disabled={busy} /></label>
-      {#if renameError}<p class="notice" role="alert">{renameError}</p>{/if}
+      {#if renameError}<StorageNotice error={renameError} />{/if}
       <div class="editor-controls">
-        <button type="submit" disabled={busy}>Rename and update links</button>
+        <Control onclick={() => renameForm.requestSubmit()} disabled={busy}>Rename and update links</Control>
         <Control onclick={() => renameDialog.close()} disabled={busy}>Cancel</Control>
       </div>
     </form>
@@ -738,5 +769,9 @@
   {/if}
   {#if githubConflict}
     <GitHubConflictDialog conflict={githubConflict.conflict} onChoose={finishGitHubConflict} />
+  {/if}
+  {#if githubReconnect}
+    {@const { id, connection } = githubReconnect}
+    <GitHubReconnectDialog {connection} onSave={(token) => updateGitHubToken(id, token)} onClose={finishGitHubReconnect} />
   {/if}
 </Keyflow>

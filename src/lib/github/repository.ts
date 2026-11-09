@@ -39,7 +39,7 @@ export class GitHubRepository {
   private drafts = new Map<string, GitHubDraft>();
 
   constructor(readonly id: string, readonly connection: GitHubConnection, private token: string, snapshot?: GitSnapshot) {
-    this.api = new GitHubApi(connection, token);
+    this.api = new GitHubApi(connection, token, id);
     this.root = new GitHubDirectory(this, '');
     if (snapshot) this.install(snapshot);
   }
@@ -55,7 +55,7 @@ export class GitHubRepository {
     if (!/^[a-z\d][a-z\d-]*$/i.test(owner) || !/^[\w.-]+$/.test(repo) || ['.', '..'].includes(repo)) {
       throw new Error('Enter a GitHub repository as owner/repository.');
     }
-    const api = new GitHubApi({ owner, repo, branch }, token);
+    const api = new GitHubApi({ owner, repo, branch }, token, id);
     const metadata = await api.request<{ default_branch: string; permissions?: { push: boolean }; archived?: boolean }>('', 'open the repository');
     if (metadata.archived || metadata.permissions?.push === false) throw new Error('This repository does not allow writes with this connection.');
     branch ||= metadata.default_branch;
@@ -89,7 +89,7 @@ export class GitHubRepository {
   }
 
   async sync() {
-    if (!this.token) throw new Error('Add a GitHub token in settings to connect this repository.');
+    if (!this.token) throw new GitHubApiError(401, 'connect', this.id);
     if (!navigator.onLine) throw new Error('GitHub is offline. Changes can stay in this browser until you reconnect.');
     return this.syncing ??= (async () => {
       const head = await this.api.head();
