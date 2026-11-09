@@ -30,7 +30,7 @@
 
 <section class="panel" aria-labelledby="github-heading">
   <h2 id="github-heading">GitHub repositories</h2>
-  <p class="muted">Connect a repository as a folder under Home. Notework checks the branch when it opens and saves edited files to GitHub when you exit them.</p>
+  <p class="muted">Connect a repository as a folder under Home. Use Cmd/Ctrl+S to sync a draft while you keep editing, or Exit to finish syncing before you leave.</p>
   <ol>
     <li><a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer">Create a fine-grained personal access token on GitHub</a>.</li>
     <li>Choose the repository owner and select only the repository you want to connect. Under repository permissions, click <strong>Add permissions</strong>, select <strong>Contents</strong>, then choose <strong>Read and write</strong>.</li>

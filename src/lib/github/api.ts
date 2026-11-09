@@ -3,6 +3,13 @@ export interface GitEntry { path: string; sha: string; mode: string; type: 'tree
 export interface GitSnapshot { head: string; tree: string; entries: GitEntry[] }
 export type TreeChange = Pick<GitEntry, 'path' | 'mode' | 'type'> & { sha: string | null };
 
+async function base64(blob: Blob) {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let content = '';
+  for (let i = 0; i < bytes.length; i += 24576) content += btoa(String.fromCharCode(...bytes.subarray(i, i + 24576)));
+  return content;
+}
+
 export class GitHubApiError extends Error {
   constructor(readonly status: number, action: string, readonly repositoryId?: string) {
     super(status === 401 ? 'The GitHub token is missing, expired, or was rejected.'
@@ -22,9 +29,13 @@ export class GitHubApi {
 
   async request<T>(path: string, action: string, method = 'GET', body?: unknown): Promise<T> {
     const { owner, repo } = this.connection;
+    return this.fetchJson(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}${path}`, action, method, body);
+  }
+
+  private async fetchJson<T>(url: string, action: string, method: string, body?: unknown): Promise<T> {
     let response: Response;
     try {
-      response = await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}${path}`, {
+      response = await fetch(url, {
         method, redirect: 'error', cache: 'no-store', credentials: 'omit',
         headers: { Accept: 'application/vnd.github+json', Authorization: `Bearer ${this.token}`,
           'X-GitHub-Api-Version': '2026-03-10', ...(body ? { 'Content-Type': 'application/json' } : {}) },
@@ -71,11 +82,36 @@ export class GitHubApi {
   }
 
   async createBlob(blob: Blob) {
-    const bytes = new Uint8Array(await blob.arrayBuffer());
-    // Encode in chunks for browsers without Uint8Array.toBase64.
-    let content = '';
-    for (let i = 0; i < bytes.length; i += 24576) content += btoa(String.fromCharCode(...bytes.subarray(i, i + 24576)));
+    const content = await base64(blob);
     return (await this.request<{ sha: string }>('/git/blobs', 'store the file', 'POST', { content, encoding: 'base64' })).sha;
+  }
+
+  async publishFiles(expectedHeadOid: string, files: { path: string; blob: Blob }[], message: string) {
+    const { owner, repo, branch } = this.connection;
+    const additions = await Promise.all(files.map(async ({ path, blob }) => ({ path, contents: await base64(blob) })));
+    type Result = {
+      data?: { createCommitOnBranch?: { commit?: { oid: string; tree: { oid: string } } } };
+      errors?: { type?: string }[];
+    };
+    let result: Result;
+    try {
+      result = await this.fetchJson<Result>('https://api.github.com/graphql', 'publish the edit', 'POST', {
+        query: `mutation PublishEdit($input: CreateCommitOnBranchInput!) {
+          createCommitOnBranch(input: $input) { commit { oid tree { oid } } }
+        }`,
+        variables: { input: { branch: { repositoryNameWithOwner: `${owner}/${repo}`, branchName: branch },
+          expectedHeadOid, message: { headline: message }, fileChanges: { additions } } }
+      });
+    } catch (error) {
+      if (error instanceof GitHubApiError && error.status < 500 && error.status !== 408) throw error;
+      throw new GitHubWriteUncertain();
+    }
+    const commit = result?.data?.createCommitOnBranch?.commit;
+    if (commit?.oid && commit.tree?.oid) return { head: commit.oid, tree: commit.tree.oid };
+    if (result?.errors?.some(({ type }) => type === 'FORBIDDEN' || type === 'RATE_LIMITED')) throw new GitHubApiError(403, 'publish the edit', this.repositoryId);
+    if (result?.errors?.some(({ type }) => type === 'NOT_FOUND')) throw new GitHubApiError(404, 'publish the edit', this.repositoryId);
+    if (result?.errors?.length && !result.data?.createCommitOnBranch) throw new GitHubApiError(422, 'publish the edit', this.repositoryId);
+    throw new GitHubWriteUncertain();
   }
 
   async publish(base: GitSnapshot, tree: TreeChange[], message: string) {

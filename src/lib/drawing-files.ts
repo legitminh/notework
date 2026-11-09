@@ -6,6 +6,7 @@ import { readDrawing, serializeDrawing, type Drawing } from './drawing';
 import { writeResourceContent } from './resource-content';
 import { saveWorkspace } from './persistence';
 import { GitHubChanged, GitHubFile, type ResolveGitHubConflict } from './github/repository';
+import type { DraftQueue } from './github/storage';
 
 function drawingScope(source: StateNode) {
   const parent = parentId(source);
@@ -22,6 +23,10 @@ export interface DrawingResource {
   file: File;
   storage: Storage;
   githubBase?: string | null;
+}
+
+export function hasDrawingDraft(resource?: DrawingResource) {
+  return resource?.handle instanceof GitHubFile && !!resource.handle.repository.draft(resource.handle.path);
 }
 
 export async function loadDrawing(handle: LocalFile, storage: Storage): Promise<DrawingResource> {
@@ -86,28 +91,37 @@ export async function saveDrawing(resource: DrawingResource, strokes: Drawing, r
   return { handle: resource.handle, file: await resource.handle.getFile(), strokes, storage: resource.storage };
 }
 
-export async function commitDrawing(resource: DrawingResource, resolve: ResolveGitHubConflict) {
-  if (!(resource.handle instanceof GitHubFile)) return resource;
+export async function commitDrawing(resource: DrawingResource, resolve: ResolveGitHubConflict, withDraft: DraftQueue) {
+  if (!(resource.handle instanceof GitHubFile)) return async () => resource;
   const { repository, path } = resource.handle;
+  let draft = repository.draft(path);
+  if (!draft) return async () => resource;
   for (let attempt = 0; ; attempt++) {
-    const draft = repository.draft(path);
-    if (!draft) return resource;
-    const chosen = await repository.reconcile(path, draft, resolve);
-    if (!chosen.content) { await repository.saveDraft(path); return undefined; }
-    const file = new File([chosen.content], resource.handle.name);
-    const strokes = await readDrawing(file);
-    await repository.saveDraft(path, { base: chosen.base, content: chosen.content, modified: Date.now() });
+    let conflict = false;
+    const chosen = await repository.reconcile(path, draft, (versions) => { conflict = true; return resolve(versions); });
+    if (!chosen.content) return async () => { await repository.saveDraft(path); return undefined; };
+    if (conflict) {
+      const content = chosen.content;
+      await readDrawing(new File([content], resource.handle.name));
+      draft = await withDraft(async () => {
+        await repository.saveDraft(path, { base: chosen.base, content, modified: Date.now() });
+        return repository.draft(path)!;
+      });
+    }
     const checkpoint = repository.checkpoint();
     try {
       if (!chosen.unchanged) repository.stage(path, chosen.content);
-      await repository.commit(checkpoint, `edit: ${resource.handle.name}`);
+      await repository.commit(checkpoint, `edit: ${resource.handle.name}`, chosen.head);
     } catch (error) {
       repository.restore(checkpoint);
       if (error instanceof GitHubChanged && error.path === path && attempt < 2) continue;
       throw error;
     }
-    await repository.saveDraft(path);
-    return { ...resource, file: await resource.handle.getFile(), strokes, githubBase: repository.editBase(path) };
+    return async () => {
+      if (repository.draft(path) === draft) await repository.saveDraft(path);
+      else await repository.rebaseDraft(path, repository.editBase(path));
+      return loadDrawing(resource.handle, 'github');
+    };
   }
 }
 

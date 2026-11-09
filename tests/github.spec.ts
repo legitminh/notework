@@ -14,10 +14,13 @@ async function github(page: Page, initial: Record<string, string>) {
   const trees = new Map<string, Tree>();
   const commits = new Map<string, { tree: string; parent?: string; message: string }>();
   const messages: string[] = [];
+  const requests: string[] = [];
   let sequence = 0;
   let head: string;
   let advanceOnPush: Record<string, string | null> | undefined;
   let refuseWrites = false;
+  let loseResponse = false;
+  let pause: { arrived: () => void; release: Promise<void> } | undefined;
   let token = 'test-token';
 
   function blob(content: Buffer) { const id = sha(content); blobs.set(id, content); return id; }
@@ -38,9 +41,9 @@ async function github(page: Page, initial: Record<string, string>) {
   }
   upstream(initial);
 
-  await page.route(`${api}**`, async (route) => {
+  await page.route(/^https:\/\/api\.github\.com\/(?:repos\/example\/notebook(?:[/?]|$)|graphql$)/, async (route) => {
     const request = route.request();
-    const path = request.url().slice(api.length).split('?')[0];
+    const path = request.url().startsWith(api) ? request.url().slice(api.length).split('?')[0] : '/graphql';
     const method = request.method();
     const respond = (json: unknown, status = 200) => route.fulfill({ status, json, headers: {
       'Access-Control-Allow-Origin': '*',
@@ -48,6 +51,7 @@ async function github(page: Page, initial: Record<string, string>) {
       'Access-Control-Allow-Methods': 'GET, POST, PATCH, OPTIONS'
     } });
     if (method === 'OPTIONS') return respond({});
+    requests.push(`${method} ${path}`);
     expect(request.headers().authorization).toMatch(/^Bearer test-token/);
     if (request.headers().authorization !== `Bearer ${token}`) return respond({}, 401);
     if (method === 'GET' && !path) return respond({ default_branch: 'main', permissions: { push: true } });
@@ -67,6 +71,24 @@ async function github(page: Page, initial: Record<string, string>) {
       return value ? respond({ content: value.toString('base64'), encoding: 'base64' }) : respond({}, 404);
     }
     if (refuseWrites) return respond({}, 403);
+    if (method === 'POST' && path === '/graphql') {
+      if (pause) {
+        const waiting = pause;
+        pause = undefined;
+        waiting.arrived();
+        await waiting.release;
+      }
+      if (advanceOnPush) { upstream(advanceOnPush); advanceOnPush = undefined; }
+      const { branch, expectedHeadOid, message, fileChanges } = request.postDataJSON().variables.input;
+      expect(branch).toEqual({ repositoryNameWithOwner: 'example/notebook', branchName: 'main' });
+      if (expectedHeadOid !== head) return respond({ data: { createCommitOnBranch: null }, errors: [{ type: 'STALE_DATA' }] });
+      const next = new Map(files());
+      for (const { path, contents } of fileChanges.additions) next.set(path, blob(Buffer.from(contents, 'base64')));
+      const treeId = tree(next);
+      head = commit(treeId, message.headline, head); messages.push(message.headline);
+      if (loseResponse) { loseResponse = false; return route.abort('failed'); }
+      return respond({ data: { createCommitOnBranch: { commit: { oid: head, tree: { oid: treeId } } } } });
+    }
     if (method === 'POST' && path === '/git/blobs') {
       const body = request.postDataJSON();
       return respond({ sha: blob(Buffer.from(body.content, 'base64')) }, 201);
@@ -96,7 +118,14 @@ async function github(page: Page, initial: Record<string, string>) {
   });
 
   return {
-    upstream, messages,
+    upstream, messages, requests,
+    holdPublish() {
+      let arrived!: () => void, resume!: () => void;
+      const started = new Promise<void>((resolve) => { arrived = resolve; });
+      pause = { arrived, release: new Promise<void>((resolve) => { resume = resolve; }) };
+      return { started, resume };
+    },
+    loseResponse() { loseResponse = true; },
     advance(changes: Record<string, string | null>) { advanceOnPush = changes; },
     refuse(value: boolean) { refuseWrites = value; },
     rotateToken(value: string) { token = value; },
@@ -243,6 +272,96 @@ test('same-file branch race opens two editable versions and publishes the select
   await expect(action(page, 'open')).toBeVisible();
   expect(repo.content('note.txt')).toBe('Edited upstream option');
   expect(repo.messages).toEqual(['edit: note.txt']);
+});
+
+test('a slow GitHub save leaves text editable and keeps newer work as a draft', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('notework:autosave-seconds', '1'));
+  const repo = await github(page, { 'note.txt': 'Original' });
+  await connect(page);
+  await openNote(page);
+  const text = editor(page, 'note.txt');
+  await text.fill('First snapshot');
+  repo.requests.length = 0;
+  const held = repo.holdPublish();
+  await text.press('Control+s');
+  await held.started;
+  await text.press('End');
+  await page.keyboard.type(' plus later edits');
+  await expect(text).toHaveText('First snapshot plus later edits');
+  expect(repo.content('note.txt')).toBe('Original');
+  held.resume();
+  await expect(page.getByText(/draft saved in this browser/)).toBeVisible();
+  expect(repo.content('note.txt')).toBe('First snapshot');
+  expect(repo.requests).toEqual(['GET /git/ref/heads/main', 'POST /graphql']);
+
+  await page.reload();
+  await action(page, 'notebook/').click();
+  await openNote(page);
+  await expect(text).toHaveText('First snapshot plus later edits');
+  await text.press('Control+s');
+  await expect(page.getByText('saved on GitHub', { exact: true })).toBeVisible();
+  expect(repo.content('note.txt')).toBe('First snapshot plus later edits');
+});
+
+test('a conflict during background sync compares the newest local edit', async ({ page }) => {
+  const repo = await github(page, { 'note.txt': 'Original' });
+  await connect(page);
+  await openNote(page);
+  const text = editor(page, 'note.txt');
+  await text.fill('First snapshot');
+  const held = repo.holdPublish();
+  repo.advance({ 'note.txt': 'Upstream change' });
+  await text.press('Control+s');
+  await held.started;
+  await text.fill('Latest local edit');
+  held.resume();
+  const conflict = page.getByRole('dialog', { name: 'GitHub conflict' });
+  await expect(conflict.getByRole('textbox', { name: 'Your version' })).toHaveValue('Latest local edit');
+  await expect(conflict.getByRole('textbox', { name: 'GitHub version' })).toHaveValue('Upstream change');
+  await conflict.getByRole('button', { name: 'Keep your version' }).click();
+  await expect(page.getByText('saved on GitHub', { exact: true })).toBeVisible();
+  expect(repo.content('note.txt')).toBe('Latest local edit');
+});
+
+test('retry after an unconfirmed GitHub response does not duplicate the commit', async ({ page }) => {
+  const repo = await github(page, { 'note.txt': 'Original' });
+  await connect(page);
+  await openNote(page);
+  const text = editor(page, 'note.txt');
+  await text.fill('Published once');
+  repo.loseResponse();
+  await text.press('Control+s');
+  await expect(page.getByRole('alert')).toContainText('GitHub did not confirm');
+  await text.press('Control+s');
+  await expect(page.getByText('saved on GitHub', { exact: true })).toBeVisible();
+  expect(repo.content('note.txt')).toBe('Published once');
+  expect(repo.messages).toEqual(['edit: note.txt']);
+});
+
+test('drawing during a slow publish works and the next save publishes the newer strokes', async ({ page }) => {
+  const repo = await github(page, { 'ink.svg': serializeDrawing([]) });
+  await connect(page);
+  await openNote(page, 'ink.svg');
+  const canvas = page.getByRole('img', { name: 'Drawing canvas for ink.svg' });
+  await expect(canvas).toBeVisible();
+  const box = (await canvas.boundingBox())!;
+  async function stroke(offset: number) {
+    await page.mouse.move(box.x + 25, box.y + offset); await page.mouse.down();
+    await page.mouse.move(box.x + 90, box.y + offset + 20, { steps: 4 }); await page.mouse.up();
+  }
+  await stroke(25);
+  const held = repo.holdPublish();
+  await page.keyboard.press('Control+s');
+  await held.started;
+  await stroke(75);
+  await expect(canvas.locator('polyline')).toHaveCount(2);
+  expect(repo.messages).toHaveLength(0);
+  await page.keyboard.press('Control+s');
+  held.resume();
+  await expect(page.getByText('drawing saved', { exact: true })).toBeVisible();
+  await expect(canvas.locator('polyline')).toHaveCount(2);
+  expect(repo.messages).toEqual(['edit: ink.svg', 'edit: ink.svg']);
+  expect(repo.content('ink.svg')?.match(/<polyline/g)).toHaveLength(2);
 });
 
 test('failed writes retain the draft across reload and accept an upstream deletion without recreating it', async ({ page }) => {

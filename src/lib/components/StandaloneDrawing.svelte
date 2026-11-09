@@ -3,7 +3,7 @@
   import StorageNotice from './StorageNotice.svelte';
   import { onMount } from 'svelte';
   import type { Workspace, StateNode } from '../workspace';
-  import { commitDrawing, loadDrawing, saveDrawing, type DrawingResource } from '../drawing-files';
+  import { commitDrawing, hasDrawingDraft, loadDrawing, saveDrawing, type DrawingResource } from '../drawing-files';
   import type { ResolveGitHubConflict } from '../github/repository';
   import { isMissing } from '../filesystem';
   import ExportDialog from './ExportDialog.svelte';
@@ -18,7 +18,7 @@
     autosaveMs: number;
     resolveGitHubConflict: ResolveGitHubConflict;
     pdfMargins: PdfMargins;
-    workspace: Workspace; node: StateNode; onExit: () => void; onMissing: () => void;
+    workspace: Workspace; node: StateNode; onExit: () => void | Promise<void>; onMissing: () => void;
   } = $props();
   let resource = $state.raw<DrawingResource>();
   let error = $state.raw<unknown>();
@@ -50,13 +50,19 @@
 
 {#if resource}
   <div class="standalone-drawing-editor" bind:this={editor}>
-  <DrawingEditor {stylusOnly} {autosaveMs} name={node.name} initial={resource.strokes} {onExit} onExport={exportDrawing}
+  <DrawingEditor {stylusOnly} {autosaveMs} name={node.name} initial={resource.strokes} initialDraft={hasDrawingDraft(resource)} {onExit} onExport={exportDrawing}
     onSave={async (strokes, requestWrite) => { resource = await saveDrawing(resource!, strokes, requestWrite); }}
-    onCommit={node.storage === 'github' ? async () => {
-      const saved = await commitDrawing(resource!, resolveGitHubConflict);
-      if (!saved) { onMissing(); return; }
-      resource = saved;
-      return saved.strokes;
+    onCommit={node.storage === 'github' ? async (beforeConflict, withDraft) => {
+      const finish = await commitDrawing(resource!, (conflict) => {
+        beforeConflict();
+        return resolveGitHubConflict(conflict);
+      }, withDraft);
+      return withDraft(async () => {
+        const saved = await finish();
+        if (!saved) { onMissing(); return; }
+        resource = saved;
+        return saved.strokes;
+      });
     } : undefined} />
   </div>
 {:else if error}

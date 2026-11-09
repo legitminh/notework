@@ -8,16 +8,18 @@
   import { drawingGestures } from '../drawing-gestures';
   import { WritePermissionRequired } from '../wiki';
   import { GitHubEditCancelled } from '../github/repository';
+  import { draftQueue, type DraftQueue } from '../github/storage';
 
-  let { name, initial, onSave, onCommit, onExit, surfaceTarget, stylusOnly, onExport, autosaveMs, usingTools = $bindable(false) }: {
+  let { name, initial, initialDraft = false, onSave, onCommit, onExit, surfaceTarget, stylusOnly, onExport, autosaveMs, usingTools = $bindable(false) }: {
     name: string;
     stylusOnly: boolean;
     autosaveMs: number;
     initial: Drawing;
+    initialDraft?: boolean;
     onSave: (strokes: Drawing, requestWrite: boolean) => Promise<void>;
-    onCommit?: () => Promise<Drawing | undefined>;
+    onCommit?: (beforeConflict: () => void, withDraft: DraftQueue) => Promise<Drawing | undefined>;
     onExport: (strokes: Drawing) => void;
-    onExit: () => void;
+    onExit: () => void | Promise<void>;
     surfaceTarget?: HTMLElement;
     usingTools?: boolean;
   } = $props();
@@ -29,6 +31,13 @@
   let points = $state.raw<Point[]>([]);
   let tool = $state<'brush' | 'eraser'>('brush');
   let saving = $state(false);
+  let publishing = $state(false);
+  let githubPending = $state(false);
+  let resolving = $state(false);
+  let exitRequested = $state(false);
+  let publishRequested = false;
+  const withDraft = draftQueue();
+  const newerDrawing = Symbol();
   let dirty = $state(false);
   let error = $state.raw<unknown>();
   let waitingForPermission = $state(false);
@@ -67,7 +76,7 @@
   }
 
   function undo() {
-    if (saving || gesture || !undoStack.length) return;
+    if (saving || resolving || exitRequested || gesture || !undoStack.length) return;
     redoStack = [...redoStack, strokes];
     strokes = undoStack.at(-1)!;
     undoStack = undoStack.slice(0, -1);
@@ -76,7 +85,7 @@
   }
 
   function redo() {
-    if (saving || gesture || !redoStack.length) return;
+    if (saving || resolving || exitRequested || gesture || !redoStack.length) return;
     undoStack = [...undoStack, strokes];
     strokes = redoStack.at(-1)!;
     redoStack = redoStack.slice(0, -1);
@@ -126,7 +135,7 @@
       if (multiTouch) return;
     }
     if (stylusOnly && event.pointerType !== 'pen') return;
-    if (event.button !== 0 || gesture || saving) return;
+    if (event.button !== 0 || gesture || saving || resolving || exitRequested) return;
     event.preventDefault();
     resumeEditing();
     canvas.setPointerCapture(event.pointerId);
@@ -149,6 +158,7 @@
     if (cancel) strokes = before;
     else commit(before, tool === 'brush' && points.length ? [...strokes, points] : strokes);
     points = [];
+    if (dirty) scheduleAutosave();
   }
 
   function clearAutosave() {
@@ -158,7 +168,7 @@
 
   function scheduleAutosave() {
     clearAutosave();
-    if (!active || !dirty || saving || gesture) return;
+    if (!active || !dirty || saving || resolving || gesture) return;
     const delay = Math.max(0, lastSaveAt + autosaveMs - Date.now());
     autosaveTimer = setTimeout(() => {
       autosaveTimer = undefined;
@@ -167,25 +177,26 @@
   }
 
   async function save(exit = false, requestWrite = true) {
-    if (saving || gesture) return;
-    if (!dirty && !(requestWrite && onCommit)) {
-      if (exit) onExit();
+    if (gesture || resolving) return;
+    if (requestWrite && onCommit) {
+      publishRequested = true;
+      exitRequested ||= exit;
+      if (!publishing) await publish(onCommit);
+      else if (dirty) void save(false, false);
+      return;
+    }
+    if (saving) return;
+    if (!dirty) {
+      if (exit) await onExit();
       return;
     }
     clearAutosave();
-    saving = true; error = '';
+    saving = true;
+    if (!onCommit) error = '';
     try {
-      const snapshot = strokes;
-      if (dirty) await onSave(snapshot, requestWrite);
-      saved = snapshot;
-      dirty = strokes !== saved;
-      if (requestWrite && onCommit) {
-        const committed = await onCommit();
-        if (committed) saved = strokes = committed;
-      }
-      dirty = strokes !== saved; waitingForPermission = false;
-      lastSaveAt = Date.now();
-      if (exit) onExit();
+      if (onCommit) await withDraft(() => saveSnapshot(requestWrite));
+      else await saveSnapshot(requestWrite);
+      if (exit) await onExit();
     } catch (cause) {
       lastSaveAt = Date.now();
       if (cause instanceof WritePermissionRequired) waitingForPermission = true;
@@ -196,8 +207,56 @@
     }
   }
 
+  async function saveSnapshot(requestWrite: boolean) {
+    // An eraser gesture can change the visible strokes before it completes.
+    const snapshot = gesture?.before ?? strokes;
+    if (snapshot !== saved) {
+      await onSave(snapshot, requestWrite);
+      if (onCommit) githubPending = true;
+    }
+    saved = snapshot;
+    dirty = (gesture?.before ?? strokes) !== saved;
+    waitingForPermission = false;
+    lastSaveAt = Date.now();
+    return snapshot;
+  }
+
+  async function publish(commitDrawing: NonNullable<typeof onCommit>) {
+    publishing = true; error = '';
+    try {
+      do {
+        publishRequested = false;
+        try {
+          const { snapshot, publication } = await withDraft(async () => {
+            const snapshot = await saveSnapshot(true);
+            // Capture the draft before another local write can replace it.
+            const publication = commitDrawing(() => {
+              if ((gesture?.before ?? strokes) !== snapshot) throw newerDrawing;
+              cancelStroke();
+              resolving = true;
+            }, withDraft);
+            return { snapshot, publication };
+          });
+          const committed = await publication;
+          if (resolving && committed) { saved = strokes = committed; dirty = false; }
+          if (resolving || saved === snapshot) githubPending = false;
+          if (exitRequested && (dirty || (!resolving && strokes !== snapshot))) publishRequested = true;
+        } catch (cause) {
+          if (cause !== newerDrawing) throw cause;
+          publishRequested = true;
+        } finally { resolving = false; }
+      } while (active && publishRequested);
+      if (active && exitRequested) await onExit();
+    } catch (cause) {
+      if (!(cause instanceof GitHubEditCancelled)) error = cause;
+    } finally {
+      publishing = publishRequested = exitRequested = false;
+      if (dirty) scheduleAutosave();
+    }
+  }
+
   function exit() {
-    if (saving || gesture) return;
+    if ((saving && !onCommit) || exitRequested || resolving || gesture) return;
     void save(true, true);
   }
 
@@ -212,6 +271,7 @@
     active = true;
     strokes = initial;
     saved = initial;
+    githubPending = initialDraft;
     lastSaveAt = Date.now();
     const shortcuts = (event: KeyboardEvent) => {
       if (event.altKey || event.isComposing || document.querySelector('.github-conflict[open], .github-reconnect[open]')) return;
@@ -267,7 +327,7 @@
 
 <div class="editor-controls drawing-controls" role="group" aria-label="Drawing toolbar" tabindex="-1" bind:this={toolbar}
   use:preserveContentFocus={() => !usingTools && document.activeElement === canvas}>
-  <Control onclick={exit} disabled={saving}>Exit<span class="shortcut-hint" aria-hidden="true">Ctrl+Esc</span></Control>
+  <Control onclick={exit} disabled={saving || resolving || exitRequested}>Exit<span class="shortcut-hint" aria-hidden="true">Ctrl+Esc</span></Control>
   <Control onclick={() => { tool = 'brush'; }} aria-pressed={tool === 'brush'}>Brush<span class="shortcut-hint" aria-hidden="true">Command+B</span></Control>
   <Control onclick={() => { tool = 'eraser'; }} aria-pressed={tool === 'eraser'}>Eraser</Control>
   <Control onclick={undo} disabled={!undoStack.length || saving}>Undo<span class="shortcut-hint" aria-hidden="true">Command+Z</span></Control>
@@ -277,7 +337,7 @@
 
 <div class="drawing-surface" use:portal={surfaceTarget}>
   {#if !surfaceTarget}<EditorTitle {name} onEdit={usingTools ? resumeEditing : undefined} />{/if}
-  <p class="muted" role="status">{saving ? 'saving drawing…' : waitingForPermission ? 'autosave is waiting for write permission; exit to save' : dirty ? 'unsaved drawing changes' : 'drawing saved'}</p>
+  <p class="muted" role="status">{publishing ? 'syncing drawing to GitHub…' : saving ? 'saving drawing…' : waitingForPermission ? 'autosave is waiting for write permission; exit to save' : dirty ? 'unsaved drawing changes' : githubPending ? 'drawing draft saved in this browser' : 'drawing saved'}</p>
   {#if error}<StorageNotice {error} />{/if}
   <div class="drawing-page-viewport" bind:this={pageViewport}>
   <svg bind:this={canvas} class:eraser={tool === 'eraser'} class="drawing-canvas" role="img" aria-label={`Drawing canvas for ${name}`} tabindex="-1"

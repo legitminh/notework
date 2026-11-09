@@ -2,6 +2,18 @@ import type { GitSnapshot } from './api';
 
 export interface GitHubDraft { base: string | null; content: Blob; modified: number; id?: string }
 
+export type DraftQueue = <T>(task: () => Promise<T>) => Promise<T>;
+
+// Serialize local draft writes and rebases without waiting for a remote publish.
+export function draftQueue(): DraftQueue {
+  let tail = Promise.resolve();
+  return (task) => {
+    const next = tail.then(task);
+    tail = next.then(() => {}, () => {});
+    return next;
+  };
+}
+
 let database: Promise<IDBDatabase> | undefined;
 function db() {
   return database ??= new Promise((resolve, reject) => {
@@ -41,7 +53,7 @@ export const storeDraft = (id: string, path: string, draft: GitHubDraft) => put(
 export const readBlob = (id: string, sha: string) => get<Blob>(`blob:${id}:${sha}`);
 export const storeBlob = (id: string, sha: string, blob: Blob) => put(`blob:${id}:${sha}`, blob);
 
-export async function clearDraft(id: string, path: string, draftId?: string) {
+export async function replaceDraft(id: string, path: string, draftId: string | undefined, draft?: GitHubDraft) {
   const database = await db();
   await new Promise<void>((resolve, reject) => {
     const tx = database.transaction('data', 'readwrite');
@@ -49,7 +61,11 @@ export async function clearDraft(id: string, path: string, draftId?: string) {
     const key = `draft:${id}:${path}`;
     const request = store.get(key);
     // An editor in another tab may have saved a newer draft while we pushed.
-    request.onsuccess = () => { if (request.result?.id === draftId) store.delete(key); };
+    request.onsuccess = () => {
+      if (!request.result || request.result.id !== draftId) return;
+      if (draft) store.put(draft, key);
+      else store.delete(key);
+    };
     tx.oncomplete = () => resolve();
     tx.onabort = () => reject(tx.error);
   });

@@ -1,6 +1,6 @@
 import type { LocalDirectory, LocalFile, LocalHandle } from '../filesystem';
 import { GitHubApi, GitHubApiError, type GitEntry, type GitHubConnection, type GitSnapshot, type TreeChange } from './api';
-import { clearDraft, readBlob, readDrafts, readSnapshot, readToken, storeBlob, storeDraft, storeSnapshot, storeToken, type GitHubDraft } from './storage';
+import { replaceDraft, readBlob, readDrafts, readSnapshot, readToken, storeBlob, storeDraft, storeSnapshot, storeToken, type GitHubDraft } from './storage';
 
 const keep = '.gitkeep';
 const supportedBlob = (entry: GitEntry) => entry.type === 'blob' && (entry.mode === '100644' || entry.mode === '100755');
@@ -211,17 +211,18 @@ export class GitHubRepository {
     this.directoryIndex = undefined;
   }
 
-  async commit(checkpoint: Checkpoint, message: string) {
+  async commit(checkpoint: Checkpoint, message: string, reconciledHead?: string) {
     const changes = [...this.pending].filter(([path, change]) => checkpoint.changes.get(path) !== change);
     if (!changes.length) { this.removals = new Map(checkpoint.removals); return false; }
     const uploaded = new Map<string, string>();
     for (let attempt = 0; attempt < 3; attempt++) {
-      await this.sync();
+      if (attempt || !reconciledHead || this.snapshot?.head !== reconciledHead) await this.sync();
       const base = this.current();
       for (const [path, version] of this.removals) {
         if (!checkpoint.removals.has(path) && this.directoryVersion(path) !== version) throw new GitHubChanged(path);
       }
       const tree: TreeChange[] = [];
+      const blobs = new Map<string, Blob>();
       for (const [path, change] of changes) {
         const current = this.entries.get(path);
         const sha = change.blob ? await hash(change.blob) : null;
@@ -231,12 +232,21 @@ export class GitHubRepository {
           if (this.trackedDirectories.has(path) || (current && !supportedBlob(current))) throw new GitHubChanged(path);
           for (let folder = parent(path); folder; folder = parent(folder)) if (this.entries.has(folder)) throw new GitHubChanged(path);
         }
-        if (change.blob && !uploaded.has(path)) uploaded.set(path, await this.api.createBlob(change.blob));
-        tree.push({ path, mode: change.mode, type: change.type, sha: change.blob ? uploaded.get(path)! : null });
+        if (change.blob) blobs.set(path, change.blob);
+        tree.push({ path, mode: change.mode, type: change.type, sha });
       }
       if (tree.length) {
         try {
-          const published = await this.api.publish(base, tree, message);
+          let published: Pick<GitSnapshot, 'head' | 'tree'>;
+          // The mutation checks the expected head atomically. Keep the Git data
+          // path for structural operations, explicit modes, and large payloads.
+          if (reconciledHead && tree.every(({ mode, type, sha }) => sha && mode === '100644' && type === 'blob') &&
+            [...blobs.values()].reduce((size, blob) => size + blob.size, 0) <= 1024 * 1024) {
+            published = await this.api.publishFiles(base.head, [...blobs].map(([path, blob]) => ({ path, blob })), message);
+          } else {
+            for (const [path, blob] of blobs) if (!uploaded.has(path)) uploaded.set(path, await this.api.createBlob(blob));
+            published = await this.api.publish(base, tree.map((entry) => ({ ...entry, sha: entry.sha && uploaded.get(entry.path)! })), message);
+          }
           const entries = new Map(this.entries);
           for (const { path, mode, type, sha } of tree) {
             if (sha) entries.set(path, { path, mode, type, sha }); else entries.delete(path);
@@ -271,10 +281,18 @@ export class GitHubRepository {
       await storeDraft(this.id, path, next);
       this.drafts.set(path, next);
     } else if (previous) {
-      await clearDraft(this.id, path, previous.id);
+      await replaceDraft(this.id, path, previous.id);
       this.drafts.delete(path);
     }
     this.directoryIndex = undefined;
+  }
+
+  async rebaseDraft(path: string, base: string | null) {
+    const previous = this.drafts.get(path);
+    if (!previous || previous.base === base) return;
+    const next = { ...previous, base, id: crypto.randomUUID() };
+    await replaceDraft(this.id, path, previous.id, next);
+    this.drafts.set(path, next);
   }
 
   async discardDrafts(path: string) {
@@ -283,13 +301,14 @@ export class GitHubRepository {
 
   async reconcile(path: string, draft: GitHubDraft, resolve: ResolveGitHubConflict) {
     await this.sync();
+    const { head } = this.current();
     const base = this.editBase(path);
-    if (base === await hash(draft.content)) return { base, content: draft.content, unchanged: true };
-    if (base === draft.base) return { base, content: draft.content, unchanged: false };
+    if (base === await hash(draft.content)) return { head, base, content: draft.content, unchanged: true };
+    if (base === draft.base) return { head, base, content: draft.content, unchanged: false };
     const upstream = base ? await this.blob(base) : null;
     const content = await resolve({ path, local: draft.content, upstream });
     if (content === undefined) throw new GitHubEditCancelled();
-    return { base, content, unchanged: content === upstream };
+    return { head, base, content, unchanged: content === upstream };
   }
 }
 
