@@ -38,7 +38,7 @@ Readable files use the plain-text CodeMirror editor unless they are Notework dra
 
 The editor virtualizes its viewport and streams text reads/writes instead of rendering a collection or converting an entire collection into one string. There is no former 2 MB preview truncation. A multi-megabyte/60,000-line document is covered by browser tests. A single open document still uses editor memory, so capacity is not unlimited.
 
-On its own line, `\pretty` formats the text below it as an outline until `\unpretty`. A line becomes a bold heading when the next line is more indented. An unindented heading uses a font size of four min-boxes and gets three min-boxes of space above it. Each level of indentation subtracts a quarter min-box from both, down to a font size of 1.25 min-boxes and no extra space.
+On its own line, `\pretty` formats the text below it as an outline until `\unpretty`. A line becomes a bold heading when the next line is more indented. Pretty uses the regular editor font size as its unit. An unindented heading has a font size of four units and three units of space above it. Each indentation level subtracts a quarter unit from both, down to a font size of 1.25 units and no extra space.
 
 Leading spaces and tabs keep their normal width. **App settings → Appearance → Pretty font sizing** is on by default. Turn it off to keep a consistent font size while retaining bold headings and extra space above them.
 

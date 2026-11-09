@@ -145,11 +145,12 @@ const prettyField = StateField.define({
 const prettyTheme = EditorView.baseTheme({
   '.cm-line.cm-pretty-heading': {
     // Padding adds space inside the block measured by CodeMirror.
-    paddingBlockStart: 'max(0px, calc(var(--min-box) * (3 - var(--pretty-order) / 4)))'
+    paddingBlockStart: 'max(0px, calc(3em - var(--pretty-order) * .25em))'
   },
   '.cm-pretty-text': { fontWeight: 'bold' },
   '&.cm-pretty-size .cm-pretty-text': {
-    fontSize: 'max(calc(var(--min-box) * 1.25), calc(var(--min-box) * (4 - var(--pretty-order) / 4)))'
+    // The heading inherits the regular editor size as its unit.
+    fontSize: 'max(1.25em, calc(4em - var(--pretty-order) * .25em))'
   }
 });
 
