@@ -1,7 +1,7 @@
 <script lang="ts">
   import Control from './Control.svelte';
   import { onMount } from 'svelte';
-  import { searchReachable, type Workspace, type StateNode, type SearchProgress } from '../workspace';
+  import type { Workspace, StateNode, SearchProgress } from '../workspace';
   import Action from './Action.svelte';
   let { workspace, from, onNavigate, onOpen, graphRevision = 0, relocating = false, onChoose, busy = false }: {
     workspace: Workspace;
@@ -37,7 +37,7 @@
     controller = abort;
     const timer = setTimeout(() => {
       searching = true;
-      void searchReachable(currentWorkspace, origin, term, abort.signal, (found, status) => {
+      void currentWorkspace.searchReachable(origin, term, abort.signal, (found, status) => {
         results = found; progress = status;
       }, 1000, true).then(() => { if (!abort.signal.aborted) searched = true; })
         .catch((error) => { if (!abort.signal.aborted) failure = String(error); })

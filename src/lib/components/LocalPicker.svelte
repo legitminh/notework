@@ -33,8 +33,8 @@
     const version = ++generation;
     const handles: LocalHandle[] = [];
     for await (const handle of path.at(-1)!.values()) {
-      if (handle.kind === 'directory' && handle.name !== '.git') handles.push(handle);
-      else if (handle.kind === 'file' && await inspectText(handle)) handles.push(handle);
+      if (handle.name === '.git') continue;
+      if (handle.kind === 'directory' || await inspectText(handle)) handles.push(handle);
     }
     if (version !== generation) return;
     trail = path;
@@ -81,7 +81,7 @@
     try {
       const next = { ...selection };
       for (const handle of await pending) {
-        if (handle.kind === 'directory' && handle.name === '.git') continue;
+        if (handle.name === '.git') continue;
         if (handle.kind === 'file' && !(await inspectText(handle))) continue;
         next[crypto.randomUUID()] = { handle };
       }

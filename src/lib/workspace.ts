@@ -42,6 +42,7 @@ export interface StateNode {
 export const emptyWorkspace = (): WorkspaceData => ({ sources: [], rootIds: [], links: {}, hidden: {} });
 export const nodeId = (sourceId: string, path: string[] = []) => JSON.stringify([sourceId, ...path]);
 export const parentId = (node: StateNode) => node.path.length ? nodeId(node.sourceId, node.path.slice(0, -1)) : ROOT;
+interface LocatedResource { source: Source; path: string[]; handle: LocalHandle }
 
 export class Workspace {
   readonly known = new Map<string, StateNode>();
@@ -83,33 +84,38 @@ export class Workspace {
     return node;
   }
 
-  async node(id: string): Promise<StateNode> {
+  private async locate(id: string): Promise<LocatedResource> {
     const [sourceId, ...path] = JSON.parse(id) as string[];
     const source = this.data.sources.find((source) => source.id === sourceId);
-    if (!source) { this.forget(id); throw new DOMException('Resource is no longer in the graph.', 'NotFoundError'); }
+    if (!source) throw new DOMException('Resource is no longer in the graph.', 'NotFoundError');
+    if ([source.handle.name, ...path].includes('.git')) throw new HiddenResource('Git metadata is hidden.');
     let handle = source.handle;
     this.handles.set(nodeId(sourceId), handle);
-    try {
-      for (const [i, name] of path.entries()) {
-        if (handle.kind !== 'directory') throw new DOMException('The resource parent no longer exists as a folder.', 'NotFoundError');
-        if (i < path.length - 1) {
-          try { handle = await handle.getDirectoryHandle(name); }
-          catch (error) {
-            if (error instanceof DOMException && error.name === 'TypeMismatchError') throw new DOMException('The resource parent was replaced.', 'NotFoundError');
-            throw error;
-          }
+    for (const [i, name] of path.entries()) {
+      if (handle.kind !== 'directory') throw new DOMException('The resource parent no longer exists as a folder.', 'NotFoundError');
+      if (i < path.length - 1) {
+        try { handle = await handle.getDirectoryHandle(name); }
+        catch (error) {
+          if (error instanceof DOMException && error.name === 'TypeMismatchError') throw new DOMException('The resource parent was replaced.', 'NotFoundError');
+          throw error;
         }
-        else {
-          try { handle = await handle.getDirectoryHandle(name); }
-          catch (error) {
-            if (!(error instanceof DOMException) || error.name !== 'TypeMismatchError') throw error;
-            handle = await handle.getFileHandle(name);
-          }
+      } else {
+        try { handle = await handle.getDirectoryHandle(name); }
+        catch (error) {
+          if (!(error instanceof DOMException) || error.name !== 'TypeMismatchError') throw error;
+          handle = await handle.getFileHandle(name);
         }
-        this.handles.set(nodeId(sourceId, path.slice(0, i + 1)), handle);
       }
+      this.handles.set(nodeId(sourceId, path.slice(0, i + 1)), handle);
+    }
+    return { source, path, handle };
+  }
+
+  async node(id: string): Promise<StateNode> {
+    try {
+      const { source, path, handle } = await this.locate(id);
       await this.validate(id, handle);
-      return this.remember(sourceId, path, handle);
+      return this.remember(source.id, path, handle);
     } catch (error) {
       if (isMissing(error) && !this.moving.has(id)) this.forget(id);
       throw error;
@@ -117,6 +123,7 @@ export class Workspace {
   }
 
   private async validate(id: string, handle: LocalHandle) {
+    if (handle.name === '.git') { this.known.delete(id); this.handles.delete(id); throw new HiddenResource('Git metadata is hidden.'); }
     if (handle.kind === 'file') {
       if (handle.name.toLowerCase().endsWith('.svg') && await isDrawingFile(await handle.getFile())) {
         this.drawings.add(id);
@@ -127,7 +134,6 @@ export class Workspace {
       if (!format) { this.known.delete(id); this.handles.delete(id); throw new HiddenResource('Not a decodable text resource.'); }
       this.setFormat(id, format);
     } else {
-      if (handle.name === '.git') { this.known.delete(id); this.handles.delete(id); throw new HiddenResource('Git metadata is hidden.'); }
       const iterator = handle.values();
       try { await iterator.next(); } finally { await iterator.return?.(); }
     }
@@ -170,9 +176,19 @@ export class Workspace {
   async pruneMissing() {
     const ids = new Set([...this.data.sources.map((source) => nodeId(source.id)), ...this.data.rootIds, ...Object.keys(this.data.links), ...Object.values(this.data.links).flat(), ...Object.keys(this.data.formats ?? {}), ...this.known.keys()]);
     for (const id of ids) {
-      try { await this.node(id); }
-      catch {
-        // node() prunes confirmed missing resources. A lost permission is not deletion.
+      try {
+        const { path, handle } = await this.locate(id);
+        // Resolving a descendant confirms it exists. A directly connected
+        // handle needs a read, but checking existence never decodes its contents.
+        if (!path.length) {
+          if (handle.kind === 'file') await handle.getFile();
+          else {
+            const iterator = handle.values();
+            try { await iterator.next(); } finally { await iterator.return?.(); }
+          }
+        }
+      } catch (error) {
+        if (isMissing(error) && !this.moving.has(id)) this.forget(id);
       }
     }
   }
@@ -290,6 +306,71 @@ export class Workspace {
     return { nodes: [...nodes.values()], errors };
   }
 
+  async searchReachable(from: string, query: string, signal: AbortSignal,
+    onProgress: (results: StateNode[], progress: SearchProgress) => void, resultLimit = 1000, includeFolders = false) {
+    const queue: { id: string; resource?: LocatedResource }[] = [{ id: from }];
+    const seen = new Set([from]);
+    const results: StateNode[] = [];
+    const progress: SearchProgress = { visited: 0, errors: 0, limited: false };
+    const fold = (value: string) => value.normalize('NFC').toLocaleLowerCase();
+    const needle = fold(query.trim());
+    const stateLimit = 20000;
+    function enqueue(id: string, resource?: LocatedResource) {
+      if (seen.has(id)) return true;
+      if (queue.length >= stateLimit) { progress.limited = true; return false; }
+      seen.add(id);
+      queue.push({ id, resource });
+      return true;
+    }
+
+    const visit = async (id: string, resource?: LocatedResource) => {
+      if (id === ROOT) {
+        for (const target of this.data.rootIds) if (!enqueue(target)) break;
+        return;
+      }
+      const { source, path, handle } = resource ?? await this.locate(id);
+      const links = this.data.links[id] ?? [];
+      const matches = (includeFolders || handle.kind === 'file') && fold([source.handle.name, ...path].join('/')).includes(needle);
+      if (handle.kind === 'file') {
+        // Read only potential results and files whose outgoing links matter.
+        // In particular, an unrelated GitHub blob must never delay a name search.
+        if (!matches && !links.length) return;
+        await this.validate(id, handle);
+      } else {
+        const hidden = new Set(this.data.hidden[id] ?? []);
+        for await (const child of handle.values()) {
+          signal.throwIfAborted();
+          if (child.name === '.git') continue;
+          const childPath = [...path, child.name];
+          const childId = nodeId(source.id, childPath);
+          if (!hidden.has(childId) && !enqueue(childId, { source, path: childPath, handle: child })) break;
+        }
+      }
+      signal.throwIfAborted();
+      if (matches) results.push(this.remember(source.id, path, handle));
+      for (const target of links) if (!enqueue(target)) break;
+    };
+
+    for (let i = 0; i < queue.length; i++) {
+      signal.throwIfAborted();
+      if (results.length >= resultLimit) { progress.limited = true; break; }
+      const { id, resource } = queue[i];
+      try { await visit(id, resource); }
+      catch (error) {
+        if (isMissing(error)) { if (!this.moving.has(id)) this.forget(id); }
+        else if (!(error instanceof HiddenResource)) progress.errors++;
+      }
+      signal.throwIfAborted();
+      progress.visited++;
+      if (progress.visited % 25 === 0 || (results.length === 1 && results[0].id === id)) {
+        onProgress([...results], { ...progress });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+    }
+    signal.throwIfAborted();
+    onProgress(results, progress);
+  }
+
   async connect(handle: LocalHandle, from: string | null = ROOT,
     location?: { id: string; uri: string; storage: 'browser' }, physicalParent?: LocalDirectory): Promise<StateNode> {
     let node: StateNode | undefined;
@@ -337,37 +418,3 @@ export class Workspace {
 }
 
 export interface SearchProgress { visited: number; errors: number; limited: boolean }
-export async function searchReachable(
-  workspace: Workspace, from: string, query: string, signal: AbortSignal,
-  onProgress: (results: StateNode[], progress: SearchProgress) => void, resultLimit = 1000, includeFolders = false
-) {
-  const queue = [from];
-  const seen = new Set<string>();
-  const results: StateNode[] = [];
-  const progress: SearchProgress = { visited: 0, errors: 0, limited: false };
-  const needle = query.trim().toLocaleLowerCase();
-  for (let i = 0; i < queue.length; i++) {
-    signal.throwIfAborted();
-    const id = queue[i];
-    if (seen.has(id)) continue;
-    seen.add(id);
-    if (seen.size > 20000 || results.length >= resultLimit) { progress.limited = true; break; }
-    if (id !== ROOT) {
-      try {
-        const node = await workspace.node(id);
-        if ((node.kind === 'file' || includeFolders) && workspace.label(node).toLocaleLowerCase().includes(needle)) results.push(node);
-      } catch (error) { if (!(error instanceof HiddenResource) && !isMissing(error)) progress.errors++; continue; }
-    }
-    const reachable = await workspace.reachable(id);
-    signal.throwIfAborted();
-    progress.errors += reachable.errors.length;
-    queue.push(...reachable.nodes.map((node) => node.id));
-    progress.visited++;
-    if (progress.visited % 25 === 0) {
-      onProgress([...results], { ...progress });
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    }
-  }
-  signal.throwIfAborted();
-  onProgress(results, progress);
-}

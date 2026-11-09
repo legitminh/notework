@@ -8,8 +8,10 @@ const editor = (page: Page, file: string) => page.getByRole('textbox', { name: `
 const exit = (page: Page, group = 'Editor toolbar') => page.getByRole('group', { name: group }).getByRole('button', { name: 'Exit', exact: true });
 const syncProgress = (page: Page) => page.getByRole('progressbar', { name: 'Syncing to GitHub' });
 const sha = (buffer: Buffer) => createHash('sha1').update(`blob ${buffer.length}\0`).update(buffer).digest('hex');
+const binaryImage = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+type FixtureFiles = Record<string, string | Buffer | null>;
 
-async function github(page: Page, initial: Record<string, string>) {
+async function github(page: Page, initial: FixtureFiles) {
   type Tree = Map<string, string>;
   const blobs = new Map<string, Buffer>();
   const trees = new Map<string, Tree>();
@@ -18,7 +20,7 @@ async function github(page: Page, initial: Record<string, string>) {
   const requests: string[] = [];
   let sequence = 0;
   let head: string;
-  let advanceOnPush: Record<string, string | null> | undefined;
+  let advanceOnPush: FixtureFiles | undefined;
   let refuseWrites = false;
   let loseResponse = false;
   let pause: { arrived: () => void; release: Promise<void> } | undefined;
@@ -32,11 +34,11 @@ async function github(page: Page, initial: Record<string, string>) {
     return id;
   }
   const files = () => trees.get(commits.get(head)!.tree)!;
-  function upstream(changes: Record<string, string | null>) {
+  function upstream(changes: FixtureFiles) {
     const next = new Map(head ? files() : undefined);
     for (const [path, content] of Object.entries(changes)) {
       if (content === null) next.delete(path);
-      else next.set(path, blob(Buffer.from(content)));
+      else next.set(path, blob(typeof content === 'string' ? Buffer.from(content) : content));
     }
     head = commit(tree(next), 'external edit', head);
   }
@@ -127,7 +129,7 @@ async function github(page: Page, initial: Record<string, string>) {
       return { started, resume };
     },
     loseResponse() { loseResponse = true; },
-    advance(changes: Record<string, string | null>) { advanceOnPush = changes; },
+    advance(changes: FixtureFiles) { advanceOnPush = changes; },
     refuse(value: boolean) { refuseWrites = value; },
     rotateToken(value: string) { token = value; },
     content(path: string) { const value = files().get(path); return value && blobs.get(value)?.toString(); }
@@ -227,7 +229,7 @@ test('an expired token can be replaced from the error without losing the open dr
 
 test('repository syncs on startup and Exit commits only the edit onto the latest branch', async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem('notework:autosave-seconds', '1'));
-  const repo = await github(page, { 'note.txt': 'Original', 'notes/old.txt': 'Old note', 'image.bin': '\u0000hidden' });
+  const repo = await github(page, { 'note.txt': 'Original', 'notes/old.txt': 'Old note', 'image.bin': binaryImage });
   await connect(page);
   await expect(action(page, 'notes/')).toBeVisible();
   await expect(action(page, 'image.bin')).toHaveCount(0);
@@ -264,13 +266,53 @@ test('reopening a GitHub folder lists newly added text files without an app relo
   await expect(action(page, 'viet.keyboard')).toBeVisible();
   await expect(action(page, 'viet.phonetic.basis')).toHaveCount(0);
   await action(page, '..').click();
-  repo.upstream({ [`${folder}/viet.phonetic.basis`]: 'Cơ sở ngữ âm tiếng Việt\n', [`${folder}/image.bin`]: '\u0000hidden' });
+  repo.upstream({ [`${folder}/viet.phonetic.basis`]: 'Cơ sở ngữ âm tiếng Việt\n', [`${folder}/image.bin`]: binaryImage });
   await action(page, 'viet/').click();
   await expect(action(page, 'viet.phonetic.basis')).toBeVisible();
   await expect(action(page, 'image.bin')).toHaveCount(0);
   await openNote(page, 'viet.phonetic.basis');
   await expect(editor(page, 'viet.phonetic.basis')).toContainText('Cơ sở ngữ âm tiếng Việt');
   expect(repo.messages).toEqual([]);
+});
+
+test('Vietnamese and Unicode controls survive autosave, Exit, and reopening the GitHub file', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('notework:autosave-seconds', '1'));
+  const name = 'viet.phonetic.basis';
+  const repo = await github(page, { [name]: 'Original' });
+  const input = 'Cơ sở ngữ âm tiếng Việt\n' + 'tiếng Việt'.normalize('NFD') + '\u200b \u{1f5e3}\u001b\u000c\u007f\u0000';
+  await connect(page);
+  await openNote(page, name);
+  await editor(page, name).press('ControlOrMeta+a');
+  await page.keyboard.insertText(input);
+  await expect(page.getByText(/draft saved in this browser/)).toBeVisible();
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await exit(page).click();
+  await expect(action(page, 'open')).toBeVisible();
+  expect(repo.content(name)).toBe(input);
+  expect(repo.messages).toEqual([`edit: ${name}`]);
+
+  await page.reload();
+  await action(page, 'notebook/').click();
+  await openNote(page, name);
+  await expect(editor(page, name)).toContainText('Cơ sở ngữ âm tiếng Việt');
+});
+
+test('name search across a GitHub tree reads only matching blobs and normalizes Unicode', async ({ page }) => {
+  const name = 'Việt.phonetic.basis';
+  const unrelated = Object.fromEntries(Array.from({ length: 80 }, (_, i) => [`archive/${i}.txt`, `archive note ${i}`]));
+  const repo = await github(page, { ...unrelated, [`project/${name}`]: 'Cơ sở ngữ âm', 'project/Việt.png': binaryImage });
+  await connect(page);
+  await action(page, 'home').click();
+  await expect(action(page, 'app settings')).toBeVisible();
+  repo.requests.length = 0;
+  await action(page, 'search').click();
+  await page.getByRole('searchbox').fill('VIỆT'.normalize('NFD'));
+  await expect(page.locator('.search-status')).toHaveText('1 result found');
+  await expect(page.locator('.search-result-row').getByRole('button', { name: new RegExp(name) })).toBeVisible();
+  expect(repo.requests.filter((request) => request.startsWith('GET /git/blobs/'))).toEqual([
+    `GET /git/blobs/${sha(Buffer.from('Cơ sở ngữ âm'))}`,
+    `GET /git/blobs/${sha(binaryImage)}`
+  ]);
 });
 
 test('same-file branch race opens two editable versions and publishes the selected variant', async ({ page }) => {
@@ -464,6 +506,35 @@ test('failed writes retain the draft across reload and accept an upstream deleti
   await expect(action(page, 'notebook/')).toBeVisible();
   expect(repo.content('note.txt')).toBeUndefined();
   expect(repo.messages).toEqual([]);
+});
+
+test('keeping an unreadable GitHub version hides the file without removing its graph links', async ({ page }) => {
+  const repo = await github(page, { 'note.txt': 'Original', 'linked.txt': 'Linked' });
+  await connect(page);
+  await openNote(page);
+  await editor(page, 'note.txt').fill('[[linked.txt]]');
+  await exit(page).click();
+  await expect(action(page, 'linked.txt')).toBeVisible();
+
+  await action(page, 'open').click();
+  await editor(page, 'note.txt').fill('Local edit');
+  repo.upstream({ 'note.txt': binaryImage });
+  await exit(page).click();
+  const conflict = page.getByRole('dialog', { name: 'GitHub conflict' });
+  await expect(conflict.getByText('The GitHub version cannot be edited as text.')).toBeVisible();
+  await conflict.getByRole('button', { name: 'Keep GitHub version' }).click();
+  await expect(page.getByText('This file is no longer readable as text. Its connections were kept.')).toBeVisible();
+  expect(repo.messages).toEqual(['edit: note.txt']);
+  await action(page, 'notebook/').click();
+  await expect(action(page, 'linked.txt')).toBeVisible();
+  await expect(action(page, 'note.txt')).toHaveCount(0);
+
+  repo.upstream({ 'note.txt': 'Readable again' });
+  await page.reload();
+  await action(page, 'notebook/').click();
+  await action(page, 'note.txt').click();
+  await expect(page.getByRole('heading', { name: 'note.txt', exact: true })).toBeVisible();
+  await expect(action(page, 'linked.txt')).toBeVisible();
 });
 
 test('normal folder actions and drawing editing publish to GitHub', async ({ page }) => {

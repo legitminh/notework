@@ -1,5 +1,5 @@
 import { isMissing, type LocalDirectory, type LocalFile } from './filesystem';
-import { ROOT, searchReachable, type StateNode, type Workspace } from './workspace';
+import { ROOT, type StateNode, type Workspace } from './workspace';
 
 export const wikiPattern = /\[\[([^\[\]\r\n]+)\]\]/g;
 const fold = (value: string) => value.toLowerCase();
@@ -22,7 +22,7 @@ export const parentUri = (node: StateNode) => node.uri.slice(0, node.uri.lastInd
 
 export async function wikiCatalog(workspace: Workspace, signal: AbortSignal) {
   let found: StateNode[] = [];
-  await searchReachable(workspace, ROOT, '', signal, (results) => { found = results; }, 20000);
+  await workspace.searchReachable(ROOT, '', signal, (results) => { found = results; }, 20000);
   return [...new Map([...found, ...workspace.known.values()].filter((node) => node.kind === 'file').map((node) => [node.id, node])).values()];
 }
 

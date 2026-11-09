@@ -154,7 +154,7 @@
     if (lockstep_scrolling.enabled) lockstep_scrolling.set(false);
   });
 
-  async function refresh() {
+  async function refresh(leavingEditor = false) {
     const version = ++refreshVersion;
     await workspace.pruneMissing();
     if (version !== refreshVersion) return;
@@ -166,7 +166,10 @@
       }
       catch (error) {
         if (version !== refreshVersion) return;
-        if (isMissing(error) || error instanceof HiddenResource) { await missingCurrent(); return; }
+        if (isMissing(error)) { await unavailableCurrent(current.id, 'missing'); return; }
+        if (error instanceof HiddenResource && (!editing || leavingEditor)) {
+          await unavailableCurrent(current.id, 'unreadable'); return;
+        }
       }
     }
     const id = currentId;
@@ -332,7 +335,7 @@
     if (page.state.notework !== currentId) {
       await goto(location.pathname, { state: { notework: currentId }, shallow: true, reset: false });
     }
-    await refresh();
+    await refresh(true);
     editing = false;
     await tick();
     state_viewport.viewport?.scrollTo({ top: 0 });
@@ -365,13 +368,14 @@
     } finally { busy = false; }
   }
 
-  async function missingCurrent() {
-    if (current) workspace.forget(current.id);
+  async function unavailableCurrent(id: string, reason: 'missing' | 'unreadable') {
+    if (current?.id !== id) return;
+    if (reason === 'missing') workspace.forget(id);
     editing = false; creating = false;
     current = null; panel = null; edges = []; children = [];
     await goto(location.pathname, { state: { notework: ROOT }, shallow: true, replace: true, reset: false });
     await persist();
-    message = 'Missing or unreadable-text resource removed from this view.';
+    message = reason === 'missing' ? 'Missing resource removed from the graph.' : 'This file is no longer readable as text. Its connections were kept.';
   }
 
   async function updateStorage() {
@@ -576,12 +580,13 @@
           {busy} supported={canCreateHere} error={message} onCreate={createAtFolder}
           onCancel={() => { creating = false; message = ''; }} />
       {:else if editing && current}
+        {@const id = current.id}
         {#key current.uri}
           {#if current.drawing}
-            <StandaloneDrawing {pdfMargins} {stylusOnly} {resolveGitHubConflict} autosaveMs={autosaveSeconds * 1000} {workspace} node={current} onExit={exitEditor} onMissing={() => { void missingCurrent(); }} />
+            <StandaloneDrawing {pdfMargins} {stylusOnly} {resolveGitHubConflict} autosaveMs={autosaveSeconds * 1000} {workspace} node={current} onExit={exitEditor} onMissing={() => { void unavailableCurrent(id, 'missing'); }} />
           {:else}
             <TextEditor {workspace} node={current} {wrapLines} {prettyFontSize} {vimMode} {stylusOnly} {pdfMargins} {resolveGitHubConflict} autosaveMs={autosaveSeconds * 1000} onExit={exitEditor}
-              onMissing={() => { void missingCurrent(); }} onOpenLink={openLinkedFile} />
+              onMissing={() => { void unavailableCurrent(id, 'missing'); }} onOpenLink={openLinkedFile} />
           {/if}
         {/key}
       {:else}

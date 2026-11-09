@@ -23,8 +23,9 @@ export async function inspectTextFile(file: File, cached?: TextFormat): Promise<
   try {
     let endingFound = false;
     let previous = '';
+    // Decoding rejects malformed bytes. Valid Unicode, including control
+    // characters, can be intentional input and must survive a round trip.
     for await (const chunk of decodedChunks(file, format)) {
-      if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(chunk)) return null;
       if (!endingFound) {
         const match = (previous + chunk).match(/\r\n|\r(?!$)|\n/);
         if (match) { format.eol = match[0] as TextFormat['eol']; endingFound = true; }

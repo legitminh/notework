@@ -385,13 +385,21 @@
         return resolveGitHubConflict(versions);
       });
       if (chosen.content !== draft.content) {
-        const selected = chosen.content && new File([chosen.content], node.name);
-        const selectedFormat = selected && await inspectTextFile(selected);
-        if (!selected || !selectedFormat) {
+        if (!chosen.content) {
           await repository.saveDraft(path);
           githubPending = false;
           onMissing();
           return false;
+        }
+        const selected = new File([chosen.content], node.name);
+        const selectedFormat = await inspectTextFile(selected);
+        if (!selectedFormat) {
+          if (!chosen.unchanged) throw new Error('The chosen version could not be decoded as text. Your draft is still in this browser.');
+          // The user chose to keep the upstream file. Hide it as unreadable,
+          // while keeping its graph links in case it becomes readable again.
+          await repository.saveDraft(path);
+          githubPending = false;
+          return true;
         }
         let text = '';
         for await (const chunk of decodedChunks(selected, selectedFormat)) text += chunk;

@@ -21,11 +21,11 @@ In app settings, **add existing folder/file** opens one local chooser. Drop mixe
 
 Folders expose their direct children. Existing directed links and hidden-child settings from older versions remain readable. `..` follows the filesystem parent within a granted source, returning home at its boundary; unselected ancestors cannot be discovered by a web app.
 
-Search matches file and folder names/paths along outgoing graph transitions, including folder descendants and saved links, and handles cycles. Parent navigation is excluded. Folder results navigate normally; file results provide paired **open** and filename actions for either immediate editing or navigation. Search reports progress, supports stopping, and caps traversal at 20,000 states or 1,000 results. Press **Esc** or click **esc · search results** to leave the search field without clearing your query. **Edit search** returns to typing.
+Search matches file and folder names/paths along outgoing graph transitions, including folder descendants and saved links, and handles cycles. Parent navigation is excluded. Search checks names before fetching file contents, and matches composed and decomposed Unicode spellings alike. Folder results navigate normally; file results provide paired **open** and filename actions for either immediate editing or navigation. Search reports progress, supports stopping, and caps traversal at 20,000 states or 1,000 results. Press **Esc** or click **esc · search results** to leave the search field without clearing your query. **Edit search** returns to typing.
 
 ## Text editing
 
-Readable files use the plain-text CodeMirror editor unless they are Notework drawings. Byte validation accepts UTF-8 and BOM-marked UTF-16, preserves encoding/BOM and line endings on save, and hides invalid Unicode, binary control-byte data, and `.git` directories. HTML and ordinary SVG remain inert editable source.
+Readable files use the plain-text CodeMirror editor unless they are Notework drawings. Byte validation accepts valid UTF-8 and BOM-marked UTF-16, including Unicode control characters, and preserves encoding/BOM and line endings on save. Files with undecodable bytes and `.git` metadata stay hidden. An unreadable file keeps its graph links so they work again if the file becomes readable. HTML and ordinary SVG remain inert editable source.
 
 - **Tab** accepts the selected suggestion or indents with **two spaces** when there is no suggestion; **Shift-Tab** outdents.
 - Parentheses, brackets, braces, and quotes pair automatically.
