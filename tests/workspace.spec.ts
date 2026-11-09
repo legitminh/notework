@@ -1272,6 +1272,73 @@ test('command completion uses Tab and ranks drawing targets by match and graph p
   await expect(labels).toHaveText(['delta.svg', 'zebra.svg', 'beta.svg', 'first.svg', 'alpha.svg']);
 });
 
+test('pretty completion lands at column one and hides the directive and its line number', async ({ page }) => {
+  await createNote(page, 'outline.txt');
+  const editor = page.getByRole('textbox', { name: 'Edit outline.txt' });
+  const lines = editor.locator('.cm-line');
+  const numbers = page.locator('.cm-lineNumbers .cm-gutterElement:visible');
+  await page.keyboard.insertText('Before\n  \\pre');
+  const option = page.getByRole('option').filter({ has: page.getByText('\\pretty', { exact: true }) });
+  await expect(option).toHaveAttribute('aria-selected', 'true');
+  await page.keyboard.press('Tab');
+  await expect(lines).toHaveText(['Before', /^$/]);
+  await expect(numbers).toHaveText(['1', '3']);
+  const first = (await lines.first().boundingBox())!, next = (await lines.last().boundingBox())!;
+  expect(next.y).toBeCloseTo(first.y + first.height);
+  await page.keyboard.press('ArrowLeft');
+  await expect(lines).toHaveText(['Before', /^  \\pretty$/, '']);
+  await expect(numbers).toHaveText(['1', '2', '3']);
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.insertText('Heading\n  Body');
+  await expect(lines).toHaveText(['Before', /^Heading$/, /^  Body$/]);
+  await expect(lines.nth(1)).toHaveClass(/cm-pretty-heading/);
+
+  await toolbar(page, 'Exit').click();
+  await openEditor(page);
+  await expect(lines).toHaveText(['Before', 'Heading', '  Body']);
+  await expect(numbers).toHaveText(['1', '3', '4']);
+});
+
+test('pretty display uses adjacent indentation and bracketed commands switch modes at both ends', async ({ page }) => {
+  await createNote(page, 'pretty.txt');
+  const editor = page.getByRole('textbox', { name: 'Edit pretty.txt' });
+  const lines = editor.locator('.cm-line');
+  const line = (name: string) => lines.filter({ hasText: new RegExp(`^\\s*${name}$`) });
+  await page.keyboard.type('\\pretty1');
+  await expect(page.getByRole('option', { name: /^\\pretty1/ })).toHaveAttribute('aria-selected', 'true');
+  await page.keyboard.press('Enter');
+  await page.keyboard.insertText('Scoped title\n  Scoped body');
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.insertText([
+    '', 'Regular', '  Regular child', '\\pretty', 'Title', '\tSubheading', '    Body', '  Peer',
+    'Not a heading', '', '  After blank', '\\unpretty1[', 'Plain block', '  Plain [block] child', ']',
+    'After block', '  Detail', '\\unpretty', 'After switch', '  Last child'
+  ].join('\n'));
+
+  await expect(editor).not.toContainText(/\\(?:un)?pretty/);
+  await expect(lines.filter({ hasText: /^  Plain \[block\] child$/ })).toBeVisible();
+  const base = await line('Regular').evaluate((element) => ({
+    font: parseFloat(getComputedStyle(element).fontSize),
+    box: parseFloat(getComputedStyle(element).getPropertyValue('--min-box'))
+  }));
+  for (const [name, degree] of [['Scoped title', 1], ['Title', 2], ['Subheading', 1], ['After block', 1]] as const) {
+    await expect(line(name)).toHaveCSS('font-size', `${base.font + base.box / 4 * degree}px`);
+    await expect(line(name)).toHaveCSS('font-weight', '700');
+    await expect(line(name)).toHaveCSS('padding-top', `${base.box / 2}px`);
+  }
+  for (const name of ['Scoped body', 'Regular', 'Body', 'Peer', 'Not a heading', 'Plain block', 'After switch']) {
+    await expect(line(name)).toHaveCSS('font-size', `${base.font}px`);
+    await expect(line(name)).toHaveCSS('font-weight', '400');
+  }
+
+  // Changing the next line's indentation immediately changes its ancestors.
+  await line('Body').click();
+  await page.keyboard.press('Shift+Tab');
+  await expect(line('Body')).toHaveText(/^  Body$/);
+  await expect(line('Title')).toHaveCSS('font-size', `${base.font + base.box / 4}px`);
+  await expect(line('Subheading')).toHaveCSS('font-size', `${base.font}px`);
+});
+
 test('brush inserts a movable SVG page, swaps the inline toolbar, and saves an exact drawing extent', async ({ page }) => {
   await page.setViewportSize({ width: 1050, height: 1500 });
   await createNote(page, 'sketch.txt');

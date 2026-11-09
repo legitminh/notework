@@ -34,6 +34,7 @@
   import { wikiDisplay } from '../wiki-display';
   import { containingFolder, findWikiTarget, prepareWikiSave, requireWrite, validFilename, wikiCatalog, wikiScore, wikiToken, wikiTokens, WritePermissionRequired } from '../wiki';
   import { commandCompletion, opensCommandArguments } from '../command-completion';
+  import { prettyDisplay } from '../pretty-display';
   import { GitHubChanged, GitHubEditCancelled, GitHubFile, type ResolveGitHubConflict } from '../github/repository';
   import { draftQueue, type DraftQueue } from '../github/storage';
 
@@ -662,7 +663,7 @@
               }
             })))),
             vimMode ? vim() : [],
-            wikiDisplay(leaveEditor), pageWidgets.field, textLock.of([]),
+            wikiDisplay(leaveEditor), pageWidgets.field, prettyDisplay, textLock.of([]),
             wrapLines ? EditorView.lineWrapping : [],
             lineNumbers(), drawSelection(), highlightActiveLine(), history(),
             bracketMatching(), closeBrackets(), highlightSelectionMatches(),

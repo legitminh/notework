@@ -43,26 +43,36 @@ interface EditorCommand {
   name: string;
   detail: string;
   targets?: typeof drawingTargets;
+  placement?: 'next-line' | 'brackets';
 }
 
 const commands: readonly EditorCommand[] = [
-  { name: 'svgpage', detail: 'Insert a drawing page', targets: drawingTargets }
+  { name: 'svgpage', detail: 'Insert a drawing page', targets: drawingTargets },
+  { name: 'pretty', detail: 'Format the following lines', placement: 'next-line' },
+  { name: 'unpretty', detail: 'Return to regular text', placement: 'next-line' },
+  { name: 'pretty1', detail: 'Format a block, then return to regular text', placement: 'brackets' },
+  { name: 'unpretty1', detail: 'Use regular text in a block, then resume formatting', placement: 'brackets' }
 ];
 
-const commandOptions = commands.map(({ name, detail, targets }): Completion => ({
+const commandOptions = commands.map(({ name, detail, targets, placement }): Completion => ({
   label: `\\${name}`, detail, type: 'keyword',
   apply(editor, completion, from, to) {
     const suffix = editor.state.sliceDoc(to, editor.state.doc.lineAt(to).to);
     const rest = /^[a-z0-9-]*/i.exec(suffix)![0].length;
     const label = completion.label;
-    const insert = label + (targets && suffix[rest] !== '[' ? '[]' : '');
+    const brackets = !!targets || placement === 'brackets';
+    const nextLine = placement === 'next-line';
+    const end = to + (nextLine && /^(?:\[\])?[ \t]*$/.test(suffix.slice(rest)) ? suffix.length : rest);
+    const insert = label + (nextLine ? '\n' : brackets && suffix[rest] !== '[' ? '[]' : '');
     editor.dispatch({
-      changes: { from, to: to + rest, insert },
-      selection: { anchor: from + label.length + (targets ? 1 : 0) },
-      annotations: [pickedCompletion.of(completion), Transaction.userEvent.of('input.complete')]
+      changes: { from, to: end, insert },
+      selection: { anchor: from + label.length + (brackets || nextLine ? 1 : 0) },
+      annotations: [pickedCompletion.of(completion), Transaction.userEvent.of('input.complete')],
+      scrollIntoView: true
     });
   }
 }));
+const inlineOptions = commandOptions.filter((_option, index) => !commands[index].placement);
 
 export const opensCommandArguments = (option: Completion) =>
   commands.some(({ targets }, index) => !!targets && commandOptions[index] === option);
@@ -92,6 +102,9 @@ export function commandCompletion(workspace: Workspace, source: StateNode, catal
     const argument = commandArgument(context);
     if (argument) return catalog().then((files) => context.aborted ? null : argumentResult(argument, files)).catch(() => null);
     const match = context.matchBefore(/\\[a-z0-9-]*$/i);
-    return match ? { from: match.from, options: commandOptions, validFor: /\\[a-z0-9-]*/i } : null;
+    if (!match) return null;
+    const line = context.state.doc.lineAt(match.from);
+    const options = line.text.slice(0, match.from - line.from).trim() ? inlineOptions : commandOptions;
+    return { from: match.from, options, validFor: /\\[a-z0-9-]*/i };
   };
 }

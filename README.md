@@ -38,6 +38,10 @@ Readable files use the plain-text CodeMirror editor unless they are Notework dra
 
 The editor virtualizes its viewport and streams text reads/writes instead of rendering a collection or converting an entire collection into one string. There is no former 2 MB preview truncation. A multi-megabyte/60,000-line document is covered by browser tests. A single open document still uses editor memory, so capacity is not unlimited.
 
+On its own line, `\pretty` formats the text below it as an outline until `\unpretty`. A line becomes a bold heading when the next line is more indented. Each consecutive increase in indentation adds a quarter min-box to the heading’s font size; every heading gets half a min-box of space above it. Use `\pretty1[LINES]` to format a block and then return to regular text, or `\unpretty1[LINES]` to show a block as regular text and turn formatting on afterward. The brackets can enclose multiple lines.
+
+Type `\` on its own line and choose a command from autocomplete. Accepting `\pretty` moves the caret to the start of a new, unindented line. The editor hides the switch lines when the caret leaves them, while keeping their original line numbers in the document.
+
 ## Export
 
 **Export** in either editor opens a format dialog for PDF, PNG, or JPEG. It exports the current draft without saving it, including unsaved inline drawing strokes. Every format uses the same one-page layout with configurable margins, the editor’s font/colors/wrapping, formatted wiki links, and SVG strokes. Set each side in **App settings → export margins**, always in min-box units. Left, right, top, and bottom default to 1; zero and fractional values are supported. Margins add space around the content without changing wrapping or SVG proportions, using the current min-box size. Navigation, toolbars, the caret, and line numbers are excluded. PDF preserves SVG strokes as vector paths; PNG and JPEG render the same page as a single image. Very large raster pages are uniformly scaled to safe browser and iOS canvas limits rather than cropped or split.
