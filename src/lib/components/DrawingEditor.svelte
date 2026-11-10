@@ -32,9 +32,10 @@
   let redoStack = $state.raw<Drawing[]>([]);
   let points = $state.raw<Point[]>([]);
   type Tool = 'brush' | 'eraser' | 'lasso';
-  type Gesture = { pointer: number; limit: number; before: Drawing } & (
-    { kind: Tool } | { kind: 'transform'; origin: Point; selection: Selection; corner?: Corner }
+  type Gesture = { input: number | string; limit: number; before: Drawing } & (
+    { kind: Tool } | { kind: 'transform'; origin?: Point; selection: Selection; corner?: Corner }
   );
+  const moveKey = 'm';
   const corners: Corner[] = ['nw', 'ne', 'sw', 'se'];
   let tool = $state<Tool>('brush');
   let selection = $state.raw<Selection>();
@@ -52,6 +53,7 @@
   const touches = new Set<number>();
   let multiTouch = false;
   let gesture = $state.raw<Gesture>();
+  let mouse: PointerEvent | undefined;
   let autosaveTimer: ReturnType<typeof setTimeout> | undefined;
   let lastSaveAt = 0;
   let active = false;
@@ -63,6 +65,7 @@
   const penOnly = $derived(stylusOnly && tool !== 'lasso');
   const outline = $derived(selection ? areaPath(selection.area) : '');
   const tracing = $derived(gesture?.kind === 'lasso');
+  const moving = $derived(gesture?.kind === 'transform' && !gesture.corner);
 
   function portal(element: HTMLElement, target?: HTMLElement) {
     if (!target) return;
@@ -116,8 +119,26 @@
       roundCoordinate(Math.max(0, Math.min(limit, position.y)))];
   }
 
+  function startTransform(input: number | string, origin?: Point, corner?: Corner) {
+    if (!selection?.indices.size || gesture || saving || publishing) return;
+    resumeEditing();
+    if (typeof input === 'number') canvas.setPointerCapture(input);
+    gesture = { input, limit: height, before: strokes, kind: 'transform', origin, selection, corner };
+  }
+
+  function applyTransform(p: Point) {
+    if (gesture?.kind !== 'transform') return;
+    const { before, selection: original, origin, limit, corner } = gesture;
+    if (!origin) {
+      gesture = { ...gesture, origin: p };
+      return;
+    }
+    const box = dragBox(original.box, [p[0] - origin[0], p[1] - origin[1]], limit, corner, frameMinimum);
+    ({ strokes, selection } = transformSelection(before, original, box));
+  }
+
   function sample(event: PointerEvent, final = false) {
-    if (!gesture || event.pointerId !== gesture.pointer) return;
+    if (!gesture || event.pointerId !== gesture.input) return;
     const p = point(event, gesture.kind === 'transform' ? undefined : gesture.limit);
     if (!p) return;
     if (gesture.kind === 'brush' || gesture.kind === 'lasso') {
@@ -127,19 +148,15 @@
     } else if (gesture.kind === 'eraser') {
       const remaining = strokes.filter((stroke) => !touchesStroke(stroke, p, scale));
       if (remaining.length !== strokes.length) strokes = remaining;
-    } else if (gesture.kind === 'transform') {
-      const { before, selection: original, origin, limit, corner } = gesture;
-      const box = dragBox(original.box, [p[0] - origin[0], p[1] - origin[1]], limit, corner, frameMinimum);
-      ({ strokes, selection } = transformSelection(before, original, box));
-    }
+    } else applyTransform(p);
   }
 
   function cancelGesture() {
     if (!gesture) return;
-    const { pointer, before } = gesture;
+    const { input, before } = gesture;
     if (gesture.kind === 'transform') selection = gesture.selection;
     strokes = before; points = []; gesture = undefined;
-    if (canvas.hasPointerCapture(pointer)) canvas.releasePointerCapture(pointer);
+    if (typeof input === 'number' && canvas.hasPointerCapture(input)) canvas.releasePointerCapture(input);
     if (dirty && !waitingForPermission) scheduleAutosave();
   }
 
@@ -164,6 +181,19 @@
     canvas.focus({ preventScroll: true });
   }
 
+  function beginMoveButton(event: PointerEvent) {
+    if (event.button !== 0 || !(event.target instanceof Element) || !event.target.closest('button:not(:disabled)')) return;
+    const origin = point(event);
+    if (!origin) return;
+    event.preventDefault();
+    startTransform(event.pointerId, origin);
+  }
+
+  function dragFromButton(element: HTMLElement) {
+    element.addEventListener('pointerdown', beginMoveButton);
+    return { destroy: () => element.removeEventListener('pointerdown', beginMoveButton) };
+  }
+
   function begin(event: PointerEvent) {
     if (event.pointerType === 'touch') {
       touches.add(event.pointerId);
@@ -175,21 +205,20 @@
     const origin = point(event);
     if (!origin) return;
     event.preventDefault();
-    resumeEditing();
-    canvas.setPointerCapture(event.pointerId);
-    const common = { pointer: event.pointerId, limit: height, before: strokes };
     const target = event.target as SVGElement;
     if (selection && target.hasAttribute('data-lasso-drag')) {
       const corner = (target.getAttribute('data-lasso-drag') || undefined) as Corner | undefined;
-      gesture = { ...common, kind: 'transform', origin, selection, corner };
+      startTransform(event.pointerId, origin, corner);
       return;
     }
-    gesture = { ...common, kind: tool };
+    resumeEditing();
+    canvas.setPointerCapture(event.pointerId);
+    gesture = { input: event.pointerId, limit: height, before: strokes, kind: tool };
     sample(event);
   }
 
   function move(event: PointerEvent) {
-    if (!gesture || event.pointerId !== gesture.pointer) return;
+    if (!gesture || event.pointerId !== gesture.input) return;
     if (gesture.kind !== 'transform') {
       for (const item of event.getCoalescedEvents?.() ?? []) sample(item);
     }
@@ -198,9 +227,14 @@
 
   function finish(event: PointerEvent, cancel = false) {
     if (event.pointerType === 'touch') touches.delete(event.pointerId);
-    if (!gesture || event.pointerId !== gesture.pointer) return;
+    if (!gesture || event.pointerId !== gesture.input) return;
     if (cancel) { cancelGesture(); return; }
     sample(event, true);
+    finishGesture();
+  }
+
+  function finishGesture() {
+    if (!gesture) return;
     const { before, kind, limit } = gesture;
     gesture = undefined;
     if (kind === 'lasso') selection = growSelection(strokes, points, frameMinimum, limit, selection);
@@ -302,6 +336,17 @@
       if (event.altKey || event.isComposing || document.querySelector('.github-conflict[open], .github-reconnect[open]')) return;
       const key = event.key.toLowerCase();
       if (!(event.metaKey || event.ctrlKey)) {
+        const input = event.code || key;
+        const target = event.target;
+        const textInput = target instanceof HTMLElement && (target.isContentEditable || target.matches('input, textarea, select'));
+        const focusedMove = (key === ' ' || key === 'enter') &&
+          (gesture?.input === input || (target instanceof Element && target.closest('.lasso-move')));
+        if ((key === moveKey || focusedMove) && selection?.indices.size && !textInput &&
+            !event.defaultPrevented && !document.querySelector('dialog[open]')) {
+          if (focusedMove) event.preventDefault();
+          if (!event.repeat) startTransform(input, mouse && point(mouse));
+          return;
+        }
         if (key !== 'escape' || event.shiftKey || usingTools || document.querySelector('dialog[open]')) return;
         event.preventDefault();
         if (!event.repeat) {
@@ -336,7 +381,24 @@
     const beforeUnload = (event: BeforeUnloadEvent) => {
       if (dirty || gesture) { event.preventDefault(); event.returnValue = ''; }
     };
+    const trackMouse = (event: PointerEvent) => {
+      if (event.pointerType !== 'mouse') return;
+      mouse = event;
+      if (typeof gesture?.input !== 'string') return;
+      const p = point(event);
+      if (p) applyTransform(p);
+    };
+    const releaseKey = (event: KeyboardEvent) => {
+      if (gesture?.input === (event.code || event.key.toLowerCase())) finishGesture();
+    };
+    const loseFocus = () => {
+      mouse = undefined;
+      if (typeof gesture?.input === 'string') cancelGesture();
+    };
     window.addEventListener('keydown', shortcuts, true);
+    window.addEventListener('keyup', releaseKey, true);
+    window.addEventListener('pointermove', trackMouse, { passive: true });
+    window.addEventListener('blur', loseFocus);
     window.addEventListener('beforeunload', beforeUnload);
     return () => {
       active = false;
@@ -344,6 +406,9 @@
       resize.disconnect();
       removeGestures();
       window.removeEventListener('keydown', shortcuts, true);
+      window.removeEventListener('keyup', releaseKey, true);
+      window.removeEventListener('pointermove', trackMouse);
+      window.removeEventListener('blur', loseFocus);
       window.removeEventListener('beforeunload', beforeUnload);
     };
   });
@@ -366,7 +431,7 @@
   {#if error}<StorageNotice {error} />{/if}
   <div class="drawing-page-viewport" bind:this={pageViewport}>
     <div class="drawing-canvas-layer" bind:this={canvasLayer}>
-      <svg bind:this={canvas} class:eraser={tool === 'eraser'} class="drawing-canvas" role="img" aria-label={`Drawing canvas for ${name}`} tabindex="-1"
+      <svg bind:this={canvas} class:eraser={tool === 'eraser'} class:moving class="drawing-canvas" role="img" aria-label={`Drawing canvas for ${name}`} tabindex="-1"
         viewBox={`0 0 ${DRAWING_WIDTH} ${canvasHeight}`} preserveAspectRatio="xMinYMin meet"
         width={DRAWING_WIDTH} height={canvasHeight}
         style:touch-action={penOnly ? 'pan-x pan-y pinch-zoom' : 'none'} onpointerdown={begin} onpointermove={move}
@@ -410,11 +475,15 @@
           </g>
         {/if}
       </svg>
-      {#if selection?.indices.size && !gesture}
-        <div class="lasso-clear" class:inside={selection.box.top * scale < 48}
-          style:left={`clamp(40px, ${(selection.box.left + selection.box.right) / 2 / DRAWING_WIDTH * 100}%, calc(100% - 40px))`}
+      {#if selection?.indices.size && !tracing}
+        <div class="lasso-actions" class:inside={selection.box.top * scale < 48} class:moving
+          style:left={`clamp(72px, ${(selection.box.left + selection.box.right) / 2 / DRAWING_WIDTH * 100}%, calc(100% - 72px))`}
           style:top={`${selection.box.top / canvasHeight * 100}%`}>
-          <Control onclick={clearSelection} disabled={saving || publishing} aria-label="Clear selected strokes">Clear</Control>
+          <Control onclick={clearSelection} disabled={saving || publishing || !!gesture} aria-label="Clear selected strokes">Clear</Control>
+          <span class="lasso-move" use:dragFromButton title="Hold and drag, or hold M and move the mouse">
+            <Control keys={moveKey} onclick={resumeEditing} disabled={saving || publishing}
+              aria-label="Move selected strokes" aria-keyshortcuts="M">Move</Control>
+          </span>
         </div>
       {/if}
     </div>
@@ -438,10 +507,16 @@
   .lasso-resize { fill: transparent; }
   .lasso-resize[data-lasso-drag="nw"], .lasso-resize[data-lasso-drag="se"] { cursor: nwse-resize; }
   .lasso-resize[data-lasso-drag="ne"], .lasso-resize[data-lasso-drag="sw"] { cursor: nesw-resize; }
-  .lasso-clear { position: absolute; translate: -50% calc(-100% - 4px); font-size: 14px; }
-  .lasso-clear.inside { translate: -50% 4px; }
-  .lasso-clear :global(button) {
+  .lasso-actions {
+    position: absolute; translate: -50% calc(-100% - 4px); font-size: 14px; display: flex; gap: 4px;
+  }
+  .lasso-actions.inside { translate: -50% 4px; }
+  .lasso-actions :global(button) {
     background: var(--background); color: var(--primary); border: 1px solid var(--tertiary);
     padding: 0 8px; line-height: 36px; white-space: nowrap;
   }
+  .lasso-move { display: inline-flex; touch-action: none; }
+  .lasso-move :global(button) { cursor: grab; }
+  .drawing-canvas.moving, .drawing-canvas.moving [data-lasso-drag], .moving .lasso-move :global(button) { cursor: grabbing; }
+  .moving .lasso-move :global(button) { outline: 2px solid var(--primary); outline-offset: -2px; }
 </style>

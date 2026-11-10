@@ -2213,6 +2213,55 @@ test('lasso release closes open traces, adds their union, and reselecting Lasso 
   expect(await coordinates()).toEqual(initial.slice(0, -1));
 });
 
+test('the lasso Move button drags by pointer or by holding its Keyflow shortcut', async ({ page }) => {
+  await createNote(page, 'move-lasso.txt');
+  await toolbar(page, 'Brush').click();
+  await page.getByRole('button', { name: /^Edit drawing drawing-/ }).click();
+  const canvas = page.getByRole('img', { name: /^Drawing canvas for / });
+  const tools = page.getByRole('group', { name: 'Drawing toolbar' });
+  const move = page.getByRole('button', { name: 'Move selected strokes', exact: true });
+  const points = () => canvas.locator('polyline').evaluateAll((lines) => lines.map((line) => line.getAttribute('points')));
+  const { x, y } = (await canvas.boundingBox())!;
+  await page.mouse.click(x + 110, y + 125);
+  await page.mouse.click(x + 290, y + 185);
+  const initial = await points();
+  await tools.getByRole('button', { name: 'Lasso', exact: true }).click();
+  await page.mouse.move(x + 65, y + 90);
+  await page.mouse.down();
+  for (const [dx, dy] of [[165, 90], [165, 165], [65, 165]]) await page.mouse.move(x + dx, y + dy);
+  await page.mouse.up();
+
+  await expect(move).toBeVisible();
+  const route = move.locator('.pending_route');
+  await expect(route).toHaveText('m');
+  const key = await route.innerText();
+  await page.mouse.move(x + 240, y + 120);
+  await page.keyboard.down(key);
+  await page.mouse.move(x + 268, y + 143, { steps: 4 });
+  const movedByKey = await points();
+  expect(movedByKey[0]).not.toEqual(initial[0]);
+  expect(movedByKey[1]).toEqual(initial[1]);
+  await page.keyboard.up(key);
+  await page.mouse.move(x + 290, y + 148);
+  expect(await points()).toEqual(movedByKey);
+
+  const box = (await move.boundingBox())!;
+  const mx = box.x + box.width / 2, my = box.y + box.height / 2;
+  await page.mouse.move(mx, my);
+  await page.mouse.down();
+  await page.mouse.move(mx + 34, my + 22, { steps: 4 });
+  await page.mouse.up();
+  const movedByButton = await points();
+  expect(movedByButton[0]).not.toEqual(movedByKey[0]);
+  expect(movedByButton[1]).toEqual(initial[1]);
+
+  const undo = tools.getByRole('button', { name: 'Undo', exact: true });
+  await undo.click();
+  expect(await points()).toEqual(movedByKey);
+  await undo.click();
+  expect(await points()).toEqual(initial);
+});
+
 test('drawing touch gestures undo, redo, pan and zoom; stylus-only mode persists and rejects fingers', async ({ page, context }) => {
   await page.setViewportSize({ width: 820, height: 620 });
   await startCreate(page);
