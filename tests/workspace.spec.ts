@@ -2060,6 +2060,99 @@ test('drawing pages preserve geometry through rotation, inline preview, and stan
   await squareFits(canvas);
 });
 
+test('SVG page lasso traces touch input and moves, resizes, and clears only enclosed strokes', async ({ page, context }) => {
+  await createNote(page, 'lasso.txt');
+  await toolbar(page, 'Brush').click();
+  const preview = page.getByRole('button', { name: /^Edit drawing drawing-/ });
+  await preview.click();
+  const tools = page.getByRole('group', { name: 'Drawing toolbar' });
+  const tool = (name: string) => tools.getByRole('button', { name, exact: true });
+  const canvas = page.getByRole('img', { name: /^Drawing canvas for / });
+  const strokes = canvas.locator('polyline');
+  const frame = canvas.locator('.lasso-frame');
+  const clear = page.getByRole('button', { name: 'Clear selected strokes', exact: true });
+  const { x, y } = (await canvas.boundingBox())!;
+  const drag = async (ax: number, ay: number, bx: number, by: number) => {
+    await page.mouse.move(ax, ay);
+    await page.mouse.down();
+    await page.mouse.move(bx, by);
+    await page.mouse.up();
+  };
+  await drag(x + 80, y + 135, x + 110, y + 135);
+  await drag(x + 85, y + 175, x + 105, y + 190);
+  // Both ends are inside, but the middle crosses the lasso's concave notch.
+  await drag(x + 110, y + 155, x + 215, y + 155);
+  await page.mouse.click(x + 310, y + 125);
+  const coordinates = () => strokes.evaluateAll((lines) => lines.map((line) => line.getAttribute('points')));
+  const initial = await coordinates();
+  expect(initial).toHaveLength(4);
+
+  await tool('Lasso').click();
+  await expect(tool('Lasso')).toHaveAttribute('aria-pressed', 'true');
+  const protocol = await context.newCDPSession(page);
+  const touch = (type: 'touchStart' | 'touchMove' | 'touchEnd', dx = 0, dy = 0) =>
+    protocol.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ id: 1, x: x + dx, y: y + dy }] });
+  await touch('touchStart', 50, 65);
+  await expect(canvas.locator('.lasso-contour circle')).toHaveCount(1);
+  for (const [dx, dy] of [[280, 65], [280, 225], [190, 225], [190, 110], [135, 110], [135, 225], [50, 225]]) {
+    await touch('touchMove', dx, dy);
+  }
+  await expect(canvas.locator('.lasso-contour circle')).toHaveCount(2);
+  await expect(canvas.locator('polygon.lasso-dashes')).toHaveCSS('animation-iteration-count', 'infinite');
+  await expect(clear).toHaveCount(0);
+  await touch('touchEnd');
+  await expect(clear).toBeVisible();
+  await expect(canvas.locator('.lasso-contour circle')).toHaveCount(0);
+  expect(await coordinates()).toEqual(initial);
+
+  await drag(x + 95, y + 100, x + 125, y + 122);
+  const moved = await coordinates();
+  const point = (line: string | null, i: number) => line!.split(' ')[i].split(',').map(Number);
+  const firstDelta = point(moved[0], 0).map((value, i) => value - point(initial[0], 0)[i]);
+  expect(firstDelta[0]).toBeGreaterThan(0);
+  expect(firstDelta[1]).toBeGreaterThan(0);
+  for (let i = 0; i < 2; i++) {
+    expect(point(moved[1], 0)[i] - point(initial[1], 0)[i]).toBeCloseTo(firstDelta[i], 1);
+  }
+  expect(moved.slice(2)).toEqual(initial.slice(2));
+
+  const handle = (await canvas.locator('[data-lasso-drag="se"]').boundingBox())!;
+  const hx = handle.x + handle.width / 2, hy = handle.y + handle.height / 2;
+  await drag(hx, hy, hx + 45, hy + 35);
+  const resized = await coordinates();
+  expect(point(resized[0], 1)[0] - point(resized[0], 0)[0]).toBeGreaterThan(point(moved[0], 1)[0] - point(moved[0], 0)[0]);
+  expect(resized.slice(2)).toEqual(initial.slice(2));
+
+  const clearBox = (await clear.boundingBox())!;
+  await touch('touchStart', clearBox.x + clearBox.width / 2 - x, clearBox.y + clearBox.height / 2 - y);
+  await touch('touchEnd');
+  await expect(frame).toHaveCount(0);
+  expect(await coordinates()).toEqual(initial.slice(2));
+  await tool('Undo').click();
+  expect(await coordinates()).toEqual(resized);
+  await tool('Undo').click();
+  expect(await coordinates()).toEqual(moved);
+  await tool('Redo').click();
+  expect(await coordinates()).toEqual(resized);
+  await tool('Redo').click();
+  expect(await coordinates()).toEqual(initial.slice(2));
+
+  // Pen input can create a new selection, and switching tools dismisses it.
+  const pen = (type: 'mousePressed' | 'mouseMoved' | 'mouseReleased', dx: number, dy: number) =>
+    protocol.send('Input.dispatchMouseEvent', { type, pointerType: 'pen', button: 'left', buttons: type === 'mouseReleased' ? 0 : 1, x: x + dx, y: y + dy });
+  await pen('mousePressed', 290, 100);
+  for (const [dx, dy] of [[335, 100], [335, 150], [290, 150]]) await pen('mouseMoved', dx, dy);
+  await pen('mouseReleased', 290, 150);
+  await expect(clear).toBeVisible();
+  await page.keyboard.press('ControlOrMeta+b');
+  await expect(frame).toHaveCount(0);
+  await expect(clear).toHaveCount(0);
+  await expect(tool('Brush')).toHaveAttribute('aria-pressed', 'true');
+  await tool('Exit').click();
+  await expect(preview.locator('polyline')).toHaveCount(2);
+  expect(await preview.locator('polyline').evaluateAll((lines) => lines.map((line) => line.getAttribute('points')))).toEqual(initial.slice(2));
+});
+
 test('drawing touch gestures undo, redo, pan and zoom; stylus-only mode persists and rejects fingers', async ({ page, context }) => {
   await page.setViewportSize({ width: 820, height: 620 });
   await startCreate(page);

@@ -1,13 +1,13 @@
 interface GestureActions {
   stylusOnly: () => boolean;
-  cancelStroke: () => void;
+  cancelGesture: () => void;
   endTouches: () => void;
   undo: () => void;
   redo: () => void;
 }
 
 /** Two/three-finger taps never commit the first finger's tentative stroke. */
-export function drawingGestures(canvas: SVGSVGElement, viewport: HTMLElement, actions: GestureActions) {
+export function drawingGestures(canvas: SVGSVGElement, layer: HTMLElement, viewport: HTMLElement, actions: GestureActions) {
   let started = 0, fingers = 0, moved = false, zoom = 1;
   const origins = new Map<number, { x: number; y: number }>();
   let previous: { x: number; y: number; distance: number } | undefined;
@@ -40,7 +40,7 @@ export function drawingGestures(canvas: SVGSVGElement, viewport: HTMLElement, ac
     for (const touch of fingerTouches(event.changedTouches)) origins.set(touch.identifier, { x: touch.clientX, y: touch.clientY });
     previous = pair(event.touches);
     if (fingers >= 2) {
-      actions.cancelStroke();
+      actions.cancelGesture();
       if ((!actions.stylusOnly() || fingers >= 3) && event.cancelable) event.preventDefault();
     }
   }
@@ -61,8 +61,8 @@ export function drawingGestures(canvas: SVGSVGElement, viewport: HTMLElement, ac
       const anchorX = previous.x - rect.left;
       const anchorY = previous.y - rect.top;
       const left = viewport.scrollLeft;
-      canvas.style.width = `${nextZoom * 100}%`;
-      canvas.style.maxWidth = 'none';
+      layer.style.width = `${nextZoom * 100}%`;
+      layer.style.maxWidth = 'none';
       viewport.scrollLeft = left + anchorX * (factor - 1) - (current.x - previous.x);
       scrollVertical(anchorY * (factor - 1) - (current.y - previous.y));
       zoom = nextZoom;
@@ -80,7 +80,7 @@ export function drawingGestures(canvas: SVGSVGElement, viewport: HTMLElement, ac
     fingers = 0; origins.clear(); actions.endTouches();
   }
   function cancel() {
-    fingers = 0; previous = undefined; origins.clear(); actions.cancelStroke(); actions.endTouches();
+    fingers = 0; previous = undefined; origins.clear(); actions.cancelGesture(); actions.endTouches();
   }
   canvas.addEventListener('touchstart', start, { passive: false });
   canvas.addEventListener('touchmove', move, { passive: false });
