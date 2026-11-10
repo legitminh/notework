@@ -23,6 +23,7 @@
     "@legitminh/keyflow": "github:legitminh/keyflow#60f46f819449906e615ef0b6d3a61acf25e07b40",
     "@replit/codemirror-vim": "^6.4.0",
     "pdf-lib": "^1.17.1",
+    "polyclip-ts": "^0.16.8",
     "svelte": "^5.57.3"
   },
   "devDependencies": {

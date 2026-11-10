@@ -2105,7 +2105,7 @@ test('SVG page lasso traces touch input and moves, resizes, and clears only encl
   await expect(canvas.locator('.lasso-contour circle')).toHaveCount(0);
   expect(await coordinates()).toEqual(initial);
 
-  await drag(x + 95, y + 100, x + 125, y + 122);
+  await drag(x + 50, y + 100, x + 80, y + 122);
   const moved = await coordinates();
   const point = (line: string | null, i: number) => line!.split(' ')[i].split(',').map(Number);
   const firstDelta = point(moved[0], 0).map((value, i) => value - point(initial[0], 0)[i]);
@@ -2151,6 +2151,66 @@ test('SVG page lasso traces touch input and moves, resizes, and clears only encl
   await tool('Exit').click();
   await expect(preview.locator('polyline')).toHaveCount(2);
   expect(await preview.locator('polyline').evaluateAll((lines) => lines.map((line) => line.getAttribute('points')))).toEqual(initial.slice(2));
+});
+
+test('lasso release closes open traces, adds their union, and reselecting Lasso resets the area', async ({ page, context }) => {
+  await startCreate(page);
+  await page.getByLabel('name', { exact: true }).fill('additive-lasso.svg');
+  await button(page, 'create svg file').click();
+  await openEditor(page);
+  const canvas = page.getByRole('img', { name: 'Drawing canvas for additive-lasso.svg' });
+  const lasso = page.getByRole('button', { name: 'Lasso', exact: true });
+  const clear = page.getByRole('button', { name: 'Clear selected strokes', exact: true });
+  const area = canvas.locator('.lasso-area .lasso-dashes');
+  const strokes = canvas.locator('polyline');
+  const selected = canvas.locator('polyline[data-lasso-drag]');
+  const { x, y } = (await canvas.boundingBox())!;
+  await page.mouse.click(x + 80, y + 120);
+  await page.mouse.move(x + 95, y + 145);
+  await page.mouse.down();
+  await page.mouse.move(x + 235, y + 145);
+  await page.mouse.up();
+  for (const dx of [245, 290, 335]) await page.mouse.click(x + dx, y + 115);
+  const coordinates = () => strokes.evaluateAll((lines) => lines.map((line) => line.getAttribute('points')));
+  const initial = await coordinates();
+  expect(initial).toHaveLength(5);
+
+  await lasso.click();
+  const protocol = await context.newCDPSession(page);
+  async function trace(start: [number, number], middle: [number, number][], end: [number, number]) {
+    await page.mouse.move(x + start[0], y + start[1]);
+    await page.mouse.down();
+    for (const [dx, dy] of middle) await page.mouse.move(x + dx, y + dy);
+    // Release at a new point without sending a preceding move there.
+    await protocol.send('Input.dispatchMouseEvent', { type: 'mouseReleased', button: 'left', buttons: 0, x: x + end[0], y: y + end[1] });
+  }
+  await trace([45, 85], [[165, 85], [165, 185]], [45, 185]);
+  await expect(selected).toHaveCount(1);
+  await expect(strokes.nth(0)).toHaveAttribute('data-lasso-drag', '');
+  await expect(area).toHaveAttribute('d', /^M[^M]+Z$/);
+
+  // Start inside the first contour. The long stroke fits only after both
+  // areas are joined, so appending the separately selected strokes would fail.
+  await trace([130, 104], [[265, 100], [265, 190]], [130, 190]);
+  await expect(selected).toHaveCount(3);
+  await expect(strokes.nth(1)).toHaveAttribute('data-lasso-drag', '');
+  await expect(area).toHaveAttribute('d', /^M[^M]+Z$/);
+
+  await trace([310, 85], [[360, 85], [360, 150]], [310, 150]);
+  await expect(selected).toHaveCount(4);
+  await expect(strokes.nth(3)).not.toHaveAttribute('data-lasso-drag');
+  await expect(area).toHaveAttribute('d', /^M[^M]+Z M[^M]+Z$/);
+  await page.mouse.click(x + 380, y + 160);
+  await expect(selected).toHaveCount(4);
+
+  await lasso.click();
+  await expect(lasso).toHaveAttribute('aria-pressed', 'true');
+  await expect(area).toHaveCount(0);
+  await expect(clear).toHaveCount(0);
+  expect(await coordinates()).toEqual(initial);
+  await trace([310, 85], [[360, 85], [360, 150]], [310, 150]);
+  await clear.click();
+  expect(await coordinates()).toEqual(initial.slice(0, -1));
 });
 
 test('drawing touch gestures undo, redo, pan and zoom; stylus-only mode persists and rejects fingers', async ({ page, context }) => {

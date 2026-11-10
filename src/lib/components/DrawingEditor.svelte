@@ -7,7 +7,7 @@
   import { onMount } from 'svelte';
   import { DRAWING_WIDTH, DRAWING_PAGE_HEIGHT, STROKE_WIDTH, drawingBottom, strokePoints, touchesStroke, type Drawing, type Point } from '../drawing';
   import { drawingGestures } from '../drawing-gestures';
-  import { dragBox, roundCoordinate, selectStrokes, transformSelection, type Corner, type Selection } from '../drawing-selection';
+  import { areaPath, dragBox, growSelection, roundCoordinate, transformSelection, type Corner, type Selection } from '../drawing-selection';
   import { WritePermissionRequired } from '../wiki';
   import { GitHubEditCancelled } from '../github/repository';
   import { draftQueue } from '../github/storage';
@@ -61,7 +61,8 @@
   const height = $derived(Math.max(drawingBottom(strokes) + DRAWING_PAGE_HEIGHT, selection?.box.bottom ?? 0));
   const canvasHeight = $derived(gesture?.limit ?? height);
   const penOnly = $derived(stylusOnly && tool !== 'lasso');
-  const contour = $derived(gesture?.kind === 'lasso' ? points : selection?.contour);
+  const outline = $derived(selection ? areaPath(selection.area) : '');
+  const tracing = $derived(gesture?.kind === 'lasso');
 
   function portal(element: HTMLElement, target?: HTMLElement) {
     if (!target) return;
@@ -115,13 +116,14 @@
       roundCoordinate(Math.max(0, Math.min(limit, position.y)))];
   }
 
-  function sample(event: PointerEvent) {
+  function sample(event: PointerEvent, final = false) {
     if (!gesture || event.pointerId !== gesture.pointer) return;
     const p = point(event, gesture.kind === 'transform' ? undefined : gesture.limit);
     if (!p) return;
     if (gesture.kind === 'brush' || gesture.kind === 'lasso') {
       const previous = points.at(-1);
-      if (!previous || Math.hypot(p[0] - previous[0], p[1] - previous[1]) >= 1) points = [...points, p];
+      const distance = previous ? Math.hypot(p[0] - previous[0], p[1] - previous[1]) : Infinity;
+      if (distance >= 1 || (final && gesture.kind === 'lasso' && distance > 0)) points = [...points, p];
     } else if (gesture.kind === 'eraser') {
       const remaining = strokes.filter((stroke) => !touchesStroke(stroke, p, scale));
       if (remaining.length !== strokes.length) strokes = remaining;
@@ -142,7 +144,7 @@
   }
 
   function chooseTool(next: Tool) {
-    if (tool === next) return;
+    if (tool === next && next !== 'lasso') return;
     cancelGesture();
     selection = undefined;
     tool = next;
@@ -182,7 +184,6 @@
       gesture = { ...common, kind: 'transform', origin, selection, corner };
       return;
     }
-    selection = undefined;
     gesture = { ...common, kind: tool };
     sample(event);
   }
@@ -199,10 +200,10 @@
     if (event.pointerType === 'touch') touches.delete(event.pointerId);
     if (!gesture || event.pointerId !== gesture.pointer) return;
     if (cancel) { cancelGesture(); return; }
-    sample(event);
+    sample(event, true);
     const { before, kind, limit } = gesture;
     gesture = undefined;
-    if (kind === 'lasso') selection = selectStrokes(strokes, points, frameMinimum, limit);
+    if (kind === 'lasso') selection = growSelection(strokes, points, frameMinimum, limit, selection);
     else commit(before, kind === 'brush' && points.length ? [...strokes, points] : strokes);
     points = [];
     if (dirty) scheduleAutosave();
@@ -371,28 +372,34 @@
         style:touch-action={penOnly ? 'pan-x pan-y pinch-zoom' : 'none'} onpointerdown={begin} onpointermove={move}
         onpointerup={(event) => finish(event)} onpointercancel={(event) => finish(event, true)}
         onlostpointercapture={(event) => finish(event, true)}>
-        {#each [...strokes, ...(gesture?.kind === 'brush' && points.length ? [points] : [])] as stroke}
+        {#each [...strokes, ...(gesture?.kind === 'brush' && points.length ? [points] : [])] as stroke, index}
           <polyline points={strokePoints(stroke)} fill="none" stroke="currentColor" stroke-width={STROKE_WIDTH}
-            stroke-linecap="round" stroke-linejoin="round" />
+            stroke-linecap="round" stroke-linejoin="round" data-lasso-drag={selection?.indices.has(index) && !tracing ? '' : undefined} />
         {/each}
-        {#if contour?.length}
-          {@const outline = strokePoints(contour)}
+        {#if outline}
+          <g class="lasso-area" aria-hidden="true">
+            <path d={outline} class="lasso-underlay" vector-effect="non-scaling-stroke" />
+            <path d={outline} class="lasso-dashes" vector-effect="non-scaling-stroke" />
+          </g>
+        {/if}
+        {#if tracing && points.length}
+          {@const draft = strokePoints(points)}
           <g class="lasso-contour" aria-hidden="true">
-            <polygon points={outline} class="lasso-underlay" vector-effect="non-scaling-stroke" />
-            <polygon points={outline} class="lasso-dashes" vector-effect="non-scaling-stroke" />
-            {#if gesture?.kind === 'lasso'}
-              <circle cx={contour[0][0]} cy={contour[0][1]} r={5 / scale} class="lasso-grip" vector-effect="non-scaling-stroke" />
-              {#if contour.length > 1}
-                {@const end = contour.at(-1)!}
-                <circle cx={end[0]} cy={end[1]} r={3 / scale} class="lasso-grip lasso-end" vector-effect="non-scaling-stroke" />
-              {/if}
+            <polygon points={draft} class="lasso-underlay" vector-effect="non-scaling-stroke" />
+            <polygon points={draft} class="lasso-dashes" vector-effect="non-scaling-stroke" />
+            <circle cx={points[0][0]} cy={points[0][1]} r={5 / scale} class="lasso-grip" vector-effect="non-scaling-stroke" />
+            {#if points.length > 1}
+              {@const end = points.at(-1)!}
+              <circle cx={end[0]} cy={end[1]} r={3 / scale} class="lasso-grip lasso-end" vector-effect="non-scaling-stroke" />
             {/if}
           </g>
         {/if}
-        {#if selection}
+        {#if selection?.indices.size && !tracing}
           {@const { left, right, top, bottom } = selection.box}
           <g aria-hidden="true">
-            <rect class="lasso-frame" data-lasso-drag="" x={left} y={top} width={right - left} height={bottom - top}
+            <rect class="lasso-frame" x={left} y={top} width={right - left} height={bottom - top}
+              vector-effect="non-scaling-stroke" />
+            <rect class="lasso-move-zone" data-lasso-drag="" x={left} y={top} width={right - left} height={bottom - top}
               vector-effect="non-scaling-stroke" />
             {#each corners as corner}
               {@const x = corner[1] === 'w' ? left : right}
@@ -403,7 +410,7 @@
           </g>
         {/if}
       </svg>
-      {#if selection && !gesture}
+      {#if selection?.indices.size && !gesture}
         <div class="lasso-clear" class:inside={selection.box.top * scale < 48}
           style:left={`clamp(40px, ${(selection.box.left + selection.box.right) / 2 / DRAWING_WIDTH * 100}%, calc(100% - 40px))`}
           style:top={`${selection.box.top / canvasHeight * 100}%`}>
@@ -419,11 +426,13 @@
 <style>
   .drawing-canvas-layer { position: relative; width: 100%; max-width: var(--page-max-width); }
   .drawing-canvas { max-width: 100%; }
-  .lasso-contour { pointer-events: none; fill: none; stroke-linejoin: round; }
+  .lasso-contour, .lasso-area { pointer-events: none; fill: none; stroke-linejoin: round; }
   .lasso-underlay { stroke: var(--background); stroke-width: 3; }
   .lasso-dashes { stroke: currentColor; stroke-width: 1.5; stroke-dasharray: 5 4; animation: march .45s linear infinite; }
   @keyframes march { to { stroke-dashoffset: -9; } }
-  .lasso-frame { fill: transparent; stroke: currentColor; stroke-opacity: .5; cursor: move; }
+  .lasso-frame { fill: none; stroke: currentColor; stroke-opacity: .5; pointer-events: none; }
+  .lasso-move-zone { fill: none; stroke: transparent; stroke-width: 18px; pointer-events: stroke; }
+  .lasso-move-zone, polyline[data-lasso-drag] { cursor: move; }
   .lasso-grip { fill: var(--background); stroke: currentColor; stroke-width: 1.5; pointer-events: none; }
   .lasso-end { fill: currentColor; stroke: var(--background); }
   .lasso-resize { fill: transparent; }

@@ -1,24 +1,32 @@
+import { union } from 'polyclip-ts';
 import { DRAWING_WIDTH, STROKE_WIDTH, type Drawing, type Point } from './drawing';
 
 export type Box = { left: number; top: number; right: number; bottom: number };
 export type Corner = 'nw' | 'ne' | 'sw' | 'se';
-export type Selection = { contour: readonly Point[]; box: Box; indices: ReadonlySet<number> };
+type Area = ReturnType<typeof union>;
+export type Selection = { area: Area; box: Box; indices: ReadonlySet<number> };
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 export const roundCoordinate = (value: number) => Math.round(value * 100) / 100;
 
-export function selectStrokes(strokes: Drawing, contour: readonly Point[], minimum: number, limit: number): Selection | undefined {
-  if (contour.length < 3) return;
+export function growSelection(strokes: Drawing, trace: readonly Point[], minimum: number, limit: number, previous?: Selection): Selection | undefined {
+  if (trace.length < 3) return previous;
+  // The trace can be open. Union closes its last edge and removes boundaries
+  // inside overlapping areas, so a stroke can fit across more than one trace.
+  const ring = trace.map(([x, y]): [number, number] => [x, y]);
+  const area = union([ring], ...(previous ? [previous.area] : []));
+  if (!area.length) return previous;
+  const rings = area.flat();
   let left = DRAWING_WIDTH, right = 0, top = limit, bottom = 0;
-  for (const [x, y] of contour) {
+  const edges = rings.flatMap((ring) => ring.slice(1).map((point, i) => [ring[i], point] as const));
+  for (const [[x, y]] of edges) {
     left = Math.min(left, x); right = Math.max(right, x);
     top = Math.min(top, y); bottom = Math.max(bottom, y);
   }
   const radius = STROKE_WIDTH / 2;
-  const edges = contour.map((point, i) => [point, contour[(i + 1) % contour.length]] as const);
-  const indices = new Set<number>();
+  const indices = new Set(previous?.indices);
   strokes.forEach((stroke, index) => {
-    if (!stroke.length || !stroke.every(([x, y]) =>
+    if (indices.has(index) || !stroke.length || !stroke.every(([x, y]) =>
       x >= left + radius && x <= right - radius && y >= top + radius && y <= bottom - radius)) return;
     const [x, y] = stroke[0];
     let inside = false;
@@ -34,10 +42,13 @@ export function selectStrokes(strokes: Drawing, contour: readonly Point[], minim
     }
     indices.add(index);
   });
-  if (!indices.size) return;
   const [x1, x2] = padAxis(left, right, minimum, DRAWING_WIDTH);
   const [y1, y2] = padAxis(top, bottom, minimum, limit);
-  return { contour, indices, box: { left: x1, top: y1, right: x2, bottom: y2 } };
+  return { area, indices, box: { left: x1, top: y1, right: x2, bottom: y2 } };
+}
+
+export function areaPath(area: Area) {
+  return area.flat().map((ring) => `M${ring.slice(0, -1).map(([x, y]) => `${x},${y}`).join(' ')}Z`).join(' ');
 }
 
 function padAxis(low: number, high: number, minimum: number, limit: number) {
@@ -84,10 +95,13 @@ export function transformSelection(strokes: Drawing, selection: Selection, box: 
   const { left, top, right, bottom } = selection.box;
   if (box.left === left && box.top === top && box.right === right && box.bottom === bottom) return { strokes, selection };
   const sx = (box.right - box.left) / (right - left), sy = (box.bottom - box.top) / (bottom - top);
-  const transform = ([x, y]: Point): Point =>
-    [roundCoordinate(box.left + (x - left) * sx), roundCoordinate(box.top + (y - top) * sy)];
+  const transform = ([x, y]: Point): [number, number] =>
+    [box.left + (x - left) * sx, box.top + (y - top) * sy];
   return {
-    strokes: strokes.map((stroke, i) => selection.indices.has(i) ? stroke.map(transform) : stroke),
-    selection: { ...selection, box, contour: selection.contour.map(transform) }
+    strokes: strokes.map((stroke, i) => selection.indices.has(i) ? stroke.map((point): Point => {
+      const [x, y] = transform(point);
+      return [roundCoordinate(x), roundCoordinate(y)];
+    }) : stroke),
+    selection: { ...selection, box, area: selection.area.map((polygon) => polygon.map((ring) => ring.map(transform))) }
   };
 }
