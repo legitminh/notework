@@ -25,7 +25,7 @@ main { padding: calc(var(--min-box) / 4); padding-bottom: calc(var(--min-box) * 
 .file-navigation-row { display: flex; align-items: flex-start; gap: calc(var(--min-box) / 2); max-width: 100%; }
 .file-navigation-row > .action:first-child { flex: none; }
 .file-navigation-row > .action:last-child { min-width: 0; }
-.hint { display: block; font-size: .5em; line-height: 1.5; opacity: .6; padding: .2em .5em .3em; }
+.resource-hint { display: block; font-size: .5em; line-height: 1.5; opacity: .6; padding: .2em .5em .3em; }
 hr { height: 1px; border: 0; background: var(--primary); opacity: .25; margin: calc(var(--min-box) / 4) 0; }
 .state-display { margin-top: var(--min-box); }
 h1, h2, h3, p { font-size: inherit; font-weight: 400; margin: 0; }

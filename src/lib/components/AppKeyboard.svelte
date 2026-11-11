@@ -93,6 +93,20 @@
 {/if}
 
 <style>
-  .keyboard-dock { position: fixed; z-index: 30; inset: auto 0 0; height: var(--keyboard-height); overflow: auto; border-top: 1px solid var(--tertiary); background: var(--background); --keyboard-key-height: 32px; --keyboard-font-size: 12px; }
+  .keyboard-dock {
+    position: fixed; z-index: 30; inset: auto 0 0; height: var(--keyboard-height);
+    overflow: auto; border-top: 1px solid var(--tertiary); background: var(--background);
+    padding-bottom: env(safe-area-inset-bottom, 0);
+    --keyboard-font-size: clamp(1rem, 2vw, 1.4rem);
+  }
+  /* Use Keyflow's demo dock layout with its native key minimums. Short
+     viewports scroll instead of compressing flick directions into the center. */
+  .keyboard-dock :global(.keyflow-keyboard) { height: 100%; }
+  .keyboard-dock :global(.keyboard-row) { flex: 1 0 auto; }
+  .keyboard-dock :global([data-layout="ascii"]),
+  .keyboard-dock :global([data-layout="60%"]),
+  .keyboard-dock :global([data-layout="ortholinear"]) {
+    --keyboard-font-size: clamp(.65rem, 1.3vw, 1rem);
+  }
   .shifted { --keyboard-key-background: rgb(128 128 128 / .2); }
 </style>

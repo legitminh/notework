@@ -89,20 +89,20 @@
   {#each results as node (node.id)}
     {#if singleAction}
       <Action label={node.name + (node.kind === 'directory' ? '/' : '')} onSelect={() => onSelect?.(node)} disabled={busy}>
-        <span class="hint">{workspace.label(node)}</span>
+        <span class="resource-hint">{workspace.label(node)}</span>
       </Action>
     {:else if node.kind === 'file'}
       <div class="file-navigation-row search-result-row">
         {#if !relocating}<Action label="open" onSelect={() => onOpen(node)} disabled={busy} />{/if}
         <Action label={node.name} onSelect={() => onNavigate(node.id)} disabled={busy}>
-          <span class="hint">{workspace.label(node)}</span>
+          <span class="resource-hint">{workspace.label(node)}</span>
         </Action>
       </div>
     {:else}
       <div class="file-navigation-row search-result-row">
         {#if relocating}<Action label="choose" onSelect={() => onChoose?.(node)} disabled={busy} />{/if}
         <Action label={`${node.name}/`} onSelect={() => onNavigate(node.id)} disabled={busy}>
-          <span class="hint">{workspace.label(node)}</span>
+          <span class="resource-hint">{workspace.label(node)}</span>
         </Action>
       </div>
     {/if}
