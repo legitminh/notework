@@ -3,7 +3,7 @@ import { assertAvailable, containingFolder, requireWrite, validFilename, wikiPat
 import { decodedChunks, encodedChunks, inspectText, type TextFormat } from './text-resource';
 import { saveWorkspace, snapshotWorkspace } from './persistence';
 import { Workspace, ROOT, nodeId, type StateNode } from './workspace';
-import { GitHubDirectory, GitHubFile, type GitHubRepository } from './github/repository';
+import { GitHubDirectory, GitHubFile, withGitHubRepositories, type GitHubRepository } from './github/repository';
 import { GitHubWriteUncertain } from './github/api';
 
 const native = (handle: LocalHandle) => handle as unknown as FileSystemHandle;
@@ -35,7 +35,11 @@ async function writeText(handle: LocalFile, text: string, format: TextFormat) {
 }
 
 /** Copy, rebind graph references, then remove the original; shared by rename and relocate. */
-export async function transferResource(workspace: Workspace, source: StateNode, name: string, target?: StateNode | null) {
+export function transferResource(workspace: Workspace, source: StateNode, name: string, target?: StateNode | null) {
+  return withGitHubRepositories([workspace.github(source.sourceId), target ? workspace.github(target.sourceId) : undefined],
+    () => transferResourceInternal(workspace, source, name, target));
+}
+async function transferResourceInternal(workspace: Workspace, source: StateNode, name: string, target?: StateNode | null) {
   const relocating = target !== undefined;
   const sourceRepo = workspace.github(source.sourceId);
   const destinationRepo = relocating ? (target ? workspace.github(target.sourceId) : undefined) : sourceRepo;
@@ -209,7 +213,7 @@ export async function transferResource(workspace: Workspace, source: StateNode, 
       const after = (pending?.after ?? before).replace(wikiPattern, (raw, token: string) => {
         const updated = replacements.get(token.trim());
         return updated ? `[[${updated}]]` : raw;
-      }).replace(/^([ \t]*\\svgpage\[)([^\]\r\n]+)(\][ \t]*\r?)$/gm,
+      }).replace(/^([ \t]*\\(?:svg|png|jpeg|heic|ora)page\[)([^\]\r\n]+)(\][ \t]*\r?)$/gm,
         (raw, prefix: string, token: string, suffix: string) => replacements.has(token) ? prefix + replacements.get(token) + suffix : raw);
       if (before === after) continue;
       const targetHandle = await next.handle(afterNode.id) as LocalFile;

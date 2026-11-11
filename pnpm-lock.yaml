@@ -27,11 +27,17 @@ importers:
         specifier: ^6.43.15
         version: 6.43.15
       '@legitminh/keyflow':
-        specifier: github:legitminh/keyflow#60f46f819449906e615ef0b6d3a61acf25e07b40
-        version: https://codeload.github.com/legitminh/keyflow/tar.gz/60f46f819449906e615ef0b6d3a61acf25e07b40(svelte@5.57.3(@typescript-eslint/types@8.71.0))
+        specifier: github:legitminh/keyflow#eff2b0b3b05b1b8c84619e688e7bbe28ee9e1824
+        version: https://codeload.github.com/legitminh/keyflow/tar.gz/eff2b0b3b05b1b8c84619e688e7bbe28ee9e1824(svelte@5.57.3(@typescript-eslint/types@8.71.0))
       '@replit/codemirror-vim':
         specifier: ^6.4.0
         version: 6.4.0(@codemirror/commands@6.11.1)(@codemirror/language@6.13.1)(@codemirror/search@6.7.2)(@codemirror/state@6.7.6)(@codemirror/view@6.43.15)
+      elheif:
+        specifier: ^0.1.0
+        version: 0.1.0
+      fflate:
+        specifier: ^0.8.3
+        version: 0.8.3
       pdf-lib:
         specifier: ^1.17.1
         version: 1.17.1
@@ -106,9 +112,9 @@ packages:
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
 
-  '@legitminh/keyflow@https://codeload.github.com/legitminh/keyflow/tar.gz/60f46f819449906e615ef0b6d3a61acf25e07b40':
-    resolution: {tarball: https://codeload.github.com/legitminh/keyflow/tar.gz/60f46f819449906e615ef0b6d3a61acf25e07b40}
-    version: 0.2.0
+  '@legitminh/keyflow@https://codeload.github.com/legitminh/keyflow/tar.gz/eff2b0b3b05b1b8c84619e688e7bbe28ee9e1824':
+    resolution: {tarball: https://codeload.github.com/legitminh/keyflow/tar.gz/eff2b0b3b05b1b8c84619e688e7bbe28ee9e1824}
+    version: 0.3.0
     engines: {node: '>=22'}
     peerDependencies:
       svelte: ^5.56.10
@@ -339,6 +345,9 @@ packages:
   devalue@5.9.4:
     resolution: {integrity: sha512-sPAT4pztbu6586/hrhOnMKS17IJrvg12mXiSPSS3W5qDeN2RGgvZ0diZCm31dBbnevfVmujNO3IM2wrS4Y2Rhg==}
 
+  elheif@0.1.0:
+    resolution: {integrity: sha512-3gSMV3RuOY5pjT1xKzWRsl/UnV/40goB0Q/mIF1N2CsMe+gh73HHcuKg2XOFy362NOcW+C625aGvlTcQqFQUOg==}
+
   esm-env@1.2.2:
     resolution: {integrity: sha512-Epxrv+Nr/CaL4ZcFGPJIYLWFom+YeV1DqMLHJoEd9SYRxNbaFruBwfEX/kkHUJf55j2+TUbmDcmuilbP1TmXHA==}
 
@@ -358,6 +367,9 @@ packages:
     peerDependenciesMeta:
       picomatch:
         optional: true
+
+  fflate@0.8.3:
+    resolution: {integrity: sha512-tbZNuJrLwGUp3zshBtdy4W+ORxZuIh8a5ilyIEQDC5rY1f3U20JMry0Ll3WBzU58EZKsEuJFXhb5gwv8CsPvgA==}
 
   fsevents@2.3.3:
     resolution: {integrity: sha512-5xoDfX+fL7faATnagmWPpbFtwh/R77WmMMqqHGS65C3vvB0YHrgF+B1YmZ3441tMj5n63k0212XNoJwzlhffQw==}
@@ -676,7 +688,7 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.6.0
 
-  '@legitminh/keyflow@https://codeload.github.com/legitminh/keyflow/tar.gz/60f46f819449906e615ef0b6d3a61acf25e07b40(svelte@5.57.3(@typescript-eslint/types@8.71.0))':
+  '@legitminh/keyflow@https://codeload.github.com/legitminh/keyflow/tar.gz/eff2b0b3b05b1b8c84619e688e7bbe28ee9e1824(svelte@5.57.3(@typescript-eslint/types@8.71.0))':
     dependencies:
       svelte: 5.57.3(@typescript-eslint/types@8.71.0)
 
@@ -836,6 +848,8 @@ snapshots:
 
   devalue@5.9.4: {}
 
+  elheif@0.1.0: {}
+
   esm-env@1.2.2: {}
 
   esrap@2.4.0(@typescript-eslint/types@8.71.0):
@@ -847,6 +861,8 @@ snapshots:
   fdir@6.5.0(picomatch@4.0.7):
     optionalDependencies:
       picomatch: 4.0.7
+
+  fflate@0.8.3: {}
 
   fsevents@2.3.3:
     optional: true

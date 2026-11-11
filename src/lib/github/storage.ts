@@ -93,11 +93,41 @@ export async function clearRepository(id: string) {
     const store = tx.objectStore('data');
     store.delete(`token:${id}`);
     store.delete(`snapshot:${id}`);
+    store.delete(`sync-jobs:${id}`);
     for (const prefix of [`blob:${id}:`, `draft:${id}:`]) {
       const cursor = store.openKeyCursor(IDBKeyRange.bound(prefix, prefix + '\uffff'));
       cursor.onsuccess = () => { if (cursor.result) { store.delete(cursor.result.primaryKey); cursor.result.continue(); } };
     }
     tx.oncomplete = () => resolve();
     tx.onabort = () => reject(tx.error);
+  });
+}
+
+export interface GitHubSyncJob {
+  id: string;
+  nodeId: string;
+  path: string;
+  name: string;
+  draft: GitHubDraft;
+  text: boolean;
+  createTokens: string[];
+  createPages: string[];
+}
+export const readSyncJobs = (id: string) => get<GitHubSyncJob[]>(`sync-jobs:${id}`).then((jobs) => jobs ?? []);
+
+/** Read-modify-write inside one transaction so tabs cannot replace one another's jobs. */
+export async function updateSyncJobs(id: string, update: (jobs: GitHubSyncJob[]) => GitHubSyncJob[]) {
+  const database = await db();
+  return new Promise<GitHubSyncJob[]>((resolve, reject) => {
+    const tx = database.transaction('data', 'readwrite'), store = tx.objectStore('data');
+    const key = `sync-jobs:${id}`;
+    let jobs: GitHubSyncJob[];
+    const request = store.get(key);
+    request.onsuccess = () => {
+      jobs = update(request.result ?? []);
+      store.put(jobs, key);
+    };
+    tx.oncomplete = () => resolve(jobs);
+    tx.onabort = () => reject(tx.error ?? new Error('Could not persist the GitHub sync queue.'));
   });
 }

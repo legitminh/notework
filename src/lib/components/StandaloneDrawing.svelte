@@ -1,10 +1,11 @@
 <script lang="ts">
+  import { getBackgroundSync } from '../github/background.svelte';
+  import { GitHubFile } from '../github/repository';
   import Control from './Control.svelte';
   import StorageNotice from './StorageNotice.svelte';
   import { onMount } from 'svelte';
   import type { Workspace, StateNode } from '../workspace';
-  import { commitDrawing, hasDrawingDraft, loadDrawing, saveDrawing, type DrawingResource } from '../drawing-files';
-  import type { ResolveGitHubConflict } from '../github/repository';
+  import { hasDrawingDraft, loadDrawing, saveDrawing, type DrawingResource } from '../drawing-files';
   import { isMissing } from '../filesystem';
   import ExportDialog from './ExportDialog.svelte';
   import type { PdfMargins } from '../export-preferences';
@@ -12,14 +13,17 @@
   import type { PdfSource } from '../pdf-export';
   import type { Drawing } from '../drawing';
   import DrawingEditor from './DrawingEditor.svelte';
+  import ImageEditor from './ImageEditor.svelte';
 
-  let { workspace, node, onExit, onMissing, stylusOnly, pdfMargins, autosaveMs, resolveGitHubConflict }: {
+  let { workspace, node, onExit, onMissing, stylusOnly, pdfMargins, autosaveMs }: {
     stylusOnly: boolean;
     autosaveMs: number;
-    resolveGitHubConflict: ResolveGitHubConflict;
     pdfMargins: PdfMargins;
     workspace: Workspace; node: StateNode; onExit: () => void | Promise<void>; onMissing: () => void;
   } = $props();
+  const sync = getBackgroundSync();
+  let drawingEditor = $state<{ saveForNavigation: () => Promise<boolean> }>();
+  export async function saveForNavigation() { return await drawingEditor?.saveForNavigation() ?? !resource; }
   let resource = $state.raw<DrawingResource>();
   let error = $state.raw<unknown>();
   let exportSource = $state.raw<PdfSource>();
@@ -49,15 +53,17 @@
 </script>
 
 {#if resource}
+  {#if resource.image}
+    <ImageEditor bind:this={drawingEditor} {resource} {node} {stylusOnly} {autosaveMs} {pdfMargins} {onExit} onSaved={(saved) => { resource = saved; }} />
+  {:else}
   <div class="standalone-drawing-editor" bind:this={editor}>
-  <DrawingEditor {stylusOnly} {autosaveMs} name={node.name} initial={resource.strokes} initialDraft={hasDrawingDraft(resource)} {onExit} onExport={exportDrawing}
+  <DrawingEditor bind:this={drawingEditor} {stylusOnly} {autosaveMs} name={node.name} initial={resource.strokes} initialDraft={hasDrawingDraft(resource)} {onExit} onExport={exportDrawing}
     onSave={async (strokes, requestWrite) => { resource = await saveDrawing(resource!, strokes, requestWrite); }}
     onCommit={node.storage === 'github' ? async () => {
-      const saved = await commitDrawing(resource!, resolveGitHubConflict);
-      if (!saved) onMissing();
-      else resource = saved;
+      if (resource?.handle instanceof GitHubFile) await sync.enqueue(node, resource.handle);
     } : undefined} />
   </div>
+  {/if}
 {:else if error}
   <Control onclick={onExit}>Exit</Control>
   <StorageNotice {error} />

@@ -8,16 +8,17 @@ import { wikiPattern } from './wiki';
 
 import type { ExportStyle } from './export-style';
 
+export interface RasterDrawing { blob: Blob; width: number; height: number }
 export type PdfSource = {
   name: string;
   style: ExportStyle;
-} & ({ kind: 'text'; lines: () => Iterable<string>; drawing: (name: string) => Promise<Drawing> } |
-  { kind: 'drawing'; strokes: Drawing });
+} & ({ kind: 'text'; lines: () => Iterable<string>; drawing: (name: string) => Promise<Drawing | RasterDrawing> } |
+  { kind: 'drawing'; strokes: Drawing } | { kind: 'image'; image: RasterDrawing });
 
 export type ExportFormat = 'pdf' | 'png' | 'jpeg';
 
 interface Fragment { text: string; x: number; top: number; baseline: number; width: number; height: number; color: string }
-interface DrawingBlock { top: number; width: number; strokes: Drawing }
+interface DrawingBlock { top: number; width: number; strokes: Drawing; image?: RasterDrawing }
 const yieldTask = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
 /** Full-document browser layout, independent of CodeMirror's virtualized DOM. */
@@ -25,6 +26,7 @@ async function layout(source: PdfSource, signal: AbortSignal) {
   const { style } = source;
   const fragments: Fragment[] = [], drawings: DrawingBlock[] = [];
   let width = style.width, height = 0;
+  if (source.kind === 'image') return { fragments, drawings: [{ top: 0, width, strokes: [], image: source.image }], width, height: source.image.height / source.image.width * width };
   if (source.kind === 'drawing') {
     return { fragments, drawings: [{ top: 0, width, strokes: source.strokes }], width,
       height: (drawingBottom(source.strokes) || DRAWING_PAGE_HEIGHT) * width / DRAWING_WIDTH };
@@ -50,9 +52,11 @@ async function layout(source: PdfSource, signal: AbortSignal) {
       signal.throwIfAborted();
       const page = svgPagePattern.exec(line);
       if (page) {
-        const strokes = await source.drawing(page[1]);
-        drawings.push({ top: height, width: style.width, strokes });
-        height += (drawingBottom(strokes) || DRAWING_PAGE_HEIGHT) * style.width / DRAWING_WIDTH;
+        const resource = await source.drawing(page[1]);
+        const image = 'blob' in resource ? resource : undefined;
+        const strokes = image ? [] : resource as Drawing;
+        drawings.push({ top: height, width: style.width, strokes, image });
+        height += image ? image.height / image.width * style.width : (drawingBottom(strokes) || DRAWING_PAGE_HEIGHT) * style.width / DRAWING_WIDTH;
         continue;
       }
       const paragraph = document.createElement('div');
@@ -169,6 +173,11 @@ export async function createPdf(source: PdfSource, signal: AbortSignal): Promise
   const ink = color(source.style.foreground);
   for (const drawing of content.drawings) {
     signal.throwIfAborted();
+    if (drawing.image) {
+      const image = await pdf.embedPng(await drawing.image.blob.arrayBuffer());
+      const height = drawing.image.height / drawing.image.width * drawing.width;
+      page.drawImage(image, { x: left * scale, y: page.getHeight() - (top + drawing.top + height) * scale, width: drawing.width * scale, height: height * scale });
+    }
     const unit = drawing.width / DRAWING_WIDTH * scale;
     for (const points of drawing.strokes) {
       if (!points.length) continue;
@@ -225,6 +234,11 @@ export async function createRaster(source: PdfSource, format: 'png' | 'jpeg', si
   context.lineJoin = 'round';
   for (const drawing of content.drawings) {
     signal.throwIfAborted();
+    if (drawing.image) {
+      const bitmap = await createImageBitmap(drawing.image.blob);
+      try { context.drawImage(bitmap, left, top + drawing.top, drawing.width, drawing.image.height / drawing.image.width * drawing.width); }
+      finally { bitmap.close(); }
+    }
     const unit = drawing.width / DRAWING_WIDTH;
     context.lineWidth = STROKE_WIDTH * unit;
     for (const points of drawing.strokes) {

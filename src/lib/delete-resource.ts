@@ -1,3 +1,4 @@
+import { withGitHubRepositories } from './github/repository';
 import { deleteBrowserResource } from './browser-documents';
 import type { LocalHandle } from './filesystem';
 import { requireWrite } from './wiki';
@@ -13,7 +14,12 @@ async function matchingChild(parent: FileSystemDirectoryHandle, node: StateNode,
 }
 
 /** Delete the resource first. Callers prune graph metadata only after this resolves. */
-export async function deleteResource(workspace: Workspace, node: StateNode) {
+export function deleteResource(workspace: Workspace, node: StateNode) {
+  const repository = workspace.github(node.sourceId);
+  repository?.assertNoQueuedSync(node.path.join('/'));
+  return withGitHubRepositories([repository], () => deleteResourceInternal(workspace, node));
+}
+async function deleteResourceInternal(workspace: Workspace, node: StateNode) {
   const handle = workspace.cachedHandle(node.id);
   if (!handle) throw new Error('The resource must be reopened before it can be deleted.');
   if (node.storage === 'browser') {

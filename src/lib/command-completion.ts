@@ -1,3 +1,4 @@
+import { imageFormat } from './images';
 import { pickedCompletion, type Completion, type CompletionContext, type CompletionResult } from '@codemirror/autocomplete';
 import { Transaction } from '@codemirror/state';
 import { resourceProximity } from './resource-proximity';
@@ -39,6 +40,11 @@ function drawingTargets(workspace: Workspace, source: StateNode, query: string, 
     });
 }
 
+function targetsFor(format: string): typeof drawingTargets {
+  return (...args) => drawingTargets(...args).filter((option) => format === 'svg'
+    ? option.label.toLowerCase().endsWith('.svg') : imageFormat(option.label) === format);
+}
+
 interface EditorCommand {
   name: string;
   detail: string;
@@ -47,7 +53,7 @@ interface EditorCommand {
 }
 
 const commands: readonly EditorCommand[] = [
-  { name: 'svgpage', detail: 'Insert a drawing page', targets: drawingTargets },
+  ...['svg', 'png', 'jpeg', 'heic', 'ora'].map((format) => ({ name: `${format}page`, detail: `Insert a ${format.toUpperCase()} page`, targets: targetsFor(format) })),
   { name: 'pretty', detail: 'Format the following lines', placement: 'next-line' },
   { name: 'unpretty', detail: 'Return to regular text', placement: 'next-line' },
   { name: 'pretty1', detail: 'Format a block, then return to regular text', placement: 'brackets' },

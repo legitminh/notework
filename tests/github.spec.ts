@@ -213,12 +213,11 @@ test('an expired token can be replaced from the error without losing the open dr
   await token.fill('test-token-renewed');
   await token.press('Enter');
   await expect(dialog).toHaveCount(0);
-  await expect(notice).toHaveCount(0);
-  await expect(editor(page, 'note.txt')).toHaveText('Unpublished edit');
-  await exit(page).click();
   await expect(action(page, 'open')).toBeVisible();
-  expect(repo.messages).toEqual(['edit: note.txt']);
-  expect(repo.content('note.txt')).toBe('Unpublished edit');
+  await page.getByRole('button', { name: 'Retry GitHub sync', exact: true }).click();
+  await expect(action(page, 'open')).toBeVisible();
+  await expect.poll(() => repo.messages).toEqual(['edit: note.txt']);
+  await expect.poll(() => repo.content('note.txt')).toBe('Unpublished edit');
 
   repo.rotateToken('test-token-startup');
   await page.reload();
@@ -237,13 +236,13 @@ test('repository syncs on startup and Exit commits only the edit onto the latest
   await expect(editor(page, 'note.txt')).toHaveText('Original');
   await editor(page, 'note.txt').fill('First edit\n');
   await expect(page.getByText('draft saved in this browser', { exact: false })).toBeVisible();
-  expect(repo.messages).toEqual([]);
+  await expect.poll(() => repo.messages).toEqual([]);
   repo.advance({ 'notes/new.txt': 'New upstream file' });
   await exit(page).click();
   await expect(action(page, 'open')).toBeVisible();
-  expect(repo.messages).toEqual(['edit: note.txt']);
-  expect(repo.content('note.txt')).toBe('First edit\n');
-  expect(repo.content('notes/new.txt')).toBe('New upstream file');
+  await expect.poll(() => repo.messages).toEqual(['edit: note.txt']);
+  await expect.poll(() => repo.content('note.txt')).toBe('First edit\n');
+  await expect.poll(() => repo.content('notes/new.txt')).toBe('New upstream file');
 
   repo.upstream({ 'note.txt': 'Updated outside Notework', 'fresh.txt': 'Discovered on startup' });
   await page.reload();
@@ -253,7 +252,7 @@ test('repository syncs on startup and Exit commits only the edit onto the latest
   await expect(editor(page, 'note.txt')).toHaveText('Updated outside Notework');
   await exit(page).click();
   await expect(action(page, 'open')).toBeVisible();
-  expect(repo.messages).toEqual(['edit: note.txt']);
+  await expect.poll(() => repo.messages).toEqual(['edit: note.txt']);
 });
 
 test('reopening a GitHub folder lists newly added text files without an app reload', async ({ page }) => {
@@ -272,7 +271,7 @@ test('reopening a GitHub folder lists newly added text files without an app relo
   await expect(action(page, 'image.bin')).toHaveCount(0);
   await openNote(page, 'viet.phonetic.basis');
   await expect(editor(page, 'viet.phonetic.basis')).toContainText('Cơ sở ngữ âm tiếng Việt');
-  expect(repo.messages).toEqual([]);
+  await expect.poll(() => repo.messages).toEqual([]);
 });
 
 test('Vietnamese and Unicode controls survive autosave, Exit, and reopening the GitHub file', async ({ page }) => {
@@ -288,8 +287,8 @@ test('Vietnamese and Unicode controls survive autosave, Exit, and reopening the 
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
   await exit(page).click();
   await expect(action(page, 'open')).toBeVisible();
-  expect(repo.content(name)).toBe(input);
-  expect(repo.messages).toEqual([`edit: ${name}`]);
+  await expect.poll(() => repo.content(name)).toBe(input);
+  await expect.poll(() => repo.messages).toEqual([`edit: ${name}`]);
 
   await page.reload();
   await action(page, 'notebook/').click();
@@ -307,11 +306,10 @@ test('name search across a GitHub tree reads only matching blobs and normalizes 
   repo.requests.length = 0;
   await action(page, 'search').click();
   await page.getByRole('searchbox').fill('VIỆT'.normalize('NFD'));
-  await expect(page.locator('.search-status')).toHaveText('1 result found');
+  await expect(page.locator('.search-status')).toHaveText('2 results found');
   await expect(page.locator('.search-result-row').getByRole('button', { name: new RegExp(name) })).toBeVisible();
   expect(repo.requests.filter((request) => request.startsWith('GET /git/blobs/'))).toEqual([
-    `GET /git/blobs/${sha(Buffer.from('Cơ sở ngữ âm'))}`,
-    `GET /git/blobs/${sha(binaryImage)}`
+    `GET /git/blobs/${sha(Buffer.from('Cơ sở ngữ âm'))}`
   ]);
 });
 
@@ -322,6 +320,7 @@ test('same-file branch race opens two editable versions and publishes the select
   await editor(page, 'note.txt').fill('My version');
   repo.advance({ 'note.txt': 'Upstream version' });
   await exit(page).click();
+  await page.getByRole('button', { name: 'Review GitHub conflict', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'GitHub conflict' });
   const local = dialog.getByRole('textbox', { name: 'Your version' });
   const remote = dialog.getByRole('textbox', { name: 'GitHub version' });
@@ -329,11 +328,11 @@ test('same-file branch race opens two editable versions and publishes the select
   await expect(remote).toHaveValue('Upstream version');
   await local.fill('Edited local option');
   await remote.fill('Edited upstream option');
-  expect(repo.content('note.txt')).toBe('Upstream version');
+  await expect.poll(() => repo.content('note.txt')).toBe('Upstream version');
   await dialog.getByRole('button', { name: 'Keep GitHub version', exact: true }).click();
   await expect(action(page, 'open')).toBeVisible();
-  expect(repo.content('note.txt')).toBe('Edited upstream option');
-  expect(repo.messages).toEqual(['edit: note.txt']);
+  await expect.poll(() => repo.content('note.txt')).toBe('Edited upstream option');
+  await expect.poll(() => repo.messages).toEqual(['edit: note.txt']);
 });
 
 test('repeated saves keep a recoverable draft; Exit shows progress and publishes it once', async ({ page }) => {
@@ -352,7 +351,7 @@ test('repeated saves keep a recoverable draft; Exit shows progress and publishes
   await expect(draft).toBeVisible();
   await expect(syncProgress(page)).toHaveCount(0);
   expect(repo.requests).toEqual([]);
-  expect(repo.messages).toEqual([]);
+  await expect.poll(() => repo.messages).toEqual([]);
 
   await page.reload();
   await action(page, 'notebook/').click();
@@ -363,20 +362,22 @@ test('repeated saves keep a recoverable draft; Exit shows progress and publishes
   try {
     await held.started;
     await expect(syncProgress(page)).toBeVisible();
-    await expect(page.getByRole('status').filter({ hasText: 'Keep Notework open' })).toBeVisible();
+    await expect(page.getByRole('status').filter({ hasText: 'in the background' })).toBeVisible();
     const bar = (await syncProgress(page).boundingBox())!;
     expect(bar.y + bar.height).toBeGreaterThan(page.viewportSize()!.height - 20);
-    expect(await page.evaluate(() => !window.dispatchEvent(new Event('beforeunload', { cancelable: true })))).toBe(true);
-    await expect(text).not.toBeEditable();
-    await page.keyboard.press('Meta+b');
-    await expect(text).toHaveText('First snapshot plus later edits');
-    expect(repo.content('note.txt')).toBe('Original');
+    expect(await page.evaluate(() => window.dispatchEvent(new Event('beforeunload', { cancelable: true })))).toBe(true);
+    await expect(action(page, 'open')).toBeVisible();
+    await action(page, 'home').click();
+    await expect(action(page, 'notebook/')).toBeVisible();
+    await action(page, 'notebook/').click();
+    await action(page, 'note.txt').click();
+    await expect.poll(() => repo.content('note.txt')).toBe('Original');
   } finally { held.resume(); }
   await expect(action(page, 'open')).toBeVisible();
   await expect(syncProgress(page)).toHaveCount(0);
   expect(await page.evaluate(() => window.dispatchEvent(new Event('beforeunload', { cancelable: true })))).toBe(true);
-  expect(repo.content('note.txt')).toBe('First snapshot plus later edits');
-  expect(repo.messages).toEqual(['edit: note.txt']);
+  await expect.poll(() => repo.content('note.txt')).toBe('First snapshot plus later edits');
+  await expect.poll(() => repo.messages).toEqual(['edit: note.txt']);
 });
 
 test('Vim :w saves a browser draft without publishing', async ({ page }) => {
@@ -394,11 +395,11 @@ test('Vim :w saves a browser draft without publishing', async ({ page }) => {
   await page.keyboard.type(':w');
   await page.keyboard.press('Enter');
   await expect(page.getByText(/draft saved in this browser/)).toBeVisible();
-  expect(repo.messages).toEqual([]);
+  await expect.poll(() => repo.messages).toEqual([]);
   await exit(page).click();
   await expect(action(page, 'open')).toBeVisible();
-  expect(repo.content('note.txt')).toBe('Original plus Vim edits');
-  expect(repo.messages).toEqual(['edit: note.txt']);
+  await expect.poll(() => repo.content('note.txt')).toBe('Original plus Vim edits');
+  await expect.poll(() => repo.messages).toEqual(['edit: note.txt']);
 });
 
 test('retry after an unconfirmed GitHub response does not duplicate the commit', async ({ page }) => {
@@ -409,13 +410,13 @@ test('retry after an unconfirmed GitHub response does not duplicate the commit',
   await text.fill('Published once');
   repo.loseResponse();
   await exit(page).click();
-  await expect(page.getByRole('alert')).toContainText('GitHub did not confirm');
+  await expect(page.locator('.sync-progress')).toContainText('GitHub did not confirm');
   await expect(syncProgress(page)).toHaveCount(0);
-  await expect(text).toBeEditable();
-  await exit(page).click();
   await expect(action(page, 'open')).toBeVisible();
-  expect(repo.content('note.txt')).toBe('Published once');
-  expect(repo.messages).toEqual(['edit: note.txt']);
+  await page.getByRole('button', { name: 'Retry GitHub sync', exact: true }).click();
+  await expect(action(page, 'open')).toBeVisible();
+  await expect.poll(() => repo.content('note.txt')).toBe('Published once');
+  await expect.poll(() => repo.messages).toEqual(['edit: note.txt']);
 });
 
 test('drawing saves stay local until Exit publishes all strokes in one commit', async ({ page }) => {
@@ -437,19 +438,19 @@ test('drawing saves stay local until Exit publishes all strokes in one commit', 
   await stroke(75);
   await page.keyboard.press('Control+s');
   await expect(draft).toBeVisible();
-  expect(repo.messages).toEqual([]);
+  await expect.poll(() => repo.messages).toEqual([]);
   const held = repo.holdPublish();
   await exit(page, 'Drawing toolbar').click();
   try {
     await held.started;
     await expect(syncProgress(page)).toBeVisible();
-    await stroke(125);
-    await expect(canvas.locator('polyline')).toHaveCount(2);
+    await expect(action(page, 'open')).toBeVisible();
+    await expect(canvas).toHaveCount(0);
   } finally { held.resume(); }
   await expect(action(page, 'open')).toBeVisible();
   await expect(syncProgress(page)).toHaveCount(0);
-  expect(repo.messages).toEqual(['edit: ink.svg']);
-  expect(repo.content('ink.svg')?.match(/<polyline/g)).toHaveLength(2);
+  await expect.poll(() => repo.messages).toEqual(['edit: ink.svg']);
+  await expect.poll(() => repo.content('ink.svg')?.match(/<polyline/g)).toHaveLength(2);
 });
 
 test('exiting an inline drawing publishes the asset while the note stays in editing mode', async ({ page }) => {
@@ -468,16 +469,16 @@ test('exiting an inline drawing publishes the asset while the note stays in edit
   await page.mouse.move(box.x + 90, box.y + 75, { steps: 4 }); await page.mouse.up();
   await page.keyboard.press('Control+s');
   await expect(page.getByText(/drawing draft saved in this browser/)).toBeVisible();
-  expect(repo.messages).toEqual([]);
+  await expect.poll(() => repo.messages).toEqual([]);
   await exit(page, 'Drawing toolbar').click();
   await expect(note).toBeEditable();
-  expect(repo.messages).toEqual(['edit: ink.svg']);
-  expect(repo.content('ink.svg')).toContain('<polyline');
-  expect(repo.content('note.txt')).toBe(original);
+  await expect.poll(() => repo.messages).toEqual(['edit: ink.svg']);
+  await expect.poll(() => repo.content('ink.svg')).toContain('<polyline');
+  await expect.poll(() => repo.content('note.txt')).toBe(original);
   await exit(page).click();
   await expect(action(page, 'open')).toBeVisible();
-  expect(repo.content('note.txt')).toBe(original + ' with edits');
-  expect(repo.messages).toEqual(['edit: ink.svg', 'edit: note.txt']);
+  await expect.poll(() => repo.content('note.txt')).toBe(original + ' with edits');
+  await expect.poll(() => repo.messages).toEqual(['edit: ink.svg', 'edit: note.txt']);
 });
 
 test('failed writes retain the draft across reload and accept an upstream deletion without recreating it', async ({ page }) => {
@@ -487,25 +488,23 @@ test('failed writes retain the draft across reload and accept an upstream deleti
   await editor(page, 'note.txt').fill('Unpublished work');
   repo.refuse(true);
   await exit(page).click();
-  await expect(page.getByRole('alert')).toContainText('GitHub refused access');
-  expect(repo.content('note.txt')).toBe('Original');
+  await expect(page.locator('.sync-progress')).toContainText('GitHub refused access');
+  await expect.poll(() => repo.content('note.txt')).toBe('Original');
   repo.upstream({ 'note.txt': null });
   repo.refuse(false);
 
   await page.reload();
-  await action(page, 'notebook/').click();
-  await openNote(page);
-  await expect(editor(page, 'note.txt')).toHaveText('Unpublished work');
-  await exit(page).click();
+  await expect(action(page, 'notebook/')).toBeVisible();
+  await page.getByRole('button', { name: 'Review GitHub conflict', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'GitHub conflict' });
   await expect(dialog.getByText('This file was deleted on GitHub.')).toBeVisible();
   await dialog.getByRole('button', { name: 'Cancel' }).click();
-  await expect(editor(page, 'note.txt')).toHaveText('Unpublished work');
-  await exit(page).click();
+  await expect(action(page, 'notebook/')).toBeVisible();
+  await page.getByRole('button', { name: 'Review GitHub conflict', exact: true }).click();
   await dialog.getByRole('button', { name: 'Keep GitHub deletion' }).click();
   await expect(action(page, 'notebook/')).toBeVisible();
-  expect(repo.content('note.txt')).toBeUndefined();
-  expect(repo.messages).toEqual([]);
+  await expect.poll(() => repo.content('note.txt')).toBeUndefined();
+  await expect.poll(() => repo.messages).toEqual([]);
 });
 
 test('keeping an unreadable GitHub version hides the file without removing its graph links', async ({ page }) => {
@@ -520,11 +519,12 @@ test('keeping an unreadable GitHub version hides the file without removing its g
   await editor(page, 'note.txt').fill('Local edit');
   repo.upstream({ 'note.txt': binaryImage });
   await exit(page).click();
+  await page.getByRole('button', { name: 'Review GitHub conflict', exact: true }).click();
   const conflict = page.getByRole('dialog', { name: 'GitHub conflict' });
   await expect(conflict.getByText('The GitHub version cannot be edited as text.')).toBeVisible();
   await conflict.getByRole('button', { name: 'Keep GitHub version' }).click();
-  await expect(page.getByText('This file is no longer readable as text. Its connections were kept.')).toBeVisible();
-  expect(repo.messages).toEqual(['edit: note.txt']);
+  await expect(page.locator('.sync-progress')).toHaveCount(0);
+  await expect.poll(() => repo.messages).toEqual(['edit: note.txt']);
   await action(page, 'notebook/').click();
   await expect(action(page, 'linked.txt')).toBeVisible();
   await expect(action(page, 'note.txt')).toHaveCount(0);
@@ -553,12 +553,12 @@ test('normal folder actions and drawing editing publish to GitHub', async ({ pag
   await rename.getByRole('textbox').fill('renamed.txt');
   await rename.getByRole('button', { name: 'Rename and update links' }).click();
   await expect(page.getByRole('heading', { name: 'renamed.txt', exact: true })).toBeVisible();
-  expect(repo.content('Sketches/idea.txt')).toBeUndefined();
-  expect(repo.content('Sketches/renamed.txt')).toBe('');
+  await expect.poll(() => repo.content('Sketches/idea.txt')).toBeUndefined();
+  await expect.poll(() => repo.content('Sketches/renamed.txt')).toBe('');
   await action(page, 'delete this file').click();
   await page.getByRole('dialog', { name: 'Delete renamed.txt?' }).getByRole('button', { name: 'Delete file' }).click();
   await expect(page.getByRole('heading', { name: 'Sketches/', exact: true })).toBeVisible();
-  expect(repo.content('Sketches/renamed.txt')).toBeUndefined();
+  await expect.poll(() => repo.content('Sketches/renamed.txt')).toBeUndefined();
   await action(page, '..').click();
   await openNote(page, 'ink.svg');
   const canvas = page.getByRole('img', { name: 'Drawing canvas for ink.svg' });
@@ -568,8 +568,8 @@ test('normal folder actions and drawing editing publish to GitHub', async ({ pag
   await page.mouse.move(box.x + 90, box.y + 75, { steps: 6 }); await page.mouse.up();
   await exit(page, 'Drawing toolbar').click();
   await expect(action(page, 'open')).toBeVisible();
-  expect(repo.content('ink.svg')).toContain('<polyline');
-  expect(repo.messages.at(-1)).toBe('edit: ink.svg');
+  await expect.poll(() => repo.content('ink.svg')).toContain('<polyline');
+  await expect.poll(() => repo.messages.at(-1)).toBe('edit: ink.svg');
 });
 
 test('a note and the new files it references publish in one commit', async ({ page }) => {
@@ -580,10 +580,10 @@ test('a note and the new files it references publish in one commit', async ({ pa
   await editor(page, 'note.txt').fill(draft);
   await exit(page).click();
   await expect(action(page, 'open')).toBeVisible();
-  expect(repo.messages).toEqual(['edit: note.txt']);
-  expect(repo.content('note.txt')).toBe(draft);
-  expect(repo.content('sibling.txt')).toBe('');
-  expect(repo.content('ink.svg')).toBe(serializeDrawing([]));
+  await expect.poll(() => repo.messages).toEqual(['edit: note.txt']);
+  await expect.poll(() => repo.content('note.txt')).toBe(draft);
+  await expect.poll(() => repo.content('sibling.txt')).toBe('');
+  await expect.poll(() => repo.content('ink.svg')).toBe(serializeDrawing([]));
   await expect(action(page, 'sibling.txt')).toBeVisible();
   await expect(action(page, 'ink.svg')).toBeVisible();
 });
@@ -599,8 +599,74 @@ test('relocating a GitHub note to Home preserves the file before deleting the re
   const confirm = page.getByRole('dialog', { name: 'Relocate file to browser storage?' });
   await confirm.getByRole('button', { name: 'Yes', exact: true }).click();
   await expect(action(page, 'open')).toBeVisible();
-  expect(repo.content('note.txt')).toBeUndefined();
-  expect(repo.messages).toEqual(['move: note.txt']);
+  await expect.poll(() => repo.content('note.txt')).toBeUndefined();
+  await expect.poll(() => repo.messages).toEqual(['move: note.txt']);
   await action(page, 'open').click();
   await expect(editor(page, 'note.txt')).toHaveText('Keep this content');
+});
+
+
+test('queued Exit sync resumes after reload without reopening the draft', async ({ page }) => {
+  const repo = await github(page, { 'note.txt': 'Original' });
+  await connect(page); await openNote(page);
+  await editor(page, 'note.txt').fill('Resume this snapshot');
+  repo.refuse(true);
+  await exit(page).click();
+  await expect(action(page, 'open')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Retry GitHub sync', exact: true })).toBeVisible();
+  repo.refuse(false);
+  await page.reload();
+  await expect.poll(() => repo.content('note.txt')).toBe('Resume this snapshot');
+  await expect(page.locator('.sync-progress')).toHaveCount(0);
+  expect(repo.messages).toEqual(['edit: note.txt']);
+});
+
+test('a newer autosave survives publication of the earlier Exit snapshot', async ({ page }) => {
+  const repo = await github(page, { 'note.txt': 'Original' });
+  await connect(page); await openNote(page);
+  await editor(page, 'note.txt').fill('First snapshot');
+  const held = repo.holdPublish();
+  await exit(page).click();
+  try {
+    await held.started;
+    await expect(action(page, 'open')).toBeVisible();
+    await action(page, 'open').click();
+    await editor(page, 'note.txt').fill('Newer autosave');
+    await editor(page, 'note.txt').press('Control+s');
+    await expect(page.getByText('draft saved in this browser · Exit to sync to GitHub', { exact: true })).toBeVisible();
+  } finally { held.resume(); }
+  await expect.poll(() => repo.content('note.txt')).toBe('First snapshot');
+  await expect(syncProgress(page)).toHaveCount(0);
+  await expect(editor(page, 'note.txt')).toHaveText('Newer autosave');
+  await exit(page).click();
+  await expect.poll(() => repo.content('note.txt')).toBe('Newer autosave');
+  expect(repo.messages).toEqual(['edit: note.txt', 'edit: note.txt']);
+  await expect(page.getByRole('button', { name: 'Review GitHub conflict', exact: true })).toHaveCount(0);
+});
+
+
+test('choosing upstream during conflict review preserves a newer draft’s original base', async ({ page }) => {
+  const repo = await github(page, { 'note.txt': 'Original' });
+  await connect(page); await openNote(page);
+  await editor(page, 'note.txt').fill('First local snapshot');
+  repo.upstream({ 'note.txt': 'Chosen upstream' });
+  await exit(page).click();
+  const review = page.getByRole('button', { name: 'Review GitHub conflict', exact: true });
+  await expect(review).toBeVisible();
+  await action(page, 'open').click();
+  await editor(page, 'note.txt').fill('Newer local draft');
+  await editor(page, 'note.txt').press('Control+s');
+  await expect(page.getByText('draft saved in this browser · Exit to sync to GitHub', { exact: true })).toBeVisible();
+  await review.click();
+  const dialog = page.getByRole('dialog', { name: 'GitHub conflict' });
+  await dialog.getByRole('button', { name: 'Keep GitHub version', exact: true }).click();
+  await expect(page.locator('.sync-progress')).toHaveCount(0);
+  await expect(editor(page, 'note.txt')).toHaveText('Newer local draft');
+  await exit(page).click();
+  await expect(review).toBeVisible();
+  expect(repo.content('note.txt')).toBe('Chosen upstream');
+  await review.click();
+  await expect(dialog.getByRole('textbox', { name: 'Your version' })).toHaveValue('Newer local draft');
+  await dialog.getByRole('button', { name: 'Keep your version', exact: true }).click();
+  await expect.poll(() => repo.content('note.txt')).toBe('Newer local draft');
 });

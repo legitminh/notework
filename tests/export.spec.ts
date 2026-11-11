@@ -71,7 +71,8 @@ async function downloadRaster(page: Page, format: 'png' | 'jpeg') {
 test('PDF export includes the whole unsaved draft, styled links, and vector SVG with default margins', async ({ page }) => {
   const errors: string[] = []; page.on('pageerror', (error) => errors.push(error.message));
   const editor = await note(page, 'export-note.txt');
-  await tools(page).getByRole('button', { name: 'Brush', exact: true }).click();
+  await tools(page).getByRole('button', { name: '+svg', exact: true }).click();
+  await page.getByRole('group', { name: 'Drawing toolbar' }).getByRole('button', { name: 'Exit', exact: true }).click();
   await page.keyboard.insertText('below');
   const preview = page.getByRole('button', { name: /^Edit drawing drawing-/ });
   const name = (await preview.getAttribute('aria-label'))!.slice('Edit drawing '.length);
@@ -249,7 +250,8 @@ test('standalone drawing export includes unsaved strokes as vector geometry', as
 
 test('inline export uses the current unsaved drawing and leaves its source draft untouched', async ({ page }) => {
   const editor = await note(page, 'inline.txt');
-  await tools(page).getByRole('button', { name: 'Brush', exact: true }).click();
+  await tools(page).getByRole('button', { name: '+svg', exact: true }).click();
+  await page.getByRole('group', { name: 'Drawing toolbar' }).getByRole('button', { name: 'Exit', exact: true }).click();
   await page.keyboard.insertText('below');
   await page.getByRole('button', { name: /^Edit drawing drawing-/ }).click();
   const canvas = page.getByRole('img', { name: /^Drawing canvas for drawing-/ });

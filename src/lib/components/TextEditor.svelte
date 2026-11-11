@@ -8,8 +8,16 @@
 
 <script lang="ts">
   import Control from './Control.svelte';
+  import ImageEditor from './ImageEditor.svelte';
+  import { imageFormat, readImage, imageFormats, composite, canvasBlob, type ImageFormat } from '../images';
+  import { saveImage } from '../drawing-files';
+  import { dialogShortcuts } from '../shortcut-scope.svelte';
   import StorageNotice from './StorageNotice.svelte';
-  import GitHubSyncProgress from './GitHubSyncProgress.svelte';
+  import { getBackgroundSync } from '../github/background.svelte';
+  import { lineIndex } from '../line-index';
+  import { deleteCharBackward, deleteCharForward, cursorCharLeft, cursorCharRight, cursorLineUp, cursorLineDown, selectAll, undo, redo } from '@codemirror/commands';
+  import { deleteResource } from '../delete-resource';
+  import { resolveFileReference } from '../wiki';
   import EditorTitle from './EditorTitle.svelte';
   import { preserveContentFocus } from '../editor-focus';
   import { onMount, tick } from 'svelte';
@@ -31,31 +39,33 @@
   import DrawingEditor from './DrawingEditor.svelte';
   import { svgPages, type SvgPage } from '../svg-pages';
   import { svgPageNames, type Drawing } from '../drawing';
-  import { canCreateSiblingDrawing, commitDrawing, hasDrawingDraft, loadDrawingReference, prepareSvgPages, saveDrawing, saveSiblingDrawing, type DrawingResource } from '../drawing-files';
+  import { canCreateSiblingDrawing, hasDrawingDraft, loadDrawingReference, prepareSvgPages, saveDrawing, saveSiblingDrawing, type DrawingResource } from '../drawing-files';
   import { wikiDisplay } from '../wiki-display';
   import { containingFolder, findWikiTarget, prepareWikiSave, requireWrite, validFilename, wikiCatalog, wikiScore, wikiToken, wikiTokens, WritePermissionRequired } from '../wiki';
   import { commandCompletion, opensCommandArguments } from '../command-completion';
   import { prettyDisplay } from '../pretty-display';
-  import { GitHubChanged, GitHubEditCancelled, GitHubFile, type ResolveGitHubConflict } from '../github/repository';
+  import { GitHubFile } from '../github/repository';
   import { draftQueue } from '../github/storage';
 
-  let { workspace, node, wrapLines, prettyFontSize, vimMode, stylusOnly, pdfMargins, autosaveMs, resolveGitHubConflict, onExit, onMissing, onOpenLink }: {
+  let { workspace, node, wrapLines, prettyFontSize, vimMode, stylusOnly, showLineNumbers, showLineIndex, pdfMargins, autosaveMs, onExit, onMissing, onOpenLink }: {
     workspace: Workspace; node: StateNode;
     wrapLines: boolean;
+    showLineNumbers: boolean;
+    showLineIndex: boolean;
     prettyFontSize: boolean;
     vimMode: boolean;
     stylusOnly: boolean;
     autosaveMs: number;
-    resolveGitHubConflict: ResolveGitHubConflict;
     pdfMargins: PdfMargins;
     onExit: () => void | Promise<void>;
     onOpenLink: (id: string) => Promise<void>;
     onMissing: () => void;
   } = $props();
+  const sync = getBackgroundSync();
   let container: HTMLDivElement;
   let toolbar = $state<HTMLDivElement>();
   let usingTools = $state(false);
-  let drawingEditor = $state<{ resumeEditing: () => void }>();
+  let drawingEditor = $state<{ resumeEditing: () => void; saveForNavigation: () => Promise<boolean> }>();
   let nextLink = $state<string>();
   let followingLink = false;
   const catalogController = new AbortController();
@@ -64,6 +74,8 @@
   let exportSource = $state.raw<PdfSource>();
   let exportSelection: EditorSelection | undefined;
   let openingDrawing = false;
+  let formatDialog: HTMLDialogElement;
+  let imagePicker: HTMLInputElement;
   const textLock = new Compartment();
   const pageWidgets = svgPages((page) => { void openDrawing(page); }, () => vimMode);
   const newDrawings = new Set<string>();
@@ -88,6 +100,7 @@
   let githubBase: string | null = null;
   let githubPending = $state(false);
   let githubPublishing = $state(false);
+  let queuePersisted = false;
   const withGitHubDraft = draftQueue();
 
   function* chunks(doc: Text) {
@@ -156,7 +169,7 @@
     return options.length ? { from: match.from + 2, options, filter: false } : null;
   }
 
-  async function insertDrawing() {
+  async function insertDrawing(kind: 'svg' | ImageFormat = 'svg', imported?: File) {
     if (!view || saving || githubPublishing || inlineDrawing) return;
     error = '';
     try {
@@ -168,19 +181,27 @@
         const folder = cached?.kind === 'directory' ? cached : await containingFolder(workspace, node, handle);
         await requireWrite(folder, true);
       }
-      const name = `drawing-${crypto.randomUUID().slice(0, 8)}.svg`;
+      const name = imported ? `${imported.name.replace(/\.[^.]+$/, '')}-${crypto.randomUUID().slice(0, 8)}.${kind}` : `drawing-${crypto.randomUUID().slice(0, 8)}.${kind}`;
+      if (kind !== 'svg') {
+        const image = imported ? await readImage(imported) : undefined;
+        let resource = await saveSiblingDrawing(workspace, node, handle, name, []);
+        if (image) resource = await saveImage(resource, image, true);
+        previews.set(name, Promise.resolve(resource));
+        catalogRequest = undefined;
+      }
       const { from, to } = view.state.selection.main;
       const before = from === view.state.doc.lineAt(from).from ? '' : '\n';
       const after = to < view.state.doc.length && view.state.sliceDoc(to, to + 1) === '\n' ? '' : '\n';
-      const insert = `${before}\\svgpage[${name}]${after}`;
-      newDrawings.add(name);
+      const insert = `${before}\\${kind}page[${name}]${after}`;
+      if (kind === 'svg') newDrawings.add(name);
       view.dispatch({
         changes: { from, to, insert },
         selection: { anchor: from + insert.length + (after ? 0 : 1) },
         annotations: Transaction.userEvent.of('input'),
         scrollIntoView: true
       });
-      if (!usingTools) view.focus();
+      const page = view.state.field(pageWidgets.field).pages.find((page) => page.name === name);
+      if (page) await openDrawing(page);
     } catch (cause) { error = cause; }
   }
 
@@ -192,7 +213,7 @@
       previews.set(name, loading);
       void loading.then((resource) => {
         if (active && resource && previews.get(name) === loading) {
-          view?.dispatch({ effects: pageWidgets.setPreview.of({ name, strokes: resource.strokes }) });
+          view?.dispatch({ effects: pageWidgets.setPreview.of({ name, strokes: resource.strokes, image: resource.preview && resource.image ? { src: resource.preview, height: resource.image.height / resource.image.width * 1024 } : undefined }) });
         }
       }).catch(() => { /* Opening the preview will report unavailable drawings. */ });
     }
@@ -202,7 +223,7 @@
     if (!view || saving || githubPublishing || inlineDrawing || openingDrawing || followingLink) return;
     openingDrawing = true; error = '';
     try {
-      const resource = newDrawings.has(page.name) ? undefined : await loadDrawingReference(workspace, node, handle, page.name, await catalog());
+      const resource = newDrawings.has(page.name) ? undefined : await (previews.get(page.name) ?? loadDrawingReference(workspace, node, handle, page.name, await catalog()));
       if (!resource && !canCreateSiblingDrawing(page.name)) throw new Error(`Drawing resource “${page.name}” could not be found.`);
       if (!active || githubPublishing || !view.state.field(pageWidgets.field).pages.some((item) => item.from === page.from && item.name === page.name)) return;
       const host = document.createElement('div');
@@ -233,6 +254,9 @@
 
   async function closeInlineDrawing() {
     view?.dispatch({ effects: [pageWidgets.setActive.of(undefined), textLock.reconfigure([])] });
+    const resource = inlineDrawing?.resource, name = inlineDrawing?.page.name;
+    if (resource?.image && name) view?.dispatch({ effects: pageWidgets.setPreview.of({ name, strokes: [],
+      image: resource.preview ? { src: resource.preview, height: resource.image.height / resource.image.width * 1024 } : undefined }) });
     inlineDrawing = undefined;
     await tick();
     resumeEditing();
@@ -240,12 +264,33 @@
   }
 
   async function commitInlineDrawing() {
+    const resource = inlineDrawing?.resource;
+    if (!resource || !(resource.handle instanceof GitHubFile)) return;
+    const file = resource.handle;
+    const target = await resolveFileReference(workspace, node, inlineDrawing!.page.name, await catalog());
+    if (target) await sync.enqueue(target, file);
+    else throw new Error('Save the note reference before syncing this drawing.');
+  }
+
+  async function deleteInlineDrawing() {
     const drawing = inlineDrawing;
-    if (!drawing?.resource) return;
-    drawing.resource = await commitDrawing(drawing.resource, resolveGitHubConflict);
-    const { name } = drawing.page;
-    previews.set(name, Promise.resolve(drawing.resource));
-    view?.dispatch({ effects: pageWidgets.setPreview.of({ name, strokes: drawing.resource?.strokes ?? [] }) });
+    if (!drawing || !view || !confirm(`Delete ${drawing.page.name} and its drawing file? Other links to this file will stop working.`)) return;
+    try {
+      if (drawing.resource) {
+        const target = await resolveFileReference(workspace, node, drawing.page.name, await catalog());
+        if (!target) throw new Error('The drawing file could not be found.');
+        await workspace.handle(target.id);
+        await deleteResource(workspace, target);
+        workspace.forget(target.id);
+        await saveWorkspace(workspace.data);
+      }
+      const { from, to } = drawing.page;
+      newDrawings.delete(drawing.page.name); previews.delete(drawing.page.name); catalogRequest = undefined;
+      view.dispatch({ effects: [pageWidgets.setActive.of(undefined), textLock.reconfigure([])],
+        changes: { from, to: to < view.state.doc.length ? to + 1 : to, insert: '' }, selection: { anchor: from } });
+      inlineDrawing = undefined;
+      await tick(); resumeEditing(); scheduleAutosave();
+    } catch (cause) { error = cause; }
   }
 
   function clearAutosave() {
@@ -348,7 +393,7 @@
     const version = revision, snapshot = view!.state.doc;
     if (dirty || replacement) {
       const content = replacement ?? new Blob([...encodedChunks(chunks(snapshot), format)]);
-      await repository.saveDraft(path, { base: githubBase, content, modified: Date.now() });
+      await repository.saveDraft(path, { base: repository.draft(path) ? repository.draft(path)!.base : githubBase, content, modified: Date.now() });
       githubPending = true;
       savedRevision = version;
       dirty = revision !== version;
@@ -358,92 +403,38 @@
   }
 
   async function publishGitHub(file: GitHubFile) {
+    githubPublishing = true; queuePersisted = false; error = ''; clearAutosave();
     const editor = view!;
-    githubPublishing = true; error = '';
-    clearAutosave();
     editor.dispatch({ effects: textLock.reconfigure([EditorState.readOnly.of(true), EditorView.editable.of(false)]) });
     try {
-      if (await publishGitHubDraft(file) && active) await finishExit();
-    } catch (cause) {
-      if (!(cause instanceof GitHubEditCancelled)) error = cause;
-    } finally {
+      const { snapshot } = await withGitHubDraft(() => writeGitHubDraft(file));
+      const tokens = wikiTokens(snapshot), pages = svgPageNames(snapshot);
+      await sync.enqueue(node, file, true,
+        [...tokens].filter((token) => !savedTokens.has(token) || requestedCreates.has(token)),
+        [...pages].filter((name) => !savedPages.has(name) || newDrawings.has(name)));
+      queuePersisted = true;
+      if (active) await finishExit();
+    } catch (cause) { error = cause; }
+    finally {
       if (active) editor.dispatch({ effects: textLock.reconfigure([]) });
-      githubPublishing = false;
-      if (dirty) scheduleAutosave();
+      githubPublishing = false; if (dirty) scheduleAutosave();
     }
   }
 
-  async function publishGitHubDraft(file: GitHubFile) {
-    const editor = view!;
-    const { repository, path } = file;
-    let { snapshot, draft } = await withGitHubDraft(() => writeGitHubDraft(file));
-    if (!draft) return true;
-    for (let attempt = 0; ; attempt++) {
-      let conflict = false;
-      const chosen = await repository.reconcile(path, draft, async (versions) => {
-        conflict = true;
-        return resolveGitHubConflict(versions);
-      });
-      if (chosen.content !== draft.content) {
-        if (!chosen.content) {
-          await repository.saveDraft(path);
-          githubPending = false;
-          onMissing();
-          return false;
-        }
-        const selected = new File([chosen.content], node.name);
-        const selectedFormat = await inspectTextFile(selected);
-        if (!selectedFormat) {
-          if (!chosen.unchanged) throw new Error('The chosen version could not be decoded as text. Your draft is still in this browser.');
-          // The user chose to keep the upstream file. Hide it as unreadable,
-          // while keeping its graph links in case it becomes readable again.
-          await repository.saveDraft(path);
-          githubPending = false;
-          return true;
-        }
-        let text = '';
-        for await (const chunk of decodedChunks(selected, selectedFormat)) text += chunk;
-        snapshot = Text.of(text.replace(/\r\n?/g, '\n').split('\n'));
-        editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: snapshot } });
-        format = selectedFormat;
-      }
-      if (conflict) {
-        githubBase = chosen.base;
-        ({ snapshot, draft } = await writeGitHubDraft(file, chosen.content!));
-        if (!draft) return true;
-      }
-      const checkpoint = repository.checkpoint();
-      const tokens = wikiTokens(snapshot), pages = svgPageNames(snapshot);
-      let wiki: Awaited<ReturnType<typeof prepareWikiSave>> | undefined;
-      let svg: Awaited<ReturnType<typeof prepareSvgPages>> | undefined;
-      try {
-        if (!chosen.unchanged) repository.stage(path, draft.content);
-        if (tokens.size || pages.size) {
-          catalogRequest = undefined;
-          const files = await catalog();
-          wiki = await prepareWikiSave(workspace, node, file, tokens, files,
-            (token) => !chosen.unchanged && (!savedTokens.has(token) || requestedCreates.has(token)), true, chosen.unchanged);
-          svg = await prepareSvgPages(workspace, node, file, pages,
-            (name) => !chosen.unchanged && (!savedPages.has(name) || newDrawings.has(name)), true, files, chosen.unchanged);
-        }
-        await repository.commit(checkpoint, `edit: ${node.name}`, chosen.head);
-      } catch (cause) {
-        await svg?.rollback(); await wiki?.rollback(); repository.restore(checkpoint);
-        if (cause instanceof GitHubChanged && cause.path === path && attempt < 2) continue;
-        throw cause;
-      }
-      workspace.replaceWikiLinks(node.id, { ...wiki?.targets, ...svg?.targets });
-      githubBase = repository.editBase(path);
-      await repository.saveDraft(path);
-      githubPending = false;
-      savedTokens = tokens; savedPages = pages;
-      for (const token of tokens) requestedCreates.delete(token);
-      for (const name of pages) { newDrawings.delete(name); previews.delete(name); }
-      catalogRequest = undefined;
-      refreshDrawingPreviews();
-      await saveWorkspace(workspace.data);
-      return true;
+  export async function saveForNavigation() {
+    if (inlineDrawing) {
+      if (!await drawingEditor?.saveForNavigation()) return false;
+      await closeInlineDrawing();
     }
+    if (saving) return false;
+    if (handle instanceof GitHubFile) {
+      try {
+        const { snapshot } = await withGitHubDraft(() => writeGitHubDraft(handle as GitHubFile));
+        await sync.enqueue(node, handle, true, [...wikiTokens(snapshot)].filter((token) => !savedTokens.has(token)),
+          [...svgPageNames(snapshot)].filter((name) => !savedPages.has(name)));
+      } catch (cause) { error = cause; return false; }
+    } else await save(false, false);
+    return !dirty;
   }
 
   async function finishExit() {
@@ -514,7 +505,7 @@
   }
 
   function shortcuts(event: KeyboardEvent) {
-    if (inlineDrawing || event.isComposing || event.altKey || !(event.ctrlKey || event.metaKey) || document.querySelector('.github-conflict[open], .github-reconnect[open]')) return;
+    if (inlineDrawing || event.isComposing || event.altKey || !(event.ctrlKey || event.metaKey) || document.querySelector('dialog[open]')) return;
     const key = event.key.toLowerCase();
     if (key !== 'escape' && key !== 's' && key !== 'f' && !(key === 'b' && event.metaKey)) return;
     if (vimMode && key === 'f' && event.ctrlKey) return;
@@ -546,6 +537,7 @@
       drawing: async (name) => {
         if (override?.name === name) return override.strokes;
         const resource = await loadDrawingReference(workspace, node, handle, name, await catalog());
+        if (resource?.image) return { blob: await canvasBlob(await composite(resource.image)), width: resource.image.width, height: resource.image.height };
         if (resource) return resource.strokes;
         if (newDrawings.has(name) || !savedPages.has(name)) return [];
         throw new Error(`Drawing “${name}” is unavailable. Restore it before exporting.`);
@@ -584,8 +576,23 @@
     lastSaveAt = Date.now();
     let pageResize: ResizeObserver | undefined;
     window.addEventListener('keydown', shortcuts, true);
+    const virtualKey = (event: Event) => {
+      if (!view || inlineDrawing) return;
+      const { key, modifier } = (event as CustomEvent<{ key: string; modifier?: string }>).detail;
+      const commands: Record<string, (view: EditorView) => boolean> = { backspace: deleteCharBackward, delete: deleteCharForward,
+        arrowleft: cursorCharLeft, arrowright: cursorCharRight, arrowup: cursorLineUp, arrowdown: cursorLineDown };
+      if (modifier) {
+        if (key.toLowerCase() === 'a') selectAll(view);
+        if (key.toLowerCase() === 'z') undo(view);
+        if (key.toLowerCase() === 'y') redo(view);
+        if (key.toLowerCase() === 's') void save(false, true);
+      } else if (key === 'escape') focusTools(view);
+      else if (commands[key]) commands[key](view);
+      else if (key.length === 1 || key === 'enter' || key === 'tab') view.dispatch(view.state.replaceSelection(key === 'enter' ? '\n' : key === 'tab' ? '  ' : key));
+    };
+    container.addEventListener('notework-key', virtualKey);
     const beforeUnload = (event: BeforeUnloadEvent) => {
-      if (revision !== savedRevision) { event.preventDefault(); event.returnValue = ''; }
+      if (revision !== savedRevision || (githubPublishing && !queuePersisted)) { event.preventDefault(); event.returnValue = ''; }
     };
     window.addEventListener('beforeunload', beforeUnload);
     void (async () => {
@@ -647,7 +654,7 @@
             vimMode ? vim() : [],
             wikiDisplay(leaveEditor), pageWidgets.field, prettyDisplay(prettyFontSize), textLock.of([]),
             wrapLines ? EditorView.lineWrapping : [],
-            lineNumbers(), drawSelection(), highlightActiveLine(), history(),
+            showLineNumbers ? lineNumbers() : [], showLineIndex ? lineIndex : [], drawSelection(), highlightActiveLine(), history(),
             bracketMatching(), closeBrackets(), highlightSelectionMatches(),
             indentUnit.of('  '), EditorState.tabSize.of(2),
             EditorView.contentAttributes.of({ 'aria-label': `Edit ${node.name}`, spellcheck: 'false' }),
@@ -675,6 +682,9 @@
           const gutter = view.dom.querySelector<HTMLElement>('.cm-gutters');
           const width = Math.max(1, view.scrollDOM.clientWidth - (gutter?.offsetWidth ?? 0));
           view.dom.style.setProperty('--drawing-page-width', `${width}px`);
+          const content = (view.contentDOM.querySelector('.cm-line') ?? view.contentDOM).getBoundingClientRect();
+          view.dom.style.setProperty('--line-left-width', `${Math.max(8, content.left)}px`);
+          view.dom.style.setProperty('--line-right-width', `${Math.max(8, window.innerWidth - content.right)}px`);
         };
         pageResize = new ResizeObserver(measurePage);
         pageResize.observe(view.scrollDOM);
@@ -697,6 +707,7 @@
       pageResize?.disconnect();
       catalogController.abort();
       window.removeEventListener('keydown', shortcuts, true);
+      container.removeEventListener('notework-key', virtualKey);
       window.removeEventListener('beforeunload', beforeUnload);
       if (view) {
         vimSaves.delete(view);
@@ -713,16 +724,27 @@
       use:preserveContentFocus={() => !usingTools && !!view?.hasFocus}>
       <Control aria-keyshortcuts="Control+Escape" onclick={requestExit} disabled={saving || githubPublishing}>Exit<span class="shortcut-hint" aria-hidden="true">Ctrl+Esc</span></Control>
       <Control aria-keyshortcuts={vimMode ? undefined : 'Control+F'} onclick={find} disabled={loading || githubPublishing}><span class="visually-hidden">Find and replace</span><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="10" cy="10" r="6" /><path d="m14.5 14.5 5 5" /></svg>{#if !vimMode}<span class="shortcut-hint" aria-hidden="true">Ctrl+F</span>{/if}</Control>
-      <Control onclick={() => { void insertDrawing(); }} disabled={loading || saving || githubPublishing} aria-keyshortcuts="Meta+B">Brush<span class="shortcut-hint" aria-hidden="true">Command+B</span></Control>
+      <Control onclick={() => { void insertDrawing(); }} disabled={loading || saving || githubPublishing} aria-keyshortcuts="Meta+B">+svg<span class="shortcut-hint" aria-hidden="true">Command+B</span></Control>
+      <Control onclick={() => formatDialog.showModal()} disabled={loading || saving || githubPublishing}>Draw…</Control>
+      <Control onclick={() => imagePicker.click()} disabled={loading || saving || githubPublishing}>Insert image</Control>
       <Control onclick={() => openExport()} disabled={loading || githubPublishing}>Export</Control>
     </div>
     {/if}
     {#if inlineDrawing}
       <div class="inline-drawing-controller">
+        {#if inlineDrawing.resource?.image}
+          <ImageEditor bind:this={drawingEditor} bind:usingTools resource={inlineDrawing.resource} {node} {stylusOnly} {autosaveMs} {pdfMargins}
+            surfaceTarget={inlineDrawing.host} onExit={closeInlineDrawing} onDelete={deleteInlineDrawing}
+            onSaved={(resource) => { if (inlineDrawing) {
+              inlineDrawing.resource = resource; previews.set(inlineDrawing.page.name, Promise.resolve(resource));
+              view?.dispatch({ effects: pageWidgets.setPreview.of({ name: inlineDrawing.page.name, strokes: [], image: resource.preview && resource.image ? { src: resource.preview, height: resource.image.height / resource.image.width * 1024 } : undefined }) });
+            } }} />
+        {:else}
         <DrawingEditor bind:this={drawingEditor} bind:usingTools {stylusOnly} {autosaveMs} name={inlineDrawing.page.name} initial={inlineDrawing.resource?.strokes ?? []}
           initialDraft={hasDrawingDraft(inlineDrawing.resource)} surfaceTarget={inlineDrawing.host}
-          onExport={(strokes) => openExport(strokes)} onSave={saveInlineDrawing} onExit={closeInlineDrawing}
+          onExport={(strokes) => openExport(strokes)} onSave={saveInlineDrawing} onExit={closeInlineDrawing} onDelete={deleteInlineDrawing}
           onCommit={(inlineDrawing.resource?.storage ?? node.storage) === 'github' ? commitInlineDrawing : undefined} />
+        {/if}
       </div>
     {/if}
   </div>
@@ -738,11 +760,30 @@
       {:else if !error}saved {node.storage === 'browser' ? 'in browser storage' : 'on your computer'}{/if}
     </p>
     {#if error}<StorageNotice {error} />{/if}
-    <div class="editor-container" bind:this={container}></div>
+    <div class="editor-container" class:line-index-editor={showLineIndex} bind:this={container}></div>
   </div>
 </div>
 
-{#if githubPublishing}<GitHubSyncProgress />{/if}
+
+
+<input class="visually-hidden" bind:this={imagePicker} type="file" accept=".png,.jpg,.jpeg,.heic,.ora" aria-label="Image file to insert"
+  onchange={(event) => {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = '';
+    if (!file) return;
+    const kind = imageFormat(file.name);
+    if (kind) void insertDrawing(kind, file); else error = 'Choose PNG, JPEG, HEIC, or ORA.';
+  }} />
+<dialog use:dialogShortcuts class="local-picker drawing-format" bind:this={formatDialog} aria-label="Choose drawing format">
+  <h2>Choose drawing format</h2>
+  <p class="muted">SVG stores vector strokes. PNG, JPEG and HEIC store one image; ORA preserves layers.</p>
+  <div class="editor-controls">
+    {#each ['svg', ...imageFormats] as kind}
+      <Control onclick={() => { formatDialog.close(); void insertDrawing(kind as 'svg' | ImageFormat); }}>{kind.toUpperCase()}</Control>
+    {/each}
+    <Control onclick={() => formatDialog.close()}>Cancel</Control>
+  </div>
+</dialog>
 
 {#if exportSource}
   <ExportDialog source={exportSource} onClose={closeExport} />

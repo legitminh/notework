@@ -1,3 +1,4 @@
+import { withGitHubRepositories } from './github/repository';
 import { assetName, validAssetName, type AssetType } from './asset-types';
 import { writeResourceContent } from './resource-content';
 import type { LocalFile, LocalHandle } from './filesystem';
@@ -5,7 +6,11 @@ import { saveWorkspace } from './persistence';
 import { ROOT, nodeId, type StateNode, type Workspace } from './workspace';
 import { requireWrite } from './wiki';
 
-export async function createAsset(workspace: Workspace, parent: StateNode | null, input: string, type: AssetType) {
+export function createAsset(workspace: Workspace, parent: StateNode | null, input: string, type: AssetType) {
+  const repository = parent ? workspace.github(parent.sourceId) : undefined;
+  return withGitHubRepositories([repository], () => createAssetInternal(workspace, parent, input, type));
+}
+async function createAssetInternal(workspace: Workspace, parent: StateNode | null, input: string, type: AssetType) {
   const name = assetName(input, type);
   if (!validAssetName(input.trim()) || !validAssetName(name)) throw new Error('Choose a name without slashes or control characters. “.”, “..”, and “.git” are reserved.');
   const selected = parent ? workspace.cachedHandle(parent.id) : undefined;
@@ -54,7 +59,7 @@ export async function createAsset(workspace: Workspace, parent: StateNode | null
       ? await directory.getDirectoryHandle(name, { create: true })
       : await directory.getFileHandle(name, { create: true });
     created = true;
-    if (type.kind === 'file') await writeResourceContent(handle as unknown as LocalFile, parent?.storage ?? 'browser', [type.initialContent?.() ?? '']);
+    if (type.kind === 'file') await writeResourceContent(handle as unknown as LocalFile, parent?.storage ?? 'browser', [await type.initialContent?.() ?? '']);
     createdId = parent ? nodeId(parent.sourceId, [...parent.path, name])
       : (await workspace.connect(handle as unknown as LocalHandle, ROOT, location)).id;
     const node = await workspace.node(createdId);

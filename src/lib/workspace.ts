@@ -1,4 +1,5 @@
 import { isMissing, type LocalDirectory, type LocalHandle } from './filesystem';
+import { imageFormat } from './images';
 import { isDrawingFile } from './drawing';
 import { HiddenResource, inspectText, type TextFormat } from './text-resource';
 import { GitHubDirectory, type GitHubRepository } from './github/repository';
@@ -125,7 +126,7 @@ export class Workspace {
   private async validate(id: string, handle: LocalHandle) {
     if (handle.name === '.git') { this.known.delete(id); this.handles.delete(id); throw new HiddenResource('Git metadata is hidden.'); }
     if (handle.kind === 'file') {
-      if (handle.name.toLowerCase().endsWith('.svg') && await isDrawingFile(await handle.getFile())) {
+      if (imageFormat(handle.name) || (handle.name.toLowerCase().endsWith('.svg') && await isDrawingFile(await handle.getFile()))) {
         this.drawings.add(id);
         return;
       }

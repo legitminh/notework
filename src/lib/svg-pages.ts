@@ -7,9 +7,9 @@ interface ActivePage { from: number; host: HTMLElement }
 const svgNamespace = 'http://www.w3.org/2000/svg';
 
 class SvgPageWidget extends WidgetType {
-  constructor(readonly page: SvgPage, readonly drawing: Drawing | undefined, readonly open: (page: SvgPage) => void) { super(); }
+  constructor(readonly page: SvgPage, readonly drawing: Drawing | undefined, readonly open: (page: SvgPage) => void, readonly image?: { src: string; height: number }) { super(); }
   eq(other: SvgPageWidget) {
-    return this.page.from === other.page.from && this.page.name === other.page.name && this.drawing === other.drawing;
+    return this.page.from === other.page.from && this.page.name === other.page.name && this.drawing === other.drawing && this.image === other.image;
   }
   toDOM() {
     const button = document.createElement('button');
@@ -17,7 +17,7 @@ class SvgPageWidget extends WidgetType {
     button.className = 'svg-page-preview';
     button.setAttribute('aria-label', `Edit drawing ${this.page.name}`);
     const svg = document.createElementNS(svgNamespace, 'svg');
-    const height = drawingBottom(this.drawing ?? []) || DRAWING_PAGE_HEIGHT;
+    const height = this.image?.height ?? (drawingBottom(this.drawing ?? []) || DRAWING_PAGE_HEIGHT);
     svg.setAttribute('viewBox', `0 0 ${DRAWING_WIDTH} ${height}`);
     svg.setAttribute('preserveAspectRatio', 'xMinYMin meet');
     svg.setAttribute('width', String(DRAWING_WIDTH));
@@ -33,11 +33,16 @@ class SvgPageWidget extends WidgetType {
       path.setAttribute('stroke-linejoin', 'round');
       svg.append(path);
     }
+    if (this.image) {
+      const image = document.createElementNS(svgNamespace, 'image');
+      image.setAttribute('href', this.image.src); image.setAttribute('width', String(DRAWING_WIDTH)); image.setAttribute('height', String(height));
+      svg.prepend(image);
+    }
     button.append(svg);
     button.addEventListener('click', () => this.open(this.page));
     return button;
   }
-  get estimatedHeight() { return drawingBottom(this.drawing ?? []) || DRAWING_PAGE_HEIGHT; }
+  get estimatedHeight() { return this.image?.height ?? (drawingBottom(this.drawing ?? []) || DRAWING_PAGE_HEIGHT); }
 }
 
 class DrawingHost extends WidgetType {
@@ -58,13 +63,13 @@ function scan(doc: Text): SvgPage[] {
 }
 
 export function svgPages(open: (page: SvgPage) => void, vimMode: () => boolean) {
-  const setPreview = StateEffect.define<{ name: string; strokes: Drawing }>();
+  const setPreview = StateEffect.define<{ name: string; strokes: Drawing; image?: { src: string; height: number } }>();
   const setActive = StateEffect.define<ActivePage | undefined>();
-  function decorate(state: EditorState, pages: SvgPage[], drawings: Map<string, Drawing>, active?: ActivePage) {
+  function decorate(state: EditorState, pages: SvgPage[], drawings: Map<string, { strokes: Drawing; image?: { src: string; height: number } }>, active?: ActivePage) {
     return Decoration.set(pages.flatMap((page) => {
       if (active?.from === page.from) return [Decoration.replace({ block: true, widget: new DrawingHost(active.host) }).range(page.from, page.to)];
       if (state.selection.ranges.some((range) => range.from <= page.to && range.to >= page.from)) return [];
-      const widget = new SvgPageWidget(page, drawings.get(page.name), open);
+      const widget = new SvgPageWidget(page, drawings.get(page.name)?.strokes, open, drawings.get(page.name)?.image);
       // Vim measures display lines for vertical motions. Keep a real line to land on.
       if (vimMode()) return [
         Decoration.line({ class: 'svg-page-source' }).range(page.from),
@@ -75,7 +80,7 @@ export function svgPages(open: (page: SvgPage) => void, vimMode: () => boolean) 
   }
   const field = StateField.define({
     create(state) {
-      const pages = scan(state.doc), drawings = new Map<string, Drawing>();
+      const pages = scan(state.doc), drawings = new Map<string, { strokes: Drawing; image?: { src: string; height: number } }>();
       return { pages, drawings, active: undefined as ActivePage | undefined, decorations: decorate(state, pages, drawings) };
     },
     update(value, transaction) {
@@ -87,7 +92,7 @@ export function svgPages(open: (page: SvgPage) => void, vimMode: () => boolean) 
       }
       for (const effect of transaction.effects) {
         if (effect.is(setPreview)) {
-          drawings = new Map(drawings).set(effect.value.name, effect.value.strokes);
+          drawings = new Map(drawings).set(effect.value.name, effect.value);
           changed = true;
         } else if (effect.is(setActive)) {
           active = effect.value;

@@ -42,3 +42,26 @@ test('installed app shell and browser documents work offline', async ({ page, co
   await exportDialog.getByRole('button', { name: 'Download PDF', exact: true }).click();
   expect((await download).suggestedFilename()).toBe('offline.pdf');
 });
+
+
+test('bundled HEIC codec creates and edits images offline', async ({ page, context }) => {
+  test.skip(process.env.PLAYWRIGHT_PRODUCTION !== '1', 'Service workers are built only for production.');
+  await page.goto('/');
+  const action = (name: string) => page.locator(`[data-action=${JSON.stringify(name)}] button`);
+  await expect(action('app settings')).toBeEnabled();
+  await page.evaluate(async () => {
+    await navigator.serviceWorker.ready;
+    if (!navigator.serviceWorker.controller) await new Promise<void>((resolve) => navigator.serviceWorker.addEventListener('controllerchange', () => resolve(), { once: true }));
+  });
+  await context.setOffline(true);
+  await action('app settings').click(); await action('create new file/folder').click();
+  await page.getByLabel('name', { exact: true }).fill('offline.heic'); await action('create heic image').click();
+  await action('open').click();
+  const canvas = page.getByRole('img', { name: 'Drawing canvas for offline.heic' });
+  await expect(canvas).toBeVisible();
+  const box = (await canvas.boundingBox())!;
+  await page.mouse.click(box.x + 50, box.y + 50);
+  await page.getByRole('group', { name: 'Drawing toolbar' }).getByRole('button', { name: 'Exit', exact: true }).click();
+  await page.reload(); await action('offline.heic').click(); await action('open').click();
+  await expect(canvas).toBeVisible();
+});

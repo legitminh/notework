@@ -122,3 +122,28 @@ a { color: inherit; text-underline-offset: .15em; }
 }
 .cancel-relocate { font: inherit; font-size: .55em; min-height: 44px; }
 .cancel-relocate kbd { font: inherit; color: var(--tertiary); }
+
+:root { --keyboard-height: min(38dvh, 320px); }
+.virtual-keyboard-open .editing-view { height: calc(100dvh - var(--keyboard-height)); }
+.virtual-keyboard-open main:not(.editing-view) { padding-bottom: calc(var(--keyboard-height) + 80px); }
+.virtual-keyboard-open dialog { max-height: calc(100dvh - var(--keyboard-height) - 24px); margin-top: 12px; }
+.line-index { position: relative; --line-left: #888; --line-right: #888; }
+.line-mod-1 { --line-left: #fff; }
+.line-mod-2 { --line-right: #fff; }
+.line-mod-3 { --line-left: #fff; --line-right: #fff; }
+.line-index::before, .line-index::after { content: ''; position: absolute; top: 0; bottom: 0; width: var(--line-edge-width, 8px); pointer-events: none; }
+.line-index::before { right: 100%; width: var(--line-left-width, 8px); background: var(--line-left); }
+.line-index::after { left: 100%; width: var(--line-right-width, 8px); background: var(--line-right); }
+.line-index-editor { overflow: visible; }
+.line-index-editor .cm-scroller { overflow: visible !important; }
+.line-index-editor .cm-content { border-inline: 8px solid transparent; }
+.line-index-editor .cm-line { overflow: visible; }
+.modifier-hints { position: fixed; top: 12px; right: 12px; z-index: 50; padding: 12px 16px; border: 1px solid var(--tertiary); color: var(--primary); background: var(--background); font-size: 14px; pointer-events: none; box-shadow: 0 2px 12px #0003; }
+.app.editing-view.line-index-view { max-width: none; }
+.editor-container { max-width: var(--page-max-width); }
+
+.line-index-view { padding-inline: 0; }
+.line-index-view .editor-toolbar-slot { padding-inline: 10px; }
+.line-index-view .editor-scroll > h1, .line-index-view .editor-scroll > .edit-page-title,
+.line-index-view .editor-scroll > p { margin-inline: 10px; }
+.line-index-view .editor-container { margin-inline: 10px; width: calc(100% - 20px); }

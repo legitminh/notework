@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { imageFormat } from '../images';
   import Control from './Control.svelte';
   import { onMount } from 'svelte';
   import { dialogShortcuts } from '../shortcut-scope.svelte';
@@ -34,7 +35,7 @@
     const handles: LocalHandle[] = [];
     for await (const handle of path.at(-1)!.values()) {
       if (handle.name === '.git') continue;
-      if (handle.kind === 'directory' || await inspectText(handle)) handles.push(handle);
+      if (handle.kind === 'directory' || imageFormat(handle.name) || await inspectText(handle)) handles.push(handle);
     }
     if (version !== generation) return;
     trail = path;
@@ -82,7 +83,7 @@
       const next = { ...selection };
       for (const handle of await pending) {
         if (handle.name === '.git') continue;
-        if (handle.kind === 'file' && !(await inspectText(handle))) continue;
+        if (handle.kind === 'file' && !imageFormat(handle.name) && !(await inspectText(handle))) continue;
         next[crypto.randomUUID()] = { handle };
       }
       selection = next;

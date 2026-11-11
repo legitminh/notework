@@ -36,6 +36,8 @@ export class GitHubRepository {
   private directoryIndex?: Map<string, Map<string, 'file' | 'directory'>>;
   private syncing?: Promise<void>;
   private modified = Date.now();
+  private mutationTail = Promise.resolve();
+  readonly queuedPaths = new Set<string>();
   private drafts = new Map<string, GitHubDraft>();
 
   constructor(readonly id: string, readonly connection: GitHubConnection, private token: string, snapshot?: GitSnapshot) {
@@ -64,6 +66,19 @@ export class GitHubRepository {
     await repository.sync();
     await storeToken(id, token);
     return repository;
+  }
+
+  exclusive<T>(task: () => Promise<T>): Promise<T> {
+    const next = this.mutationTail.then(() => navigator.locks
+      ? navigator.locks.request(`notework:github:${this.id}`, task) : task());
+    this.mutationTail = next.then(() => {}, () => {});
+    return next;
+  }
+
+  assertNoQueuedSync(path: string) {
+    if ([...this.queuedPaths].some((queued) => !path || queued === path || queued.startsWith(path + '/'))) {
+      throw new Error('This item has pending GitHub sync. Let syncing finish or review its conflict before deleting, moving, or renaming it.');
+    }
   }
 
   async replaceToken(token: string) {
@@ -154,6 +169,7 @@ export class GitHubRepository {
   }
 
   assertTransferable(path: string) {
+    this.assertNoQueuedSync(path);
     const contains = (candidate: string) => candidate === path || candidate.startsWith(path + '/');
     if ([...this.drafts.keys()].some(contains)) throw new Error('Open the GitHub files with unpublished drafts and exit them before moving or renaming them.');
     if ([...this.entries.values()].some((entry) => contains(entry.path) && !supportedBlob(entry))) {
@@ -287,6 +303,18 @@ export class GitHubRepository {
     this.directoryIndex = undefined;
   }
 
+  async acknowledgeDraft(path: string, published: GitHubDraft, rebase = true) {
+    const current = this.drafts.get(path);
+    if (!current) return;
+    if (current.id === published.id) await this.saveDraft(path);
+    else if (rebase && current.base === published.base) {
+      // A reopened editor may save newer text while an older snapshot publishes.
+      const next = { ...current, base: this.editBase(path) };
+      await replaceDraft(this.id, path, current.id, next);
+      if (this.drafts.get(path)?.id === current.id) this.drafts.set(path, next);
+    }
+  }
+
   async discardDrafts(path: string) {
     for (const draft of this.drafts.keys()) if (draft === path || draft.startsWith(path + '/')) await this.saveDraft(draft);
   }
@@ -368,4 +396,10 @@ export class GitHubDirectory extends GitHubHandle implements LocalDirectory {
     if (this.path && !handle.path.startsWith(this.path + '/')) return null;
     return handle.path.slice(this.path ? this.path.length + 1 : 0).split('/');
   }
+}
+
+export function withGitHubRepositories<T>(repositories: (GitHubRepository | undefined)[], task: () => Promise<T>): Promise<T> {
+  const unique = [...new Map(repositories.filter((repo): repo is GitHubRepository => !!repo).map((repo) => [repo.id, repo])).values()].sort((a, b) => a.id.localeCompare(b.id));
+  const run = (index: number): Promise<T> => index === unique.length ? task() : unique[index].exclusive(() => run(index + 1));
+  return run(0);
 }

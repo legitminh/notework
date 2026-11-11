@@ -2,7 +2,12 @@
   import { onMount, tick, untrack } from 'svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
-  import { Keyflow, Document, ThemeToggle, min_box, state_viewport, lockstep_scrolling } from '@legitminh/keyflow';
+  import { Keyflow, Document, ThemeToggle, min_box, state_viewport, lockstep_scrolling, key_presets, set_available_keys } from '@legitminh/keyflow';
+  import AppKeyboard from '../lib/components/AppKeyboard.svelte';
+  import GlobalSearch from '../lib/components/GlobalSearch.svelte';
+  import GitHubSyncProgress from '../lib/components/GitHubSyncProgress.svelte';
+  import { BackgroundSync, setBackgroundSync } from '../lib/github/background.svelte';
+  import { keyboardChoices, isKeyboardChoice, type KeyboardChoice } from '../lib/keyboard';
   import Control from '../lib/components/Control.svelte';
   import { dialogShortcuts, shortcutScope } from '../lib/shortcut-scope.svelte';
   import Action from '../lib/components/Action.svelte';
@@ -49,6 +54,14 @@
   let storageStatus = $state('');
   let editing = $state(false);
   let creating = $state(false);
+  let virtualKeyboard = $state(false);
+  let keyboardChoice = $state<KeyboardChoice>('ascii');
+  let shortcutAlphabet = $state('alphanumeric');
+  let showLineNumbers = $state(true);
+  let showLineIndex = $state(false);
+  let globalSearch = $state(false);
+  let heldModifier = $state(false);
+  let activeEditor = $state<{ saveForNavigation: () => Promise<boolean>; resumeEditing?: () => void }>();
   let wrapLines = $state(true);
   let prettyFontSize = $state(true);
   let vimMode = $state(false);
@@ -64,6 +77,8 @@
   const resolveGitHubConflict: ResolveGitHubConflict = (conflict) => new Promise((choose) => {
     githubConflict = { conflict, choose };
   });
+  const sync = new BackgroundSync(() => workspace, resolveGitHubConflict, () => { void refresh(); });
+  setBackgroundSync(sync);
   function finishGitHubConflict(value?: Blob | null) {
     const current = githubConflict;
     githubConflict = undefined;
@@ -107,6 +122,15 @@
     catch { /* Use the default when storage is unavailable. */ }
     try { stylusOnly = localStorage.getItem('notework:stylus-only') === 'true'; }
     catch { /* Finger drawing remains available when storage is unavailable. */ }
+    try {
+      virtualKeyboard = localStorage.getItem('notework:virtual-keyboard') === 'true';
+      const choice = localStorage.getItem('notework:keyboard-layout');
+      if (isKeyboardChoice(choice)) keyboardChoice = choice;
+      showLineNumbers = localStorage.getItem('notework:line-numbers') !== 'false';
+      showLineIndex = localStorage.getItem('notework:line-index') === 'true';
+      shortcutAlphabet = localStorage.getItem('notework:shortcut-alphabet') === 'letters' ? 'letters' : 'alphanumeric';
+      set_available_keys(shortcutAlphabet === 'letters' ? key_presets.letters : key_presets.alphanumeric);
+    } catch { /* Defaults work without preference storage. */ }
     autosaveSeconds = readAutosaveSeconds();
     pdfMargins = readPdfMargins();
     supported = supportsFilesystem();
@@ -126,9 +150,13 @@
       await refresh();
       await goto(location.pathname, { state: { notework: ROOT }, shallow: true, replace: true, reset: false });
       loading = false;
+      await sync.restore();
     })();
     const poll = () => { if (!document.hidden && !loading && !picking && !busy) void refresh(); };
-    const interval = setInterval(poll, 5000);
+    const interval = setInterval(() => { poll(); if (!loading) sync.retry(); }, 30_000);
+    const pruneInterval = setInterval(poll, 5000);
+    const online = () => { sync.retry(); };
+    window.addEventListener('online', online);
     window.addEventListener('focus', poll);
     document.addEventListener('visibilitychange', poll);
     const cancelOnEscape = (event: KeyboardEvent) => {
@@ -139,8 +167,21 @@
       event.preventDefault(); event.stopImmediatePropagation();
       void cancelRelocate();
     };
+    const modifierDown = (event: KeyboardEvent) => {
+      if (event.isComposing || event.altKey) return;
+      if (event.key === 'Meta' || event.key === 'Control') heldModifier = true;
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'p') {
+        event.preventDefault(); event.stopImmediatePropagation(); heldModifier = false;
+        if (!event.repeat && !loading && !document.querySelector('dialog[open]')) globalSearch = true;
+      }
+    };
+    const modifierUp = (event: KeyboardEvent) => { if (event.key === 'Meta' || event.key === 'Control' || !(event.metaKey || event.ctrlKey)) heldModifier = false; };
+    const resetModifier = () => { heldModifier = false; };
+    window.addEventListener('keydown', modifierDown, true);
+    window.addEventListener('keyup', modifierUp, true);
+    window.addEventListener('blur', resetModifier);
     window.addEventListener('keydown', cancelOnEscape, true);
-    return () => { window.removeEventListener('keydown', cancelOnEscape, true); navigationVersion++; refreshVersion++; clearInterval(interval); window.removeEventListener('focus', poll); document.removeEventListener('visibilitychange', poll); };
+    return () => { sync.stop(); clearInterval(pruneInterval); window.removeEventListener('online', online); window.removeEventListener('keydown', modifierDown, true); window.removeEventListener('keyup', modifierUp, true); window.removeEventListener('blur', resetModifier); window.removeEventListener('keydown', cancelOnEscape, true); navigationVersion++; refreshVersion++; clearInterval(interval); window.removeEventListener('focus', poll); document.removeEventListener('visibilitychange', poll); };
   });
 
   $effect(() => {
@@ -328,6 +369,18 @@
       relocateDialog.close();
       message = error;
     } finally { busy = false; }
+  }
+
+  async function selectGlobalResult(node: StateNode) {
+    if (node.id === currentId) { globalSearch = false; return true; }
+    const wasEditing = editing;
+    if (wasEditing && !await activeEditor?.saveForNavigation()) return false;
+    editing = false;
+    await navigate(node.id);
+    if (currentId !== node.id) return false;
+    if (wasEditing && node.kind === 'file') await openFile();
+    globalSearch = false;
+    return true;
   }
 
   async function exitEditor() {
@@ -539,6 +592,7 @@
     if (busy || !confirm('Disconnect this repository? Notework will remove its token, cached files, and any unpublished drafts from this browser. Files on GitHub will stay as they are.')) return;
     busy = true; githubError = '';
     try {
+      workspace.github(id)?.assertNoQueuedSync('');
       await clearRepository(id);
       workspace.forget(nodeId(id));
       await saveWorkspace(workspace.data);
@@ -566,13 +620,13 @@
   <meta name="description" content="A local-first network of files, folders, and notes. Navigate your information with Keyflow." />
 </svelte:head>
 
-<Keyflow options={{ storagePrefix: 'notework:keyflow:', minBox: 40, lockstep: false }}>
+<Keyflow options={{ storagePrefix: 'notework:keyflow:', minBox: 40, lockstep: false, keys: key_presets.alphanumeric }}>
   <Document>
-    <main class="app" class:editing-view={editing && !!current} aria-label="notework" aria-busy={loading}>
+    <main class="app" class:editing-view={editing && !!current} class:line-index-view={editing && showLineIndex} aria-label="notework" aria-busy={loading}>
       {#if relocateTarget}
         <aside class="relocate-banner" aria-label="relocate" aria-live="polite">
           <p>choose location for {relocateTarget.name}</p>
-          <Control class="cancel-relocate" onclick={cancelRelocate} disabled={busy} keys="esc">cancel relocate</Control>
+          <Control class="cancel-relocate" onclick={cancelRelocate} disabled={busy || loading} keys="esc">cancel relocate</Control>
         </aside>
       {/if}
       {#if creating && (!current || current.kind === 'directory')}
@@ -583,9 +637,9 @@
         {@const id = current.id}
         {#key current.uri}
           {#if current.drawing}
-            <StandaloneDrawing {pdfMargins} {stylusOnly} {resolveGitHubConflict} autosaveMs={autosaveSeconds * 1000} {workspace} node={current} onExit={exitEditor} onMissing={() => { void unavailableCurrent(id, 'missing'); }} />
+            <StandaloneDrawing bind:this={activeEditor} {pdfMargins} {stylusOnly} autosaveMs={autosaveSeconds * 1000} {workspace} node={current} onExit={exitEditor} onMissing={() => { void unavailableCurrent(id, 'missing'); }} />
           {:else}
-            <TextEditor {workspace} node={current} {wrapLines} {prettyFontSize} {vimMode} {stylusOnly} {pdfMargins} {resolveGitHubConflict} autosaveMs={autosaveSeconds * 1000} onExit={exitEditor}
+            <TextEditor bind:this={activeEditor} {showLineNumbers} {showLineIndex} {workspace} node={current} {wrapLines} {prettyFontSize} {vimMode} {stylusOnly} {pdfMargins} autosaveMs={autosaveSeconds * 1000} onExit={exitEditor}
               onMissing={() => { void unavailableCurrent(id, 'missing'); }} onOpenLink={openLinkedFile} />
           {/if}
         {/key}
@@ -593,7 +647,7 @@
       <nav aria-label="state navigation">
         <Action label="search" onSelect={() => togglePanel('search')} disabled={loading || busy} />
         {#if current}
-          <Action label={`configure ${resourceType}`} onSelect={() => togglePanel('configure')} disabled={busy} />
+          <Action label={`configure ${resourceType}`} onSelect={() => togglePanel('configure')} disabled={busy || loading} />
           {#if current.kind === 'directory'}
             <Action label="create new file/folder" onSelect={startCreating} disabled={loading || busy || !canCreateHere} />
           {/if}
@@ -602,26 +656,26 @@
         {/if}
         <hr />
         {#if current}
-          <Action label="home" iconOnly onSelect={() => navigate(ROOT)} disabled={busy}>
+          <Action label="home" iconOnly onSelect={() => navigate(ROOT)} disabled={busy || loading}>
             <svg class="action-icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
               <path d="m3 11 9-8 9 8" /><path d="M5 10v11h14V10" /><path d="M9 21v-7h6v7" />
             </svg>
           </Action>
-          <Action label=".." onSelect={() => navigate(parentId(current!))} disabled={busy} />
+          <Action label=".." onSelect={() => navigate(parentId(current!))} disabled={busy || loading} />
         {/if}
         {#each edges as node (node.id)}
           {#if relocateTarget && node.kind === 'directory'}
             <div class="file-navigation-row">
-              <Action label="choose" onSelect={() => chooseLocation(node)} disabled={busy} />
-              <Action label={node.name + '/'} onSelect={() => navigate(node.id)} disabled={busy} />
+              <Action label="choose" onSelect={() => chooseLocation(node)} disabled={busy || loading} />
+              <Action label={node.name + '/'} onSelect={() => navigate(node.id)} disabled={busy || loading} />
             </div>
           {:else if !relocateTarget && node.kind === 'file' && directChildIds.has(node.id) && (!current || current.kind === 'directory')}
             <div class="file-navigation-row">
-              <Action label="open" onSelect={() => { void openNode(node); }} disabled={busy} />
-              <Action label={node.name} onSelect={() => navigate(node.id)} disabled={busy} />
+              <Action label="open" onSelect={() => { void openNode(node); }} disabled={busy || loading} />
+              <Action label={node.name} onSelect={() => navigate(node.id)} disabled={busy || loading} />
             </div>
           {:else}
-            <Action label={node.name + (node.kind === 'directory' ? '/' : '')} onSelect={() => navigate(node.id)} disabled={busy} />
+            <Action label={node.name + (node.kind === 'directory' ? '/' : '')} onSelect={() => navigate(node.id)} disabled={busy || loading} />
           {/if}
         {/each}
       </nav>
@@ -644,15 +698,15 @@
           <section class="panel" aria-labelledby="configure-heading">
             <h2 id="configure-heading">configure {resourceType}</h2>
             {#if current.kind === 'directory'}
-              <Action label="refresh folder" onSelect={refreshFolder} disabled={busy} />
+              <Action label="refresh folder" onSelect={refreshFolder} disabled={busy || loading} />
             {/if}
             {#if needsPermission}
-              <Action label={`reconnect ${source!.handle.name}`} onSelect={() => reconnect(source!.id)} disabled={busy} />
+              <Action label={`reconnect ${source!.handle.name}`} onSelect={() => reconnect(source!.id)} disabled={busy || loading} />
             {/if}
             {#if githubRoot}
-              <Action label="GitHub repositories" onSelect={() => togglePanel('github')} disabled={busy} />
+              <Action label="GitHub repositories" onSelect={() => togglePanel('github')} disabled={busy || loading} />
             {:else}
-              <Action label="rename" onSelect={askRename} disabled={busy} />
+              <Action label="rename" onSelect={askRename} disabled={busy || loading} />
               <Action label={`relocate this ${resourceType}`} onSelect={startRelocate} disabled={busy || !!relocateTarget} />
               <Action label={`delete this ${resourceType}`} onSelect={confirmDelete} disabled={busy || !canDeleteCurrent} />
             {/if}
@@ -687,7 +741,7 @@
                 {#each workspace.data.sources as grant (grant.id)}
                   <div class="config-row"><span>{grant.handle.name} · {grant.storage !== 'local' ? storageLabel(grant.storage ?? 'local') : permissions[grant.id] === 'granted' ? 'read access granted' : 'needs permission'}</span></div>
                   {#if grant.storage === 'local' && permissions[grant.id] !== 'granted'}
-                    <Action label={`reconnect ${grant.handle.name}`} onSelect={() => reconnect(grant.id)} disabled={busy} />
+                    <Action label={`reconnect ${grant.handle.name}`} onSelect={() => reconnect(grant.id)} disabled={busy || loading} />
                   {/if}
                   {#if !rootIds.includes(nodeId(grant.id))}
                     <Control class="small-button config-row" onclick={() => { workspace.link(ROOT, nodeId(grant.id)); void persist(); }}>add {grant.handle.name} to root</Control>
@@ -698,6 +752,29 @@
 
             <h3>appearance</h3>
             <div class="action">{#if !shortcutScope.dialog}<ThemeToggle />{/if}</div>
+            <Action label={`line numbers: ${showLineNumbers ? 'on' : 'off'}`} onSelect={() => {
+              showLineNumbers = !showLineNumbers; saveAppearancePreference('notework:line-numbers', showLineNumbers);
+            }} />
+            <Action label={`line index mod 4: ${showLineIndex ? 'on' : 'off'}`} onSelect={() => {
+              showLineIndex = !showLineIndex; saveAppearancePreference('notework:line-index', showLineIndex);
+            }} />
+            <p class="muted">Zero-based line index: gray/gray = 0, white/gray = 1, gray/white = 2, white/white = 3.</p>
+            <h3>keyboard</h3>
+            <label class="field">shortcut input space
+              <select aria-label="shortcut input space" bind:value={shortcutAlphabet} onchange={() => {
+                set_available_keys(shortcutAlphabet === 'letters' ? key_presets.letters : key_presets.alphanumeric);
+                try { localStorage.setItem('notework:shortcut-alphabet', shortcutAlphabet); } catch { /* Session only. */ }
+              }}><option value="alphanumeric">Alphanumeric (A–Z, 0–9)</option><option value="letters">Letters (A–Z)</option></select>
+            </label>
+            <Action label={`virtual keyboard: ${virtualKeyboard ? 'on' : 'off'}`} onSelect={() => {
+              virtualKeyboard = !virtualKeyboard; saveAppearancePreference('notework:virtual-keyboard', virtualKeyboard);
+            }} />
+            <label class="field">virtual keyboard layout
+              <select aria-label="virtual keyboard layout" bind:value={keyboardChoice} onchange={() => {
+                try { localStorage.setItem('notework:keyboard-layout', keyboardChoice); } catch { /* Session only. */ }
+              }}>{#each keyboardChoices as choice}<option value={choice.id}>{choice.label}</option>{/each}</select>
+            </label>
+            <p class="muted">Off by default. When enabled, use the selected Keyflow keyboard instead of the system text keyboard. Flick alpha supports directional gestures during text editing.</p>
             <Action label={`Vim mode: ${vimMode ? 'on' : 'off'}`} onSelect={() => {
               vimMode = !vimMode;
               saveAppearancePreference('notework:vim-mode', vimMode);
@@ -722,7 +799,7 @@
               <input type="number" min={MIN_AUTOSAVE_SECONDS} step="1" value={autosaveSeconds}
                 oninput={(event) => updateAutosaveInterval(event.currentTarget)} />
             </label>
-            <p class="muted">Default: {DEFAULT_AUTOSAVE_SECONDS} seconds. Exit saves first and syncs GitHub drafts. Local files may ask for write access when you exit.</p>
+            <p class="muted">Default: {DEFAULT_AUTOSAVE_SECONDS} seconds. Exit saves first and queues GitHub sync in the background. Local files may ask for write access when you exit.</p>
             <h3>export margins</h3>
             <p class="muted" id="pdf-margin-units">Each side defaults to 1 min-box. Set 0 for no margin; fractions are allowed.</p>
             {#each pdfMarginSides as side}
@@ -733,7 +810,7 @@
             {/each}
           </section>
         {:else if panel === 'github'}
-          <Action label="back to app settings" onSelect={() => togglePanel('settings')} disabled={busy} />
+          <Action label="back to app settings" onSelect={() => togglePanel('settings')} disabled={busy || loading} />
           <GitHubSettings sources={githubSources} {busy} error={githubError}
             onConnect={connectGitHub} onUpdate={reconnectGitHub} onDisconnect={disconnectGitHub} />
         {/if}
@@ -744,16 +821,16 @@
           <h1>{current.name}{current.kind === 'directory' ? '/' : ''}</h1>
           <p class="path">{workspace.label(current)} · {current.storage === 'local' ? 'computer' : storageLabel(current.storage)} · {current.kind === 'directory' ? 'folder' : 'file'}</p>
           {#if relocateTarget && current.kind === 'directory'}
-            <Action label="choose" onSelect={() => chooseLocation(current)} disabled={busy} />
+            <Action label="choose" onSelect={() => chooseLocation(current)} disabled={busy || loading} />
           {/if}
           {#if current.kind === 'file' && !relocateTarget}
-            <Action label="open" onSelect={openFile} disabled={busy} />
+            <Action label="open" onSelect={openFile} disabled={busy || loading} />
           {:else if current.kind === 'directory'}
             <p class="muted">{children.length} direct {children.length === 1 ? 'child' : 'children'} · {edges.length} reachable {edges.length === 1 ? 'state' : 'states'}</p>
           {/if}
         {:else}
           <h1>home</h1>
-          {#if relocateTarget}<Action label="choose" onSelect={() => chooseLocation(null)} disabled={busy} />{/if}
+          {#if relocateTarget}<Action label="choose" onSelect={() => chooseLocation(null)} disabled={busy || loading} />{/if}
           <p class="path">virtual folder · {edges.length} {edges.length === 1 ? 'item' : 'items'} from connected sources</p>
         {/if}
       </section>
@@ -764,11 +841,11 @@
     oncancel={(event) => { if (busy) event.preventDefault(); }}>
     <h2 id="rename-title">Rename {renameTarget?.kind === 'directory' ? 'folder' : 'file'}</h2>
     <form bind:this={renameForm} use:submitOnEnter onsubmit={(event) => { event.preventDefault(); void renameCurrent(); }}>
-      <label class="field">new name <input bind:value={renameName} required maxlength="255" disabled={busy} /></label>
+      <label class="field">new name <input bind:value={renameName} required maxlength="255" disabled={busy || loading} /></label>
       {#if renameError}<StorageNotice error={renameError} />{/if}
       <div class="editor-controls">
-        <Control onclick={() => renameForm.requestSubmit()} disabled={busy}>Rename and update links</Control>
-        <Control onclick={() => renameDialog.close()} disabled={busy}>Cancel</Control>
+        <Control onclick={() => renameForm.requestSubmit()} disabled={busy || loading}>Rename and update links</Control>
+        <Control onclick={() => renameDialog.close()} disabled={busy || loading}>Cancel</Control>
       </div>
     </form>
   </dialog>
@@ -777,8 +854,8 @@
     <h2 id="relocate-heading">Relocate {relocateTarget?.kind === 'directory' ? 'folder' : 'file'} to {storageLabel(relocateDestination?.storage ?? 'browser')}?</h2>
     <p class="muted">This creates “{relocateTarget?.name}”{relocateTarget?.kind === 'directory' ? ' and all its contents' : ''} in {storageLabel(relocateDestination?.storage ?? 'browser')} at {relocateDestination ? workspace.label(relocateDestination) : 'home'}, then deletes the original from {storageLabel(relocateTarget?.storage ?? 'browser')}.</p>
     <div class="editor-controls">
-      <Control onclick={() => relocateDialog.close()} disabled={busy}>No</Control>
-      <Control onclick={finishRelocate} disabled={busy}>Yes</Control>
+      <Control onclick={() => relocateDialog.close()} disabled={busy || loading}>No</Control>
+      <Control onclick={finishRelocate} disabled={busy || loading}>Yes</Control>
     </div>
   </dialog>
   <dialog use:dialogShortcuts class="local-picker editor-exit" bind:this={deleteDialog} aria-labelledby="delete-heading"
@@ -786,10 +863,14 @@
     <h2 id="delete-heading">Delete {deleteTarget?.name}?</h2>
     <p class="muted">{deleteTarget?.kind === 'directory' ? 'This permanently deletes the folder and everything inside it.' : 'This permanently deletes the file.'}</p>
     <div class="editor-controls">
-      <Control onclick={() => deleteDialog.close()} disabled={busy}>Cancel</Control>
-      <Control onclick={deleteCurrent} disabled={busy}>Delete {deleteTarget?.kind === 'directory' ? 'folder' : 'file'}</Control>
+      <Control onclick={() => deleteDialog.close()} disabled={busy || loading}>Cancel</Control>
+      <Control onclick={deleteCurrent} disabled={busy || loading}>Delete {deleteTarget?.kind === 'directory' ? 'folder' : 'file'}</Control>
     </div>
   </dialog>
+  <AppKeyboard enabled={virtualKeyboard} choice={keyboardChoice} />
+  <GitHubSyncProgress />
+  {#if heldModifier && !globalSearch}<aside class="modifier-hints" aria-label="Command and Control shortcuts">C · Copy &nbsp; V · Paste &nbsp; P · Search all files &nbsp; S · Save</aside>{/if}
+  {#if globalSearch}<GlobalSearch {workspace} {graphRevision} onSelect={selectGlobalResult} onClose={() => { globalSearch = false; }} />{/if}
   {#if picking}
     <LocalPicker onSelect={add} onCancel={() => { picking = false; }} />
   {/if}

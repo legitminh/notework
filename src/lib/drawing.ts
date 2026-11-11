@@ -8,7 +8,7 @@ export const DRAWING_WIDTH = 1024;
 export const DRAWING_PAGE_HEIGHT = DRAWING_WIDTH * 16 / 32;
 export const STROKE_WIDTH = 3;
 const header = '<svg xmlns="http://www.w3.org/2000/svg" data-notework-drawing="1"';
-export const svgPagePattern = /^[ \t]*\\svgpage\[([^\[\]\r\n]+\.svg)\][ \t]*$/i;
+export const svgPagePattern = /^[ \t]*\\(?:svg|png|jpeg|heic|ora)page\[([^\[\]\r\n]+)\][ \t]*$/i;
 
 export function drawingBottom(strokes: Drawing) {
   let bottom = 0;

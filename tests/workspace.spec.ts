@@ -13,13 +13,19 @@ declare global {
 const button = (page: Page, name: string) => page.locator(`[data-action=${JSON.stringify(name)}] button`);
 const errors = new WeakMap<Page, string[]>();
 const toolbar = (page: Page, name: string) =>
-  page.getByRole('group', { name: 'Editor toolbar' }).getByRole('button', { name, exact: true });
+  page.getByRole('group', { name: 'Editor toolbar' }).getByRole('button', { name: name === 'Brush' ? '+svg' : name, exact: true });
 const openEditor = (page: Page) => button(page, 'open').click();
 const forceSave = (page: Page) => page.keyboard.press('ControlOrMeta+s');
 async function pressShortcut(page: Page, control: Locator) {
   const route = control.locator('.pending_route');
   await expect(route).not.toHaveText('');
   for (const key of (await route.innerText()).trim()) await page.keyboard.press(key);
+}
+
+// Existing preview tests leave the new immediate drawing mode before inspecting source/preview.
+async function insertDrawing(page: Page) {
+  await toolbar(page, 'Brush').click();
+  await page.getByRole('group', { name: 'Drawing toolbar' }).getByRole('button', { name: 'Exit', exact: true }).click();
 }
 
 async function startCreate(page: Page, location: 'home' | 'folder' = 'home') {
@@ -556,7 +562,7 @@ test('file content decides text visibility, including PDF source and hidden bina
   const picker = page.getByRole('dialog');
   await picker.getByRole('button', { name: 'browse location…', exact: true }).click();
   await expect(picker.getByRole('checkbox', { name: 'Select outside.txt file', exact: true })).toBeVisible();
-  await expect(picker.getByRole('checkbox', { name: 'Select image.png file', exact: true })).toHaveCount(0);
+  await expect(picker.getByRole('checkbox', { name: 'Select image.png file', exact: true })).toHaveCount(1);
   await picker.getByRole('button', { name: 'cancel', exact: true }).click();
 });
 
@@ -846,7 +852,7 @@ for (const kind of ['inline', 'standalone']) {
   test(`Escape cancels a stroke and focuses the ${kind} SVG drawing toolbar`, async ({ page }) => {
     if (kind === 'inline') {
       await createNote(page, 'sketch.txt');
-      await toolbar(page, 'Brush').click();
+      await insertDrawing(page);
       await page.getByRole('button', { name: /^Edit drawing drawing-/ }).click();
     } else {
       await startCreate(page);
@@ -1391,6 +1397,7 @@ test('brush inserts a movable SVG page, swaps the inline toolbar, and saves an e
   await toolbar(page, 'Brush').hover();
   await expect(toolbar(page, 'Brush').getByText('Command+B', { exact: true })).toBeVisible();
   await page.keyboard.press('Meta+b');
+  await page.getByRole('group', { name: 'Drawing toolbar' }).getByRole('button', { name: 'Exit', exact: true }).click();
   await page.keyboard.insertText('after');
   const preview = page.getByRole('button', { name: /^Edit drawing drawing-/ });
   await expect(preview).toBeVisible();
@@ -1487,7 +1494,7 @@ test('saving a drawing for a machine note creates and edits a real local SVG sib
   await button(page, 'readme.txt').click();
   await openEditor(page);
   await page.keyboard.press('ControlOrMeta+End');
-  await toolbar(page, 'Brush').click();
+  await insertDrawing(page);
   const preview = page.getByRole('button', { name: /^Edit drawing drawing-/ });
   const name = (await preview.getAttribute('aria-label'))!.slice('Edit drawing '.length);
   await forceSave(page);
@@ -2005,7 +2012,7 @@ test('home is a virtual folder with mixed sources and the shared creation screen
 test('drawing pages preserve geometry through rotation, inline preview, and standalone editing', async ({ page }) => {
   await page.setViewportSize({ width: 820, height: 1180 });
   await createNote(page, 'rotation.txt');
-  await toolbar(page, 'Brush').click();
+  await insertDrawing(page);
   await page.keyboard.insertText('Below the drawing');
   const preview = page.getByRole('button', { name: /^Edit drawing drawing-/ });
   const name = (await preview.getAttribute('aria-label'))!.slice('Edit drawing '.length);
@@ -2033,8 +2040,9 @@ test('drawing pages preserve geometry through rotation, inline preview, and stan
     const square = (await svg.locator('polyline').boundingBox())!;
     const originalRatio = await svg.locator('polyline').evaluate((el) => {
       const box = (el as SVGGraphicsElement).getBBox();
-      return box.width / box.height;
-    });
+      // Chrome's painted bounds include the round stroke, unlike getBBox().
+      return (box.width + 3) / (box.height + 3);
+    }, undefined);
     expect(square.width / square.height).toBeCloseTo(originalRatio, 3);
     const box = (await svg.boundingBox())!;
     const model = await svg.evaluate((el) => ({ width: (el as SVGSVGElement).viewBox.baseVal.width, height: (el as SVGSVGElement).viewBox.baseVal.height }));
@@ -2062,7 +2070,7 @@ test('drawing pages preserve geometry through rotation, inline preview, and stan
 
 test('SVG page lasso traces touch input and moves, resizes, and clears only enclosed strokes', async ({ page, context }) => {
   await createNote(page, 'lasso.txt');
-  await toolbar(page, 'Brush').click();
+  await insertDrawing(page);
   const preview = page.getByRole('button', { name: /^Edit drawing drawing-/ });
   await preview.click();
   const tools = page.getByRole('group', { name: 'Drawing toolbar' });
@@ -2215,7 +2223,7 @@ test('lasso release closes open traces, adds their union, and reselecting Lasso 
 
 test('the lasso Move button drags by pointer or by holding its Keyflow shortcut', async ({ page }) => {
   await createNote(page, 'move-lasso.txt');
-  await toolbar(page, 'Brush').click();
+  await insertDrawing(page);
   await page.getByRole('button', { name: /^Edit drawing drawing-/ }).click();
   const canvas = page.getByRole('img', { name: /^Drawing canvas for / });
   const tools = page.getByRole('group', { name: 'Drawing toolbar' });

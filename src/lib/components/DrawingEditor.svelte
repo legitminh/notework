@@ -1,7 +1,6 @@
 <script lang="ts">
   import Control from './Control.svelte';
   import StorageNotice from './StorageNotice.svelte';
-  import GitHubSyncProgress from './GitHubSyncProgress.svelte';
   import EditorTitle from './EditorTitle.svelte';
   import { preserveContentFocus } from '../editor-focus';
   import { onMount } from 'svelte';
@@ -12,14 +11,19 @@
   import { GitHubEditCancelled } from '../github/repository';
   import { draftQueue } from '../github/storage';
 
-  let { name, initial, initialDraft = false, onSave, onCommit, onExit, surfaceTarget, stylusOnly, onExport, autosaveMs, usingTools = $bindable(false) }: {
+  let { name, initial, initialDraft = false, onSave, onCommit, onDelete, onExit, backgroundHref, foregroundHref, imageHeight, strokeOpacity = 1, surfaceTarget, stylusOnly, onExport, autosaveMs, usingTools = $bindable(false) }: {
     name: string;
+    backgroundHref?: string;
+    foregroundHref?: string;
+    imageHeight?: number;
+    strokeOpacity?: number;
     stylusOnly: boolean;
     autosaveMs: number;
     initial: Drawing;
     initialDraft?: boolean;
     onSave: (strokes: Drawing, requestWrite: boolean) => Promise<void>;
     onCommit?: () => Promise<void>;
+    onDelete?: () => void | Promise<void>;
     onExport: (strokes: Drawing) => void;
     onExit: () => void | Promise<void>;
     surfaceTarget?: HTMLElement;
@@ -60,7 +64,7 @@
   let canvasWidth = $state(DRAWING_WIDTH);
   const scale = $derived(canvasWidth / DRAWING_WIDTH || 1);
   const frameMinimum = $derived(64 / scale);
-  const height = $derived(Math.max(drawingBottom(strokes) + DRAWING_PAGE_HEIGHT, selection?.box.bottom ?? 0));
+  const height = $derived(imageHeight ?? Math.max(drawingBottom(strokes) + DRAWING_PAGE_HEIGHT, selection?.box.bottom ?? 0));
   const canvasHeight = $derived(gesture?.limit ?? height);
   const penOnly = $derived(stylusOnly && tool !== 'lasso');
   const outline = $derived(selection ? areaPath(selection.area) : '');
@@ -315,6 +319,16 @@
     }
   }
 
+  export async function saveForNavigation(publish = true) {
+    if (saving || publishing || gesture) return false;
+    await save(false, false);
+    if (dirty) return false;
+    if (onCommit && publish) {
+      try { await onCommit(); } catch (cause) { error = cause; return false; }
+    }
+    return true;
+  }
+
   function exit() {
     void save(true, true);
   }
@@ -333,7 +347,7 @@
     githubPending = initialDraft;
     lastSaveAt = Date.now();
     const shortcuts = (event: KeyboardEvent) => {
-      if (event.altKey || event.isComposing || document.querySelector('.github-conflict[open], .github-reconnect[open]')) return;
+      if (event.altKey || event.isComposing || document.querySelector('dialog[open]')) return;
       const key = event.key.toLowerCase();
       if (!(event.metaKey || event.ctrlKey)) {
         const input = event.code || key;
@@ -379,7 +393,7 @@
     });
     resize.observe(canvas);
     const beforeUnload = (event: BeforeUnloadEvent) => {
-      if (dirty || gesture) { event.preventDefault(); event.returnValue = ''; }
+      if (dirty || gesture || (publishing && githubPending)) { event.preventDefault(); event.returnValue = ''; }
     };
     const trackMouse = (event: PointerEvent) => {
       if (event.pointerType !== 'mouse') return;
@@ -422,6 +436,7 @@
   <Control onclick={() => chooseTool('lasso')} aria-pressed={tool === 'lasso'}>Lasso</Control>
   <Control onclick={undo} disabled={!undoStack.length || saving || publishing}>Undo<span class="shortcut-hint" aria-hidden="true">Command+Z</span></Control>
   <Control onclick={redo} disabled={!redoStack.length || saving || publishing}>Redo<span class="shortcut-hint" aria-hidden="true">Command+Shift+Z</span></Control>
+  {#if onDelete}<Control onclick={() => { cancelGesture(); void onDelete?.(); }} disabled={saving || publishing}>Delete drawing</Control>{/if}
   <Control onclick={() => onExport(strokes)} disabled={saving || publishing || !!gesture}>Export</Control>
 </div>
 
@@ -431,16 +446,18 @@
   {#if error}<StorageNotice {error} />{/if}
   <div class="drawing-page-viewport" bind:this={pageViewport}>
     <div class="drawing-canvas-layer" bind:this={canvasLayer}>
-      <svg bind:this={canvas} class:eraser={tool === 'eraser'} class:moving class="drawing-canvas" role="img" aria-label={`Drawing canvas for ${name}`} tabindex="-1"
+      <svg bind:this={canvas} class:image-canvas={!!backgroundHref} class:eraser={tool === 'eraser'} class:moving class="drawing-canvas" role="img" aria-label={`Drawing canvas for ${name}`} tabindex="-1"
         viewBox={`0 0 ${DRAWING_WIDTH} ${canvasHeight}`} preserveAspectRatio="xMinYMin meet"
         width={DRAWING_WIDTH} height={canvasHeight}
         style:touch-action={penOnly ? 'pan-x pan-y pinch-zoom' : 'none'} onpointerdown={begin} onpointermove={move}
         onpointerup={(event) => finish(event)} onpointercancel={(event) => finish(event, true)}
         onlostpointercapture={(event) => finish(event, true)}>
+        {#if backgroundHref}<image href={backgroundHref} width={DRAWING_WIDTH} height={imageHeight} pointer-events="none" />{/if}
         {#each [...strokes, ...(gesture?.kind === 'brush' && points.length ? [points] : [])] as stroke, index}
-          <polyline points={strokePoints(stroke)} fill="none" stroke="currentColor" stroke-width={STROKE_WIDTH}
+          <polyline points={strokePoints(stroke)} fill="none" stroke="currentColor" opacity={strokeOpacity} stroke-width={STROKE_WIDTH}
             stroke-linecap="round" stroke-linejoin="round" data-lasso-drag={selection?.indices.has(index) && !tracing ? '' : undefined} />
         {/each}
+        {#if foregroundHref}<image href={foregroundHref} width={DRAWING_WIDTH} height={imageHeight} pointer-events="none" />{/if}
         {#if outline}
           <g class="lasso-area" aria-hidden="true">
             <path d={outline} class="lasso-underlay" vector-effect="non-scaling-stroke" />
@@ -490,11 +507,12 @@
   </div>
 </div>
 
-{#if publishing}<GitHubSyncProgress />{/if}
+
 
 <style>
   .drawing-canvas-layer { position: relative; width: 100%; max-width: var(--page-max-width); }
   .drawing-canvas { max-width: 100%; }
+  .drawing-canvas.image-canvas { background-image: conic-gradient(#ddd 25%, #fff 0 50%, #ddd 0 75%, #fff 0); background-size: 16px 16px; color: #202733; }
   .lasso-contour, .lasso-area { pointer-events: none; fill: none; stroke-linejoin: round; }
   .lasso-underlay { stroke: var(--background); stroke-width: 3; }
   .lasso-dashes { stroke: currentColor; stroke-width: 1.5; stroke-dasharray: 5 4; animation: march .45s linear infinite; }

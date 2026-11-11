@@ -1,3 +1,4 @@
+import { blankImage, imageFormats } from './images';
 import { serializeDrawing } from './drawing';
 
 export interface AssetType {
@@ -5,14 +6,16 @@ export interface AssetType {
   label: string;
   kind: 'file' | 'directory';
   extension?: string;
-  initialContent?: () => string | Uint8Array;
+  initialContent?: () => string | Uint8Array | Promise<string | Uint8Array>;
 }
 
 // Creation UI and resource initialization both use this registry.
 export const assetTypes: readonly AssetType[] = [
   { id: 'folder', label: 'folder', kind: 'directory' },
   { id: 'text', label: 'text file', kind: 'file', initialContent: () => '' },
-  { id: 'svg', label: 'svg file', kind: 'file', extension: '.svg', initialContent: () => serializeDrawing([]) }
+  { id: 'svg', label: 'svg file', kind: 'file', extension: '.svg', initialContent: () => serializeDrawing([]) },
+  ...imageFormats.map((format): AssetType => ({ id: format, label: `${format} image`, kind: 'file', extension: `.${format}`,
+    initialContent: async () => new Uint8Array(await (await blankImage(format)).arrayBuffer()) }))
 ];
 
 export function assetName(input: string, type: AssetType) {
