@@ -4,6 +4,7 @@
   import EditorTitle from './EditorTitle.svelte';
   import { preserveContentFocus } from '../editor-focus';
   import { onMount } from 'svelte';
+  import { shortcutScope } from '../shortcut-scope.svelte';
   import { DRAWING_WIDTH, DRAWING_PAGE_HEIGHT, STROKE_WIDTH, drawingBottom, strokePoints, touchesStroke, type Drawing, type Point } from '../drawing';
   import { drawingGestures } from '../drawing-gestures';
   import { areaPath, dragBox, growSelection, roundCoordinate, transformSelection, type Corner, type Selection } from '../drawing-selection';
@@ -24,8 +25,8 @@
     onSave: (strokes: Drawing, requestWrite: boolean) => Promise<void>;
     onCommit?: () => Promise<void>;
     onDelete?: () => void | Promise<void>;
-    onExport: (strokes: Drawing) => void;
-    onExit: () => void | Promise<void>;
+    onExport?: (strokes: Drawing) => void;
+    onExit?: () => void | Promise<void>;
     surfaceTarget?: HTMLElement;
     usingTools?: boolean;
   } = $props();
@@ -270,7 +271,7 @@
     }
     if (saving) return;
     if (!dirty) {
-      if (exit) await onExit();
+      if (exit) await onExit?.();
       return;
     }
     clearAutosave();
@@ -279,7 +280,7 @@
     try {
       if (onCommit) await withDraft(() => saveSnapshot(requestWrite));
       else await saveSnapshot(requestWrite);
-      if (exit) await onExit();
+      if (exit) await onExit?.();
     } catch (cause) {
       lastSaveAt = Date.now();
       if (cause instanceof WritePermissionRequired) waitingForPermission = true;
@@ -310,7 +311,7 @@
       await withDraft(() => saveSnapshot(true));
       await commit();
       githubPending = false;
-      if (active) await onExit();
+      if (active) await onExit?.();
     } catch (cause) {
       if (!(cause instanceof GitHubEditCancelled)) error = cause;
     } finally {
@@ -347,7 +348,12 @@
     githubPending = initialDraft;
     lastSaveAt = Date.now();
     const shortcuts = (event: KeyboardEvent) => {
-      if (event.altKey || event.isComposing || document.querySelector('dialog[open]')) return;
+      const modal = shortcutScope.dialog;
+      const target = event.target;
+      if (event.altKey || event.isComposing) return;
+      // Both conflict versions use this editor. Only the focused version handles shortcuts.
+      if (modal && (canvas.closest('dialog') !== modal || !(target instanceof Node) ||
+          (!canvas.parentElement?.parentElement?.contains(target) && !toolbar.contains(target)))) return;
       const key = event.key.toLowerCase();
       if (!(event.metaKey || event.ctrlKey)) {
         const input = event.code || key;
@@ -356,12 +362,12 @@
         const focusedMove = (key === ' ' || key === 'enter') &&
           (gesture?.input === input || (target instanceof Element && target.closest('.lasso-move')));
         if ((key === moveKey || focusedMove) && selection?.indices.size && !textInput &&
-            !event.defaultPrevented && !document.querySelector('dialog[open]')) {
+            !event.defaultPrevented) {
           if (focusedMove) event.preventDefault();
           if (!event.repeat) startTransform(input, mouse && point(mouse));
           return;
         }
-        if (key !== 'escape' || event.shiftKey || usingTools || document.querySelector('dialog[open]')) return;
+        if (key !== 'escape' || event.shiftKey || usingTools) return;
         event.preventDefault();
         if (!event.repeat) {
           cancelGesture();
@@ -377,7 +383,7 @@
       if (event.repeat || document.querySelector('dialog[open][aria-labelledby="export-heading"]')) return;
       if (key === 's') void save(false, true);
       else if (key === 'b') chooseTool('brush');
-      else if (key === 'escape') exit();
+      else if (key === 'escape' && onExit) exit();
       else if (key === 'y' || event.shiftKey) redo();
       else undo();
     };
@@ -430,14 +436,14 @@
 
 <div class="editor-controls drawing-controls" role="group" aria-label="Drawing toolbar" tabindex="-1" bind:this={toolbar}
   use:preserveContentFocus={() => !usingTools && document.activeElement === canvas}>
-  <Control onclick={exit} disabled={saving || publishing}>Exit<span class="shortcut-hint" aria-hidden="true">Ctrl+Esc</span></Control>
+  {#if onExit}<Control onclick={exit} disabled={saving || publishing}>Exit<span class="shortcut-hint" aria-hidden="true">Ctrl+Esc</span></Control>{/if}
   <Control onclick={() => chooseTool('brush')} aria-pressed={tool === 'brush'}>Brush<span class="shortcut-hint" aria-hidden="true">Command+B</span></Control>
   <Control onclick={() => chooseTool('eraser')} aria-pressed={tool === 'eraser'}>Eraser</Control>
   <Control onclick={() => chooseTool('lasso')} aria-pressed={tool === 'lasso'}>Lasso</Control>
   <Control onclick={undo} disabled={!undoStack.length || saving || publishing}>Undo<span class="shortcut-hint" aria-hidden="true">Command+Z</span></Control>
   <Control onclick={redo} disabled={!redoStack.length || saving || publishing}>Redo<span class="shortcut-hint" aria-hidden="true">Command+Shift+Z</span></Control>
   {#if onDelete}<Control onclick={() => { cancelGesture(); void onDelete?.(); }} disabled={saving || publishing}>Delete drawing</Control>{/if}
-  <Control onclick={() => onExport(strokes)} disabled={saving || publishing || !!gesture}>Export</Control>
+  {#if onExport}<Control onclick={() => onExport?.(strokes)} disabled={saving || publishing || !!gesture}>Export</Control>{/if}
 </div>
 
 <div class="drawing-surface" use:portal={surfaceTarget}>

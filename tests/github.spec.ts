@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { serializeDrawing } from '../src/lib/drawing';
+import { zipSync, strToU8 } from 'fflate';
 
 const api = 'https://api.github.com/repos/example/notebook';
 const action = (page: Page, name: string) => page.locator(`[data-action=${JSON.stringify(name)}] button`);
@@ -132,6 +133,7 @@ async function github(page: Page, initial: FixtureFiles) {
     advance(changes: FixtureFiles) { advanceOnPush = changes; },
     refuse(value: boolean) { refuseWrites = value; },
     rotateToken(value: string) { token = value; },
+    bytes(path: string) { const value = files().get(path); return value && blobs.get(value); },
     content(path: string) { const value = files().get(path); return value && blobs.get(value)?.toString(); }
   };
 }
@@ -333,6 +335,127 @@ test('same-file branch race opens two editable versions and publishes the select
   await expect(action(page, 'open')).toBeVisible();
   await expect.poll(() => repo.content('note.txt')).toBe('Edited upstream option');
   await expect.poll(() => repo.messages).toEqual(['edit: note.txt']);
+});
+
+async function drawVersion(page: Page, canvas: Locator) {
+  await expect(canvas).toBeVisible();
+  const box = (await canvas.boundingBox())!;
+  await page.mouse.move(box.x + 25, box.y + 30); await page.mouse.down();
+  await page.mouse.move(box.x + 90, box.y + 75, { steps: 4 }); await page.mouse.up();
+}
+
+async function conflictImages(page: Page, format: string) {
+  await page.goto('/');
+  const images = await page.evaluate(async (format) => {
+    const result = [];
+    for (const color of ['#ff0000', '#0000ff']) {
+      const canvas = document.createElement('canvas'); canvas.width = 800; canvas.height = 600;
+      const context = canvas.getContext('2d')!; context.fillStyle = color; context.fillRect(0, 0, 800, 600);
+      const blob = await new Promise<Blob>((resolve) => canvas.toBlob((blob) => resolve(blob!), format === 'jpeg' ? 'image/jpeg' : 'image/png'));
+      result.push(Array.from(new Uint8Array(await blob.arrayBuffer())));
+    }
+    return result;
+  }, format);
+  return images.map((bytes) => format === 'ora' ? Buffer.from(zipSync({
+    mimetype: strToU8('image/openraster'),
+    'stack.xml': strToU8('<image w="800" h="600"><stack><layer name="Color" src="data/color.png"/></stack></image>'),
+    'data/color.png': new Uint8Array(bytes)
+  })) : Buffer.from(bytes));
+}
+
+for (const format of ['png', 'jpeg', 'ora']) {
+  test(`${format} conflicts show both image editors and publish edits to the chosen image`, async ({ page }) => {
+    const name = `picture.${format}`;
+    const [original, upstream] = await conflictImages(page, format);
+    const repo = await github(page, { [name]: original });
+    await connect(page); await openNote(page, name);
+    await drawVersion(page, page.getByRole('img', { name: `Drawing canvas for ${name}` }));
+    repo.advance({ [name]: upstream });
+    await exit(page, 'Drawing toolbar').click();
+    await page.getByRole('button', { name: 'Review GitHub conflict', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'GitHub conflict' });
+    const local = dialog.getByRole('region', { name: 'Your version', exact: true });
+    const remote = dialog.getByRole('region', { name: 'GitHub version', exact: true });
+    const localCanvas = local.getByRole('img', { name: `Drawing canvas for ${name}` });
+    const remoteCanvas = remote.getByRole('img', { name: `Drawing canvas for ${name}` });
+    await expect(localCanvas).toBeVisible(); await expect(remoteCanvas).toBeVisible();
+    await expect(dialog.getByRole('textbox')).toHaveCount(0);
+    for (const [side, color] of [[localCanvas, [255, 0, 0, 255]], [remoteCanvas, [0, 0, 255, 255]]] as const) {
+      const pixel = await side.locator('image').first().evaluate(async (image) => {
+        const blob = await (await fetch(image.getAttribute('href')!)).blob();
+        const bitmap = await createImageBitmap(blob);
+        const canvas = document.createElement('canvas'); canvas.width = bitmap.width; canvas.height = bitmap.height;
+        const context = canvas.getContext('2d')!; context.drawImage(bitmap, 0, 0); bitmap.close();
+        return Array.from(context.getImageData(790, 590, 1, 1).data);
+      });
+      // JPEG encoding may round the color channel by one.
+      pixel.forEach((channel, index) => expect(Math.abs(channel - color[index])).toBeLessThanOrEqual(1));
+    }
+    if (format === 'ora') {
+      await remote.getByRole('button', { name: 'Add layer', exact: true }).click();
+      await expect(remote.getByLabel('active layer').locator('option')).toHaveCount(2);
+      await expect(local.getByLabel('active layer').locator('option')).toHaveCount(1);
+    }
+    await drawVersion(page, remoteCanvas);
+    await remoteCanvas.press('ControlOrMeta+z');
+    await expect(remoteCanvas.locator('polyline')).toHaveCount(0);
+    await remoteCanvas.press('ControlOrMeta+Shift+z');
+    await expect(remoteCanvas.locator('polyline')).toHaveCount(1);
+    // Keeping a version must flush the unsaved strokes without an extra Save action.
+    await remote.getByRole('button', { name: 'Keep GitHub version', exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect.poll(() => repo.messages).toEqual([`edit: ${name}`]);
+    expect(repo.bytes(name)).not.toEqual(upstream);
+    await action(page, 'open').click();
+    await expect(page.getByRole('img', { name: `Drawing canvas for ${name}` })).toBeVisible();
+    if (format === 'ora') await expect(page.getByLabel('active layer').locator('option')).toHaveCount(2);
+  });
+}
+
+test('cancel discards conflict image edits and keeping an untouched image preserves its original bytes', async ({ page }) => {
+  const name = 'picture.png';
+  const [original, upstream] = await conflictImages(page, 'png');
+  const repo = await github(page, { [name]: original });
+  await connect(page); await openNote(page, name);
+  await drawVersion(page, page.getByRole('img', { name: `Drawing canvas for ${name}` }));
+  repo.advance({ [name]: upstream });
+  await exit(page, 'Drawing toolbar').click();
+  const review = page.getByRole('button', { name: 'Review GitHub conflict', exact: true });
+  await review.click();
+  const dialog = page.getByRole('dialog', { name: 'GitHub conflict' });
+  const remote = dialog.getByRole('region', { name: 'GitHub version', exact: true });
+  await drawVersion(page, remote.getByRole('img'));
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  expect(repo.bytes(name)).toEqual(upstream);
+  await review.click();
+  await expect(remote.getByRole('img')).toBeVisible();
+  await expect(remote.locator('polyline')).toHaveCount(0);
+  await remote.getByRole('button', { name: 'Keep GitHub version', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator('.sync-progress')).toHaveCount(0);
+  expect(repo.bytes(name)).toEqual(upstream);
+  expect(repo.messages).toEqual([]);
+});
+
+test('SVG drawing conflicts use drawing editors and keep the selected edited strokes', async ({ page }) => {
+  const name = 'ink.svg';
+  const repo = await github(page, { [name]: serializeDrawing([]) });
+  await connect(page); await openNote(page, name);
+  await drawVersion(page, page.getByRole('img', { name: `Drawing canvas for ${name}` }));
+  repo.advance({ [name]: serializeDrawing([[[500, 300], [600, 350]]]) });
+  await exit(page, 'Drawing toolbar').click();
+  await page.getByRole('button', { name: 'Review GitHub conflict', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'GitHub conflict' });
+  const local = dialog.getByRole('region', { name: 'Your version', exact: true });
+  const remote = dialog.getByRole('region', { name: 'GitHub version', exact: true });
+  await expect(local.getByRole('img')).toBeVisible();
+  await expect(remote.locator('polyline')).toHaveAttribute('points', '500,300 600,350');
+  await expect(dialog.getByRole('textbox')).toHaveCount(0);
+  await drawVersion(page, local.getByRole('img'));
+  await local.getByRole('button', { name: 'Keep your version', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect.poll(() => repo.messages).toEqual([`edit: ${name}`]);
+  expect(repo.content(name)?.match(/<polyline/g)).toHaveLength(2);
 });
 
 test('repeated saves keep a recoverable draft; Exit shows progress and publishes it once', async ({ page }) => {

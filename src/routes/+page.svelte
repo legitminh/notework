@@ -874,7 +874,7 @@
     <LocalPicker onSelect={add} onCancel={() => { picking = false; }} />
   {/if}
   {#if githubConflict}
-    <GitHubConflictDialog conflict={githubConflict.conflict} onChoose={finishGitHubConflict} />
+    <GitHubConflictDialog conflict={githubConflict.conflict} onChoose={finishGitHubConflict} {stylusOnly} autosaveMs={autosaveSeconds * 1000} />
   {/if}
   {#if githubReconnect}
     {@const { id, connection } = githubReconnect}
