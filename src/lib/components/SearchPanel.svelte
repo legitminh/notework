@@ -3,9 +3,8 @@
   import { onMount } from 'svelte';
   import type { Workspace, StateNode, SearchProgress } from '../workspace';
   import Action from './Action.svelte';
-  let { workspace, from, onNavigate, onOpen, graphRevision = 0, relocating = false, onChoose, busy = false, singleAction = false, onSelect }: {
-    singleAction?: boolean;
-    onSelect?: (node: StateNode) => void;
+  let { workspace, from, onNavigate, onOpen, graphRevision = 0, relocating = false, onChoose, busy = false, escapeShortcut = true }: {
+    escapeShortcut?: boolean;
     workspace: Workspace;
     from: string;
     onNavigate: (id: string) => void;
@@ -74,7 +73,7 @@
     <input bind:this={input} bind:value={query} placeholder="start typing…" type="search" autocomplete="off"
       onkeydown={handleFieldKeydown} />
   </label>
-  <Control class="search-field-exit" keys={relocating || singleAction ? undefined : 'esc'} onclick={leaveField}>
+  <Control class="search-field-exit" keys={relocating || !escapeShortcut ? undefined : 'esc'} onclick={leaveField}>
     <span class="visually-hidden">esc </span>search results
   </Control>
   <Action label="edit search" onSelect={() => input.focus()} />
@@ -87,11 +86,7 @@
   {#if searching}<Action label="stop search" onSelect={stop} />{/if}
   {#if failure}<p role="status" class="notice">{failure}</p>{/if}
   {#each results as node (node.id)}
-    {#if singleAction}
-      <Action label={node.name + (node.kind === 'directory' ? '/' : '')} onSelect={() => onSelect?.(node)} disabled={busy}>
-        <span class="resource-hint">{workspace.label(node)}</span>
-      </Action>
-    {:else if node.kind === 'file'}
+    {#if node.kind === 'file'}
       <div class="file-navigation-row search-result-row">
         {#if !relocating}<Action label="open" onSelect={() => onOpen(node)} disabled={busy} />{/if}
         <Action label={node.name} onSelect={() => onNavigate(node.id)} disabled={busy}>

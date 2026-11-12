@@ -371,14 +371,13 @@
     } finally { busy = false; }
   }
 
-  async function selectGlobalResult(node: StateNode) {
-    if (node.id === currentId) { globalSearch = false; return true; }
-    const wasEditing = editing;
-    if (wasEditing && !await activeEditor?.saveForNavigation()) return false;
+  async function selectGlobalResult(id: string, open: boolean) {
+    if (id === currentId && open && editing) { globalSearch = false; return true; }
+    if (editing && !await activeEditor?.saveForNavigation()) return false;
     editing = false;
-    await navigate(node.id);
-    if (currentId !== node.id) return false;
-    if (wasEditing && node.kind === 'file') await openFile();
+    await navigate(id);
+    if (currentId !== id) return false;
+    if (open && current?.kind === 'file') await openFile();
     globalSearch = false;
     return true;
   }

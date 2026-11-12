@@ -4,17 +4,17 @@
   import Control from './Control.svelte';
   import SearchPanel from './SearchPanel.svelte';
   import { dialogShortcuts } from '../shortcut-scope.svelte';
-  import { ROOT, type Workspace, type StateNode } from '../workspace';
+  import { ROOT, type Workspace } from '../workspace';
   let { workspace, graphRevision, onSelect, onClose }: { workspace: Workspace; graphRevision: number;
-    onSelect: (node: StateNode) => Promise<boolean>; onClose: () => void } = $props();
+    onSelect: (id: string, open: boolean) => Promise<boolean>; onClose: () => void } = $props();
   let dialog: HTMLDialogElement;
   let busy = $state(false);
   let error = $state('');
   onMount(() => { const element = dialog; element.showModal(); void tick().then(() => element.querySelector<HTMLInputElement>('input[type=search]')?.focus()); return () => element.close(); });
-  async function choose(node: StateNode) {
+  async function choose(id: string, open = false) {
     if (busy) return;
     busy = true; error = '';
-    try { if (!await onSelect(node)) error = 'Save could not finish. Exit search to resolve the editor’s save message, then try again.'; }
+    try { if (!await onSelect(id, open)) error = 'Save could not finish. Exit search to resolve the editor’s save message, then try again.'; }
     catch (cause) { error = String(cause); }
     finally { busy = false; }
   }
@@ -24,8 +24,8 @@
   <dialog class="local-picker global-search" bind:this={dialog} use:dialogShortcuts aria-label="Search all files"
     oncancel={(event) => { event.preventDefault(); if (!busy) onClose(); }}>
     <Control onclick={onClose} disabled={busy}>Exit search</Control>
-    <SearchPanel {workspace} from={ROOT} {graphRevision} {busy} singleAction onSelect={choose}
-      onNavigate={() => {}} onOpen={() => {}} />
+    <SearchPanel {workspace} from={ROOT} {graphRevision} {busy} escapeShortcut={false}
+      onNavigate={(id) => { void choose(id); }} onOpen={(node) => { void choose(node.id, true); }} />
     {#if error}<p role="alert" class="notice">{error}</p>{/if}
   </dialog>
 </InputFrame>

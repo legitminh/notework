@@ -315,6 +315,22 @@ test('search includes folders and gives every file result a quick-open action', 
   await expect(page.getByRole('textbox', { name: 'Edit notes.txt', exact: true })).toBeVisible();
 });
 
+test('Cmd/Ctrl+P includes root folders and navigates to folder results', async ({ page }) => {
+  await connectDocuments(page);
+  await button(page, 'Documents/').click();
+  await button(page, 'Adobe/').click();
+  await page.keyboard.press('ControlOrMeta+p');
+  const dialog = page.getByRole('dialog', { name: 'Search all files', exact: true });
+  await dialog.getByRole('searchbox').fill('Documents');
+  const row = dialog.locator('.search-result-row').filter({ has: button(page, 'Documents/') });
+  await expect(row).toBeVisible();
+  await expect(row.locator('[data-action="open"]')).toHaveCount(0);
+  await row.locator('[data-action="Documents/"] button').click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Documents/', exact: true })).toBeVisible();
+  await expect(button(page, 'Adobe/')).toBeVisible();
+});
+
 test.describe('search field modes', () => {
   test.use({ hasTouch: true });
 
