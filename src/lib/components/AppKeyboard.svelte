@@ -18,7 +18,10 @@
       if (dialog) dialog.append(element); else marker.after(element);
     };
     move(destination);
-    return { update: move, destroy() { marker.after(element); marker.remove(); } };
+    return { update: move, destroy() {
+      // Teardown must remove a portalled dock, never reinsert one Svelte removed.
+      element.remove(); marker.remove();
+    } };
   }
   function editable(element: Element | null): element is HTMLElement {
     return element instanceof HTMLElement && (element.isContentEditable || element.matches('input:not([type=file]):not([type=checkbox]):not([type=number]):not([type=password]), textarea'));

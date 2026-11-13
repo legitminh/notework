@@ -64,6 +64,38 @@ test('keyboard defaults, persisted settings, virtual ASCII text and real flick i
   await expect(text).toContainText('1');
 });
 
+test('virtual keyboard toggles immediately and stays responsive after modal search', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await action(page, 'app settings').click();
+  const dock = page.locator('.keyboard-dock');
+  for (let cycle = 0; cycle < 2; cycle++) {
+    await action(page, 'virtual keyboard: off').click();
+    await expect(dock).toHaveCount(1);
+    await expect(dock).toBeVisible();
+    await expect(page.locator('html')).toHaveClass(/virtual-keyboard-open/);
+    await expect(action(page, 'virtual keyboard: on')).toBeVisible();
+
+    await page.keyboard.press('Control+p');
+    const dialog = page.getByRole('dialog', { name: 'Search all files', exact: true });
+    await expect(dialog.locator('.keyboard-dock')).toBeVisible();
+    const field = dialog.getByRole('searchbox');
+    await expect(field).toHaveAttribute('inputmode', 'none');
+    await dialog.locator('.keyboard-dock').getByRole('button', { name: 'a', exact: true }).click();
+    await expect(field).toHaveValue('a');
+    await dialog.getByRole('button', { name: 'Exit search', exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(dock).toBeVisible();
+
+    await action(page, 'virtual keyboard: on').click();
+    await expect(dock).toHaveCount(0);
+    await expect(page.locator('html')).not.toHaveClass(/virtual-keyboard-open/);
+    await expect(action(page, 'virtual keyboard: off')).toBeVisible();
+    expect(await page.evaluate(() => localStorage.getItem('notework:virtual-keyboard'))).toBe('false');
+  }
+  expect(errors).toEqual([]);
+});
+
 test('line numbers can be removed and mod-4 edges use zero-based little endian colors', async ({ page }) => {
   await page.setViewportSize({ width: 1800, height: 900 });
   await action(page, 'app settings').click();
