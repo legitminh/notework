@@ -876,7 +876,7 @@
   <AppKeyboard enabled={virtualKeyboard} choice={keyboardChoice} />
   <GitHubSyncProgress />
   {#if heldModifier && !globalSearch}<aside class="modifier-hints" aria-label="Command and Control shortcuts">C · Copy &nbsp; V · Paste &nbsp; P · Search all files &nbsp; S · Save</aside>{/if}
-  {#if globalSearch}<GlobalSearch {workspace} {graphRevision} onSelect={selectGlobalResult} onClose={() => { globalSearch = false; }} />{/if}
+  {#if globalSearch}<GlobalSearch {workspace} from={currentId} {graphRevision} onSelect={selectGlobalResult} onClose={() => { globalSearch = false; }} />{/if}
   {#if picking}
     <LocalPicker onSelect={add} onCancel={() => { picking = false; }} />
   {/if}

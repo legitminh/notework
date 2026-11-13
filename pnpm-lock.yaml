@@ -27,8 +27,8 @@ importers:
         specifier: ^6.43.15
         version: 6.43.15
       '@legitminh/keyflow':
-        specifier: github:legitminh/keyflow#eff2b0b3b05b1b8c84619e688e7bbe28ee9e1824
-        version: https://codeload.github.com/legitminh/keyflow/tar.gz/eff2b0b3b05b1b8c84619e688e7bbe28ee9e1824(svelte@5.57.3(@typescript-eslint/types@8.71.0))
+        specifier: github:legitminh/keyflow#a2271a8d0ddcb171e9e80dec9b0eb761e59a9020
+        version: https://codeload.github.com/legitminh/keyflow/tar.gz/a2271a8d0ddcb171e9e80dec9b0eb761e59a9020(svelte@5.57.3(@typescript-eslint/types@8.71.0))
       '@replit/codemirror-vim':
         specifier: ^6.4.0
         version: 6.4.0(@codemirror/commands@6.11.1)(@codemirror/language@6.13.1)(@codemirror/search@6.7.2)(@codemirror/state@6.7.6)(@codemirror/view@6.43.15)
@@ -112,9 +112,9 @@ packages:
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
 
-  '@legitminh/keyflow@https://codeload.github.com/legitminh/keyflow/tar.gz/eff2b0b3b05b1b8c84619e688e7bbe28ee9e1824':
-    resolution: {tarball: https://codeload.github.com/legitminh/keyflow/tar.gz/eff2b0b3b05b1b8c84619e688e7bbe28ee9e1824}
-    version: 0.3.0
+  '@legitminh/keyflow@https://codeload.github.com/legitminh/keyflow/tar.gz/a2271a8d0ddcb171e9e80dec9b0eb761e59a9020':
+    resolution: {tarball: https://codeload.github.com/legitminh/keyflow/tar.gz/a2271a8d0ddcb171e9e80dec9b0eb761e59a9020}
+    version: 0.4.0
     engines: {node: '>=22'}
     peerDependencies:
       svelte: ^5.56.10
@@ -688,7 +688,7 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.6.0
 
-  '@legitminh/keyflow@https://codeload.github.com/legitminh/keyflow/tar.gz/eff2b0b3b05b1b8c84619e688e7bbe28ee9e1824(svelte@5.57.3(@typescript-eslint/types@8.71.0))':
+  '@legitminh/keyflow@https://codeload.github.com/legitminh/keyflow/tar.gz/a2271a8d0ddcb171e9e80dec9b0eb761e59a9020(svelte@5.57.3(@typescript-eslint/types@8.71.0))':
     dependencies:
       svelte: 5.57.3(@typescript-eslint/types@8.71.0)
 

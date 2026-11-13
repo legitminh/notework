@@ -309,8 +309,30 @@ export class Workspace {
 
   async searchReachable(from: string, query: string, signal: AbortSignal,
     onProgress: (results: StateNode[], progress: SearchProgress) => void, resultLimit = 1000, includeFolders = false) {
-    const queue: { id: string; resource?: LocatedResource }[] = [{ id: from }];
-    const seen = new Set([from]);
+    return this.searchNodes([from], query, signal, onProgress, resultLimit, includeFolders);
+  }
+
+  async searchAll(from: string, query: string, signal: AbortSignal,
+    onProgress: (results: StateNode[], progress: SearchProgress) => void, resultLimit = 1000) {
+    const context = this.known.get(from);
+    const folder = context?.kind === 'file' ? context.path.slice(0, -1) : context?.path;
+    const childDepth = (node: StateNode) => context && folder && node.sourceId === context.sourceId &&
+      node.path.length > folder.length && folder.every((part, index) => node.path[index] === part)
+      ? node.path.length - folder.length : Number.MAX_SAFE_INTEGER;
+    const fold = (value: string) => value.normalize('NFC').toLocaleLowerCase();
+    const compare = (a: StateNode, b: StateNode) =>
+      fold(a.name).localeCompare(fold(b.name), undefined, { numeric: true }) ||
+      childDepth(a) - childDepth(b) || this.label(a).localeCompare(this.label(b)) || a.id.localeCompare(b.id);
+    // Include sources connected only through directed links, even when not reachable from Home.
+    // Parent navigation is never followed; each connected source is a search entry point.
+    return this.searchNodes([ROOT, ...this.data.sources.map((source) => nodeId(source.id))], query, signal,
+      (results, progress) => onProgress([...results].sort(compare), progress), resultLimit, true);
+  }
+
+  private async searchNodes(starts: string[], query: string, signal: AbortSignal,
+    onProgress: (results: StateNode[], progress: SearchProgress) => void, resultLimit: number, includeFolders: boolean) {
+    const queue: { id: string; resource?: LocatedResource }[] = [];
+    const seen = new Set<string>();
     const results: StateNode[] = [];
     const progress: SearchProgress = { visited: 0, errors: 0, limited: false };
     const fold = (value: string) => value.normalize('NFC').toLocaleLowerCase();
@@ -323,6 +345,7 @@ export class Workspace {
       queue.push({ id, resource });
       return true;
     }
+    for (const id of starts) if (!enqueue(id)) break;
 
     const visit = async (id: string, resource?: LocatedResource) => {
       if (id === ROOT) {

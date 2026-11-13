@@ -38,9 +38,9 @@
     controller = abort;
     const timer = setTimeout(() => {
       searching = true;
-      void currentWorkspace.searchReachable(origin, term, abort.signal, (found, status) => {
+      void currentWorkspace.searchAll(origin, term, abort.signal, (found, status) => {
         results = found; progress = status;
-      }, 1000, true).then(() => { if (!abort.signal.aborted) searched = true; })
+      }).then(() => { if (!abort.signal.aborted) searched = true; })
         .catch((error) => { if (!abort.signal.aborted) failure = String(error); })
         .finally(() => { if (!abort.signal.aborted) searching = false; });
     }, 180);
@@ -66,8 +66,8 @@
 </script>
 
 <section class="panel" aria-labelledby="search-heading">
-  <h2 id="search-heading" tabindex="-1" bind:this={heading}>search reachable files and folders</h2>
-  <p class="muted">Search names and paths through this state's outgoing links and folders.</p>
+  <h2 id="search-heading" tabindex="-1" bind:this={heading}>search all files and folders</h2>
+  <p class="muted">Search names and paths across all connected sources. For matching names, files in this folder come first.</p>
   <label class="field">
     <span>file/folder name or path</span>
     <input bind:this={input} bind:value={query} placeholder="start typing…" type="search" autocomplete="off"
@@ -81,7 +81,7 @@
     {#if searching}searching… {progress.visited} states visited
     {:else if searched}{results.length} {results.length === 1 ? 'result' : 'results'} found{/if}
     {#if progress.errors} · {progress.errors} unreadable {progress.errors === 1 ? 'branch' : 'branches'} skipped; reconnect sources in app settings.{/if}
-    {#if progress.limited} · Search limit reached. Narrow your starting folder or search term.{/if}
+    {#if progress.limited} · Search limit reached. Narrow your search term.{/if}
   </div>
   {#if searching}<Action label="stop search" onSelect={stop} />{/if}
   {#if failure}<p role="status" class="notice">{failure}</p>{/if}

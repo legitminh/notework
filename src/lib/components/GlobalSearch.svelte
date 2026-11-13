@@ -4,8 +4,8 @@
   import Control from './Control.svelte';
   import SearchPanel from './SearchPanel.svelte';
   import { dialogShortcuts } from '../shortcut-scope.svelte';
-  import { ROOT, type Workspace } from '../workspace';
-  let { workspace, graphRevision, onSelect, onClose }: { workspace: Workspace; graphRevision: number;
+  import type { Workspace } from '../workspace';
+  let { workspace, from, graphRevision, onSelect, onClose }: { workspace: Workspace; from: string; graphRevision: number;
     onSelect: (id: string, open: boolean) => Promise<boolean>; onClose: () => void } = $props();
   let dialog: HTMLDialogElement;
   let busy = $state(false);
@@ -24,7 +24,7 @@
   <dialog class="local-picker global-search" bind:this={dialog} use:dialogShortcuts aria-label="Search all files"
     oncancel={(event) => { event.preventDefault(); if (!busy) onClose(); }}>
     <Control onclick={onClose} disabled={busy}>Exit search</Control>
-    <SearchPanel {workspace} from={ROOT} {graphRevision} {busy} escapeShortcut={false}
+    <SearchPanel {workspace} {from} {graphRevision} {busy} escapeShortcut={false}
       onNavigate={(id) => { void choose(id); }} onOpen={(node) => { void choose(node.id, true); }} />
     {#if error}<p role="alert" class="notice">{error}</p>{/if}
   </dialog>

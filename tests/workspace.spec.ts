@@ -122,7 +122,7 @@ async function chooseFile(page: Page) {
   await chooseItems(page, [name]);
 }
 
-async function seedLegacyGraph(page: Page, options: { hideAdobe?: boolean; cycle?: boolean }) {
+async function seedLegacyGraph(page: Page, options: { hideAdobe?: boolean; cycle?: boolean; linkOnly?: boolean }) {
   // Unmount the app before changing its persisted graph; its focus/poll saves
   // otherwise race the fixture transaction and can overwrite the seeded data.
   await page.evaluate(async () => {
@@ -146,6 +146,14 @@ async function seedLegacyGraph(page: Page, options: { hideAdobe?: boolean; cycle
       const outside = data.sources.find((source) => source.handle.name === 'outside.txt')!;
       const file = JSON.stringify([outside.id]);
       data.links[folder] = [file]; data.links[file] = [folder];
+    }
+    if (options.linkOnly) {
+      const outside = data.sources.find((source) => source.handle.name === 'outside.txt')!;
+      const file = JSON.stringify([outside.id]);
+      const readme = JSON.stringify([documents.id, 'readme.txt']);
+      data.rootIds = data.rootIds.filter((id) => id !== file);
+      data.links[readme] = [file];
+      data.hidden[folder] = [readme];
     }
     await new Promise<void>((resolve, reject) => {
       const transaction = db.transaction('workspace', 'readwrite');
@@ -268,7 +276,7 @@ test('root connections and legacy hidden children persist without Configure', as
   await expect(button(page, 'configure')).toHaveCount(0);
 });
 
-test('search traverses descendants, respects hidden children, and stays scoped', async ({ page }) => {
+test('search spans connected sources from any file and respects hidden children', async ({ page }) => {
   await connectDocuments(page);
   await button(page, 'app settings').click();
   await chooseFile(page);
@@ -281,7 +289,8 @@ test('search traverses descendants, respects hidden children, and stays scoped',
   await expect(button(page, 'open')).toBeVisible();
   await button(page, 'search').click();
   await page.getByRole('searchbox').fill('readme');
-  await expect(page.locator('.search-status')).toContainText('0 results found');
+  await expect(page.locator('.search-status')).toContainText('1 result found');
+  await expect(page.locator('.search-result-row [data-action="readme.txt"]')).toBeVisible();
   await button(page, 'close search').click();
   await button(page, '..').click(); await button(page, '..').click();
   await seedLegacyGraph(page, { hideAdobe: true });
@@ -290,7 +299,43 @@ test('search traverses descendants, respects hidden children, and stays scoped',
   await page.getByRole('searchbox').fill('notes');
   await expect(page.locator('.search-status')).toContainText('0 results found');
   await page.getByRole('searchbox').fill('outside');
-  await expect(page.locator('.search-status')).toContainText('0 results found');
+  await expect(page.locator('.search-status')).toContainText('1 result found');
+});
+
+for (const mode of ['navigation', 'Cmd/Ctrl+P'] as const) {
+  test(`${mode} search ranks child files before same-named files in parent folders`, async ({ page }) => {
+    await connectDocuments(page);
+    await page.evaluate(async () => {
+      const documents = await (await navigator.storage.getDirectory()).getDirectoryHandle('Documents');
+      const adobe = await documents.getDirectoryHandle('Adobe');
+      const deep = await adobe.getDirectoryHandle('Deep', { create: true });
+      for (const folder of [adobe, deep]) {
+        const file = await folder.getFileHandle('readme.txt', { create: true });
+        const stream = await file.createWritable(); await stream.write('Child note'); await stream.close();
+      }
+    });
+    await button(page, 'Documents/').click(); await button(page, 'Adobe/').click();
+    if (mode === 'navigation') await button(page, 'search').click();
+    else await page.keyboard.press('ControlOrMeta+p');
+    await page.getByRole('searchbox').fill('readme');
+    await expect(page.locator('.search-status')).toContainText('3 results found');
+    await expect(page.locator('.search-result-row .resource-hint')).toHaveText([
+      'Documents/Adobe/readme.txt', 'Documents/Adobe/Deep/readme.txt', 'Documents/readme.txt'
+    ]);
+    await page.locator('.search-result-row').first().locator('[data-action="open"] button').click();
+    await expect(page.getByRole('textbox', { name: 'Edit readme.txt', exact: true })).toHaveText('Child note');
+  });
+}
+
+test('system-wide search includes sources connected only through another file', async ({ page }) => {
+  await connectDocuments(page);
+  await button(page, 'app settings').click(); await chooseFile(page);
+  await seedLegacyGraph(page, { linkOnly: true });
+  await expect(button(page, 'outside.txt')).toHaveCount(0);
+  await button(page, 'search').click();
+  await page.getByRole('searchbox').fill('outside');
+  await expect(page.locator('.search-status')).toContainText('1 result found');
+  await expect(page.locator('.search-result-row [data-action="outside.txt"]')).toBeVisible();
 });
 
 test('search includes folders and gives every file result a quick-open action', async ({ page }) => {
@@ -340,7 +385,7 @@ test.describe('search field modes', () => {
       await connectDocuments(page);
       await button(page, 'search').click();
       const field = page.getByRole('searchbox');
-      const heading = page.getByRole('heading', { name: 'search reachable files and folders' });
+      const heading = page.getByRole('heading', { name: 'search all files and folders' });
       await expect(field).toBeFocused();
       await field.fill('notes');
       await expect(page.locator('.search-status')).toContainText('1 result found');
@@ -608,7 +653,7 @@ test('mobile layout fits, scrolling remains native, and text entry does not trig
   await button(page, 'search').click();
   await page.getByRole('searchbox').fill('1234qwerasdf');
   await expect(page.getByRole('searchbox')).toHaveValue('1234qwerasdf');
-  await expect(page.getByRole('heading', { name: 'search reachable files and folders' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'search all files and folders' })).toBeVisible();
   await page.setViewportSize({ width: 1440, height: 1000 });
   await button(page, 'close search').click();
   await button(page, 'readme.txt').click();

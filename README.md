@@ -21,7 +21,7 @@ In app settings, **add existing folder/file** opens one local chooser. Drop mixe
 
 Folders expose their direct children. Existing directed links and hidden-child settings from older versions remain readable. `..` follows the filesystem parent within a granted source, returning home at its boundary; unselected ancestors cannot be discovered by a web app.
 
-Search matches file and folder names/paths along outgoing graph transitions, including folder descendants and saved links, and handles cycles. Parent navigation is excluded. Search checks names before fetching file contents, and matches composed and decomposed Unicode spellings alike. Folder results navigate normally; file results provide paired **open** and filename actions for either immediate editing or navigation. Search reports progress, supports stopping, and caps traversal at 20,000 states or 1,000 results. Press **Esc** or click **esc · search results** to leave the search field without clearing your query. **Edit search** returns to typing.
+Search matches file and folder names/paths across all connected sources, including resources connected only through saved links. Hidden children stay hidden, cycles are deduplicated, and parent navigation is excluded from traversal. Results are grouped by name; for the same name, direct children of the current folder precede deeper descendants and files elsewhere, including parent folders. When searching from a file, its containing folder supplies that priority. Search checks names before fetching file contents, and matches composed and decomposed Unicode spellings alike. Folder results navigate normally; file results provide paired **open** and filename actions for either immediate editing or navigation. Search reports progress, supports stopping, and caps traversal at 20,000 states or 1,000 results. Press **Esc** or click **esc · search results** to leave the search field without clearing your query. **Edit search** returns to typing.
 
 ## Text editing
 
@@ -105,7 +105,7 @@ OPFS supports streamed text/binary storage. The UI exposes decodable text, Notew
 
 ## Keyflow dependency
 
-Components and CSS are imported from `@legitminh/keyflow`, installed directly from GitHub at a pinned commit. No library source is copied here. When updating Keyflow, review the new revision and replace the commit in its `allowBuilds` entry in `pnpm-workspace.yaml` before installing it. pnpm needs that exact tarball URL to allow Keyflow's build script to run on a clean install.
+Components and CSS are imported from `@legitminh/keyflow`, installed directly from GitHub at a pinned commit. No library source is copied here. When working on the integration or keyboard UI, check for a newer upstream version and update if available after reviewing its changes. The update command also replaces the exact Keyflow tarball URL in `pnpm-workspace.yaml`'s `allowBuilds` entry so its build script can run on a clean install.
 
 To update to upstream HEAD after approving that revision:
 
@@ -118,7 +118,7 @@ pnpm test
 
 The update command resolves upstream HEAD and pins that commit in `package.json` and `pnpm-lock.yaml`. Commit both files along with the matching `pnpm-workspace.yaml` approval. To target a revision manually: `pnpm add -w '@legitminh/keyflow@github:legitminh/keyflow#COMMIT'`.
 
-The current dependency is **Keyflow 0.3.0**, pinned to release commit `eff2b0b3b05b1b8c84619e688e7bbe28ee9e1824`. It provides input frames and virtual keyboards, including directional flick keys. Notework defaults to the alphanumeric shortcut alphabet.
+The current dependency is **Keyflow 0.4.0**, pinned to release commit `a2271a8d0ddcb171e9e80dec9b0eb761e59a9020`. It provides input frames and virtual keyboards, including directional flick keys. Notework defaults to the alphanumeric shortcut alphabet.
 
 Navigation, configuration, picker, dialog, export and editor toolbar buttons use the library through `Control.svelte`. Ordinary buttons retain visibility-based automatic shortcuts, while modal dialog controls use stable persistent shortcuts; search-field exit and relocate cancellation use `StaticButton` with Escape. The app adapter forwards accessible names, pressed states and existing editor shortcut annotations to the underlying button. Dialog scoping unregisters background controls and closed-dialog controls, then restores them after closing. Disabled controls render native disabled buttons without shortcut registration because Keyflow buttons have no native disabled prop.
 
@@ -161,7 +161,9 @@ PLAYWRIGHT_PRODUCTION=1 pnpm exec playwright test tests/webkit.spec.ts --browser
 
 **App settings → keyboard** chooses the shortcut alphabet (alphanumeric by default), toggles the virtual keyboard (off by default), and selects its layout (ASCII by default). Available Keyflow layouts include flick alpha, alpha, alphanumeric, 60%, ortholinear, 16-key, and 32-key. The enabled keyboard replaces the system text keyboard on supported fields and edits CodeMirror through its selection and undo history. Flick directions enter their displayed characters or editing keys. Shift latches for one character; Caps toggles case. Outside text entry, virtual keys route to the active Keyflow controls. Scrolling stays native.
 
-Holding Command or Ctrl shows shortcut hints for Copy, Paste, Search, and Save. **Cmd/Ctrl+P** opens a modal search rooted at Home from anywhere in the app. Background controls are inert and their shortcuts are masked. Selecting a file saves the current draft first and opens the chosen file in editing mode if already editing, or in navigation mode otherwise. Folders open in navigation mode. Escape or **Exit search** closes the overlay; Escape inside the search field first returns to results. Browser clipboard shortcuts retain their native behavior.
+Flick alpha uses three rows of ten keys. Flicking up on the top row enters digits and down on any letter enters uppercase. Escape's left/right gestures enter Backspace/Tab; its up/down gestures enter tilde/backtick. Space's gestures move the cursor in the corresponding direction. Tapping Escape leaves text entry without clearing the search query.
+
+Holding Command or Ctrl shows shortcut hints for Copy, Paste, Search, and Save. **Cmd/Ctrl+P** opens the same system-wide search in a modal from anywhere in the app, with the current folder's child-file priority. Background controls are inert and their shortcuts are masked. **Open** enters the chosen file's editor; selecting its filename navigates to it. Both save an active draft before switching files. Folders open in navigation mode. Escape or **Exit search** closes the overlay; Escape inside the search field first returns to results. Browser clipboard shortcuts retain their native behavior.
 
 **App settings → appearance** can hide line numbers or show zero-based line indices modulo four as viewport edge tabs. The left side is the low bit: gray/gray = 0, white/gray = 1, gray/white = 2, white/white = 3.
 

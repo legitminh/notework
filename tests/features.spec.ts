@@ -224,3 +224,43 @@ test('virtual keyboard remains usable inside modal global search', async ({ page
   await expect(dialog).toHaveCount(0);
   await expect(page.locator('.keyboard-dock')).toBeVisible();
 });
+
+test('updated flick keyboard enters uppercase and editing gestures in the editor and search', async ({ page }) => {
+  await create(page, 'gestures.txt'); await home(page); await action(page, 'app settings').click();
+  await page.getByLabel('virtual keyboard layout', { exact: true }).selectOption('flick-alpha');
+  await action(page, 'virtual keyboard: off').click(); await action(page, 'close app settings').click();
+  await action(page, 'gestures.txt').click(); await action(page, 'open').click();
+  const editor = page.getByRole('textbox', { name: 'Edit gestures.txt', exact: true });
+  await editor.fill('ab');
+  const keyboard = page.locator('.keyflow-keyboard[data-layout="flick-alpha"]');
+  await expect(keyboard.locator('.keyboard-row')).toHaveCount(3);
+  for (const row of await keyboard.locator('.keyboard-row').all()) await expect(row.getByRole('button')).toHaveCount(10);
+  async function flick(key: string, direction: 'left' | 'down' | 'up') {
+    const box = (await keyboard.getByRole('button', { name: key, exact: true }).boundingBox())!;
+    const x = box.x + box.width / 2, y = box.y + box.height / 2;
+    await page.mouse.move(x, y); await page.mouse.down();
+    await page.mouse.move(direction === 'left' ? box.x - 8 : x,
+      direction === 'up' ? box.y - 8 : direction === 'down' ? box.y + box.height + 8 : y);
+    await page.mouse.up();
+  }
+  await flick('q', 'down'); await expect(editor).toHaveText('abQ');
+  await flick('escape', 'left'); await expect(editor).toHaveText('ab');
+  await keyboard.getByRole('button', { name: 'escape', exact: true }).press('Alt+ArrowRight');
+  await expect(editor).toHaveText('ab  ');
+  await flick('space', 'left'); await keyboard.getByRole('button', { name: 'z', exact: true }).click();
+  await expect(editor).toHaveText('ab z ');
+  await flick('q', 'up'); await expect(editor).toHaveText('ab z1 ');
+  await keyboard.getByRole('button', { name: 'escape', exact: true }).click();
+  await expect(editor).not.toBeFocused();
+  await textTools(page).getByRole('button', { name: 'Exit', exact: true }).click();
+
+  await page.keyboard.press('Control+p');
+  const dialog = page.getByRole('dialog', { name: 'Search all files', exact: true });
+  await dialog.getByRole('searchbox').fill('gestures');
+  await expect(dialog.locator('.search-status')).toContainText('1 result found');
+  await dialog.locator('.keyboard-dock').getByRole('button', { name: 'escape', exact: true }).click();
+  await expect(dialog.getByRole('heading', { name: 'search all files and folders' })).toBeFocused();
+  await expect(dialog.getByRole('searchbox')).toHaveValue('gestures');
+  await dialog.locator('[data-action="open"] button').click();
+  await expect(editor).toHaveText('ab z1 ');
+});

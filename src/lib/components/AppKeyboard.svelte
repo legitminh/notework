@@ -64,7 +64,11 @@
       return;
     }
     const field = target as HTMLInputElement | HTMLTextAreaElement;
-    if (key === 'escape') { field.blur(); target = null; return; }
+    if (key === 'escape') {
+      const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+      if (field.dispatchEvent(escape)) field.blur();
+      target = null; return;
+    }
     if (key === 'enter' && field instanceof HTMLInputElement) {
       if (field.reportValidity()) { if (field.form) field.form.requestSubmit(); else field.blur(); }
       return;
