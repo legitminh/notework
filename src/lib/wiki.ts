@@ -23,7 +23,8 @@ export const parentUri = (node: StateNode) => node.uri.slice(0, node.uri.lastInd
 export async function wikiCatalog(workspace: Workspace, signal: AbortSignal) {
   let found: StateNode[] = [];
   await workspace.searchReachable(ROOT, '', signal, (results) => { found = results; }, 20000);
-  return [...new Map([...found, ...workspace.known.values()].filter((node) => node.kind === 'file').map((node) => [node.id, node])).values()];
+  // A cached handle may belong to a source removed from Home. Only offer active results.
+  return found;
 }
 
 export function wikiToken(workspace: Workspace, source: StateNode, target: StateNode, catalog: StateNode[]) {

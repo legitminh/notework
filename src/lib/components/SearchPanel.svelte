@@ -66,7 +66,7 @@
 
 <section class="panel" aria-labelledby="search-heading">
   <h2 id="search-heading" tabindex="-1" bind:this={heading}>search all files and folders</h2>
-  <p class="muted">Search names and paths across all connected sources. For matching names, files in this folder come first.</p>
+  <p class="muted">Search names and paths reachable from Home. For matching names, files in this folder come first.</p>
   <label class="field">
     <span>file/folder name or path</span>
     <input bind:this={input} bind:value={query} placeholder="start typing…" type="search" autocomplete="off"

@@ -323,9 +323,8 @@ export class Workspace {
     const compare = (a: StateNode, b: StateNode) =>
       fold(a.name).localeCompare(fold(b.name), undefined, { numeric: true }) ||
       childDepth(a) - childDepth(b) || this.label(a).localeCompare(this.label(b)) || a.id.localeCompare(b.id);
-    // Include sources connected only through directed links, even when not reachable from Home.
-    // Parent navigation is never followed; each connected source is a search entry point.
-    return this.searchNodes([ROOT, ...this.data.sources.map((source) => nodeId(source.id))], query, signal,
+    // Retained source handles are not search grants. Follow only the active root graph.
+    return this.searchNodes([ROOT], query, signal,
       (results, progress) => onProgress([...results].sort(compare), progress), resultLimit, true);
   }
 
@@ -338,7 +337,12 @@ export class Workspace {
     const fold = (value: string) => value.normalize('NFC').toLocaleLowerCase();
     const needle = fold(query.trim());
     const stateLimit = 20000;
+    const excluded = (this.data.hidden[ROOT] ?? []).map((id) => JSON.parse(id) as string[]);
     function enqueue(id: string, resource?: LocatedResource) {
+      if (id !== ROOT) {
+        const parts = JSON.parse(id) as string[];
+        if (excluded.some((prefix) => prefix.every((part, index) => parts[index] === part))) return true;
+      }
       if (seen.has(id)) return true;
       if (queue.length >= stateLimit) { progress.limited = true; return false; }
       seen.add(id);
@@ -426,11 +430,21 @@ export class Workspace {
     if (from === to) return;
     const list = from === ROOT ? this.data.rootIds : (this.data.links[from] ??= []);
     if (!list.includes(to)) list.push(to);
-    this.data.hidden[from] = (this.data.hidden[from] ?? []).filter((id) => id !== to);
+    this.data.hidden[from] = (this.data.hidden[from] ?? []).filter((id) => {
+      if (id === to) return false;
+      if (from !== ROOT) return true;
+      // Explicitly reconnecting a child also enables its previously removed source.
+      const prefix = JSON.parse(id) as string[];
+      const parts = JSON.parse(to) as string[];
+      return !prefix.every((part, index) => parts[index] === part);
+    });
   }
 
   unlink(from: string, to: string) {
-    if (from === ROOT) this.data.rootIds = this.data.rootIds.filter((id) => id !== to);
+    if (from === ROOT) {
+      this.data.rootIds = this.data.rootIds.filter((id) => id !== to);
+      this.data.hidden[ROOT] = [...new Set([...(this.data.hidden[ROOT] ?? []), to])];
+    }
     else this.data.links[from] = (this.data.links[from] ?? []).filter((id) => id !== to);
   }
 

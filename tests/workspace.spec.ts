@@ -122,7 +122,7 @@ async function chooseFile(page: Page) {
   await chooseItems(page, [name]);
 }
 
-async function seedLegacyGraph(page: Page, options: { hideAdobe?: boolean; cycle?: boolean; linkOnly?: boolean }) {
+async function seedLegacyGraph(page: Page, options: { hideAdobe?: boolean; cycle?: boolean; linkOnly?: boolean; hideLinkedParent?: boolean; removedFolder?: boolean }) {
   // Unmount the app before changing its persisted graph; its focus/poll saves
   // otherwise race the fixture transaction and can overwrite the seeded data.
   await page.evaluate(async () => {
@@ -141,6 +141,7 @@ async function seedLegacyGraph(page: Page, options: { hideAdobe?: boolean; cycle
     });
     const documents = data.sources.find((source) => source.handle.name === 'Documents')!;
     const folder = JSON.stringify([documents.id]);
+    if (options.removedFolder) data.rootIds = data.rootIds.filter((id) => id !== folder);
     if (options.hideAdobe) data.hidden[folder] = [JSON.stringify([documents.id, 'Adobe'])];
     if (options.cycle) {
       const outside = data.sources.find((source) => source.handle.name === 'outside.txt')!;
@@ -153,7 +154,7 @@ async function seedLegacyGraph(page: Page, options: { hideAdobe?: boolean; cycle
       const readme = JSON.stringify([documents.id, 'readme.txt']);
       data.rootIds = data.rootIds.filter((id) => id !== file);
       data.links[readme] = [file];
-      data.hidden[folder] = [readme];
+      if (options.hideLinkedParent) data.hidden[folder] = [readme];
     }
     await new Promise<void>((resolve, reject) => {
       const transaction = db.transaction('workspace', 'readwrite');
@@ -331,7 +332,7 @@ for (const mode of ['navigation', 'Cmd/Ctrl+P'] as const) {
   });
 }
 
-test('system-wide search includes sources connected only through another file', async ({ page }) => {
+test('system-wide search follows active links but excludes sources behind hidden branches', async ({ page }) => {
   await connectDocuments(page);
   await button(page, 'app settings').click(); await chooseFile(page);
   await seedLegacyGraph(page, { linkOnly: true });
@@ -340,6 +341,68 @@ test('system-wide search includes sources connected only through another file', 
   await page.getByRole('searchbox').fill('outside');
   await expect(page.locator('.search-status')).toContainText('1 result found');
   await expect(page.locator('.search-result-row [data-action="outside.txt"]')).toBeVisible();
+  await seedLegacyGraph(page, { linkOnly: true, hideLinkedParent: true });
+  await button(page, 'search').click();
+  await page.getByRole('searchbox').fill('outside');
+  await expect(page.locator('.search-status')).toContainText('0 results found');
+});
+
+test('sources removed from root by an earlier version stay outside system-wide search', async ({ page }) => {
+  await connectDocuments(page);
+  await button(page, 'app settings').click(); await chooseFile(page);
+  await seedLegacyGraph(page, { removedFolder: true });
+  const dialog = page.getByRole('dialog', { name: 'Search all files', exact: true });
+  await button(page, 'search').click(); await dialog.getByRole('searchbox').fill('notes');
+  await expect(dialog.locator('.search-status')).toContainText('0 results found');
+  await dialog.getByRole('searchbox').fill('outside');
+  await expect(dialog.locator('.search-status')).toContainText('1 result found');
+  await page.reload();
+  await expect(button(page, 'app settings')).toBeEnabled();
+  await page.keyboard.press('ControlOrMeta+p'); await dialog.getByRole('searchbox').fill('Documents');
+  await expect(dialog.locator('.search-status')).toContainText('0 results found');
+  expect((await storedGraph(page)).sources.map((source) => source.name)).toContain('Documents');
+});
+
+test('removing a folder from root excludes cached files, old links, and link suggestions until reconnected', async ({ page }) => {
+  await connectDocuments(page); await button(page, 'app settings').click(); await chooseFile(page);
+  await seedLegacyGraph(page, { cycle: true });
+  const dialog = page.getByRole('dialog', { name: 'Search all files', exact: true });
+  await button(page, 'search').click(); await dialog.getByRole('searchbox').fill('notes');
+  await expect(dialog.locator('.search-status')).toContainText('1 result found');
+  await dialog.getByRole('button', { name: 'Exit search', exact: true }).click();
+  await button(page, 'app settings').click();
+  await page.getByRole('button', { name: 'Remove Documents from root', exact: true }).click();
+  await button(page, 'close app settings').click();
+  for (const entry of ['button', 'shortcut'] as const) {
+    if (entry === 'button') await button(page, 'search').click();
+    else await page.keyboard.press('ControlOrMeta+p');
+    await dialog.getByRole('searchbox').fill('notes');
+    await expect(dialog.locator('.search-status')).toContainText('0 results found');
+    await dialog.getByRole('searchbox').fill('Documents');
+    await expect(dialog.locator('.search-status')).toContainText('0 results found');
+    await dialog.getByRole('button', { name: 'Exit search', exact: true }).click();
+  }
+  // The active outside.txt still has an old directed link into the removed source.
+  await button(page, 'outside.txt').click(); await openEditor(page);
+  const editor = page.getByRole('textbox', { name: 'Edit outside.txt', exact: true });
+  await editor.press('ControlOrMeta+End'); await page.keyboard.type('[[notes');
+  await expect(page.getByRole('option', { name: 'create: notes', exact: true })).toBeVisible();
+  await expect(page.getByRole('option', { name: 'notes.txt', exact: true })).toHaveCount(0);
+  await editor.fill('Outside the Documents folder.'); await toolbar(page, 'Exit').click();
+  await page.reload();
+  await button(page, 'search').click(); await dialog.getByRole('searchbox').fill('notes');
+  await expect(dialog.locator('.search-status')).toContainText('0 results found');
+  await dialog.getByRole('button', { name: 'Exit search', exact: true }).click();
+  await button(page, 'app settings').click();
+  await page.getByRole('button', { name: 'add Documents to root', exact: true }).click();
+  await button(page, 'close app settings').click();
+  await button(page, 'search').click(); await dialog.getByRole('searchbox').fill('notes');
+  await expect(dialog.locator('.search-status')).toContainText('1 result found');
+  expect(await page.evaluate(async () => {
+    const documents = await (await navigator.storage.getDirectory()).getDirectoryHandle('Documents');
+    const adobe = await documents.getDirectoryHandle('Adobe');
+    return (await (await adobe.getFileHandle('notes.txt')).getFile()).text();
+  })).toBe('A nested note about semantic roles.');
 });
 
 test('search includes folders and gives every file result a quick-open action', async ({ page }) => {
