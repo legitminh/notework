@@ -3,8 +3,7 @@
   import { onMount } from 'svelte';
   import type { Workspace, StateNode, SearchProgress } from '../workspace';
   import Action from './Action.svelte';
-  let { workspace, from, onNavigate, onOpen, graphRevision = 0, relocating = false, onChoose, busy = false, escapeShortcut = true }: {
-    escapeShortcut?: boolean;
+  let { workspace, from, onNavigate, onOpen, graphRevision = 0, relocating = false, onChoose, busy = false }: {
     workspace: Workspace;
     from: string;
     onNavigate: (id: string) => void;
@@ -73,7 +72,7 @@
     <input bind:this={input} bind:value={query} placeholder="start typing…" type="search" autocomplete="off"
       onkeydown={handleFieldKeydown} />
   </label>
-  <Control class="search-field-exit" keys={relocating || !escapeShortcut ? undefined : 'esc'} onclick={leaveField}>
+  <Control class="search-field-exit" onclick={leaveField}>
     <span class="visually-hidden">esc </span>search results
   </Control>
   <Action label="edit search" onSelect={() => input.focus()} />

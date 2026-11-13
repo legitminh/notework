@@ -1,5 +1,5 @@
 import { withGitHubRepositories } from './github/repository';
-import { assetName, validAssetName, type AssetType } from './asset-types';
+import { assetName, validAssetInput, type AssetType } from './asset-types';
 import { writeResourceContent } from './resource-content';
 import type { LocalFile, LocalHandle } from './filesystem';
 import { saveWorkspace } from './persistence';
@@ -12,7 +12,7 @@ export function createAsset(workspace: Workspace, parent: StateNode | null, inpu
 }
 async function createAssetInternal(workspace: Workspace, parent: StateNode | null, input: string, type: AssetType) {
   const name = assetName(input, type);
-  if (!validAssetName(input.trim()) || !validAssetName(name)) throw new Error('Choose a name without slashes or control characters. “.”, “..”, and “.git” are reserved.');
+  if (!validAssetInput(input, type)) throw new Error('Choose a name without slashes or control characters. Each generated name must fit within 255 characters. “.”, “..”, and “.git” are reserved.');
   const selected = parent ? workspace.cachedHandle(parent.id) : undefined;
   if (parent?.storage === 'local') {
     if (!selected || selected.kind !== 'directory') throw new Error('Reopen the selected folder before creating an item.');
@@ -59,6 +59,10 @@ async function createAssetInternal(workspace: Workspace, parent: StateNode | nul
       ? await directory.getDirectoryHandle(name, { create: true })
       : await directory.getFileHandle(name, { create: true });
     created = true;
+    if (type.kind === 'directory' && type.initialFileName) {
+      const file = await (handle as FileSystemDirectoryHandle).getFileHandle(type.initialFileName(name), { create: true });
+      await writeResourceContent(file as unknown as LocalFile, parent?.storage ?? 'browser', ['']);
+    }
     if (type.kind === 'file') await writeResourceContent(handle as unknown as LocalFile, parent?.storage ?? 'browser', [await type.initialContent?.() ?? '']);
     createdId = parent ? nodeId(parent.sourceId, [...parent.path, name])
       : (await workspace.connect(handle as unknown as LocalHandle, ROOT, location)).id;

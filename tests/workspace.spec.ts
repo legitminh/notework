@@ -291,7 +291,7 @@ test('search spans connected sources from any file and respects hidden children'
   await page.getByRole('searchbox').fill('readme');
   await expect(page.locator('.search-status')).toContainText('1 result found');
   await expect(page.locator('.search-result-row [data-action="readme.txt"]')).toBeVisible();
-  await button(page, 'close search').click();
+  await page.getByRole('dialog', { name: 'Search all files', exact: true }).getByRole('button', { name: 'Exit search', exact: true }).click();
   await button(page, '..').click(); await button(page, '..').click();
   await seedLegacyGraph(page, { hideAdobe: true });
   await button(page, 'Documents/').click();
@@ -317,6 +317,10 @@ for (const mode of ['navigation', 'Cmd/Ctrl+P'] as const) {
     await button(page, 'Documents/').click(); await button(page, 'Adobe/').click();
     if (mode === 'navigation') await button(page, 'search').click();
     else await page.keyboard.press('ControlOrMeta+p');
+    const dialog = page.getByRole('dialog', { name: 'Search all files', exact: true });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole('searchbox')).toBeFocused();
+    await expect(page.locator('section[aria-labelledby="search-heading"]')).toHaveCount(1);
     await page.getByRole('searchbox').fill('readme');
     await expect(page.locator('.search-status')).toContainText('3 results found');
     await expect(page.locator('.search-result-row .resource-hint')).toHaveText([
@@ -655,7 +659,7 @@ test('mobile layout fits, scrolling remains native, and text entry does not trig
   await expect(page.getByRole('searchbox')).toHaveValue('1234qwerasdf');
   await expect(page.getByRole('heading', { name: 'search all files and folders' })).toBeVisible();
   await page.setViewportSize({ width: 1440, height: 1000 });
-  await button(page, 'close search').click();
+  await page.getByRole('dialog', { name: 'Search all files', exact: true }).getByRole('button', { name: 'Exit search', exact: true }).click();
   await button(page, 'readme.txt').click();
   await openEditor(page);
   await page.screenshot({ path: '/private/tmp/notework-desktop.png' });
@@ -1799,6 +1803,73 @@ test('configure recursively deletes a browser folder and prunes descendant links
   })).toBe(true);
 });
 
+for (const storage of ['browser', 'local'] as const) {
+  test(`page folder creation in ${storage} storage creates its main text file and opens the folder`, async ({ page }) => {
+    if (storage === 'local') { await connectDocuments(page); await button(page, 'Documents/').click(); }
+    await startCreate(page, storage === 'local' ? 'folder' : 'home');
+    await expect(page.locator('.creation-option').first().locator('[data-action]')).toHaveAttribute('data-action', 'create page folder');
+    const name = page.getByLabel('name', { exact: true });
+    await expect(button(page, 'create page folder')).toBeDisabled();
+    await name.fill('x'.repeat(251));
+    await expect(button(page, 'create page folder')).toBeDisabled();
+    await expect(button(page, 'create folder')).toBeEnabled();
+    await name.fill(' math.2999 ');
+    const parent = storage === 'local' ? 'Documents' : 'home';
+    await expect(page.getByLabel('Path for page text file', { exact: true })).toHaveText(`${parent}/math.2999/math.2999.main`);
+    await button(page, 'create page folder').click();
+    await expect(page.getByRole('heading', { name: 'math.2999/', exact: true })).toBeVisible();
+    const main = page.locator('.file-navigation-row').filter({ has: button(page, 'math.2999.main') });
+    await expect(main).toBeVisible();
+    await expect(page.getByRole('textbox', { name: 'Edit math.2999.main' })).toHaveCount(0);
+    await main.locator('[data-action="open"] button').click();
+    const editor = page.getByRole('textbox', { name: 'Edit math.2999.main', exact: true });
+    await expect(editor).toBeFocused();
+    await expect(editor).toHaveText('');
+    await editor.fill('Page folder content'); await forceSave(page);
+    await toolbar(page, 'Exit').click();
+    await button(page, '..').click();
+    // Nested page folders inherit the same storage source.
+    await startCreate(page, 'folder'); await name.fill('child'); await button(page, 'create page folder').click();
+    await expect(page.getByRole('heading', { name: 'child/', exact: true })).toBeVisible();
+    await expect(button(page, 'child.main')).toBeVisible();
+    const graph = await storedGraph(page);
+    expect(graph.sources.every((source) => source.storage === storage)).toBe(true);
+    await page.reload();
+    await button(page, storage === 'local' ? 'Documents/' : 'math.2999/').click();
+    if (storage === 'local') await button(page, 'math.2999/').click();
+    await button(page, 'math.2999.main').click(); await openEditor(page);
+    await expect(editor).toHaveText('Page folder content');
+  });
+}
+
+test('page folder creation does not overwrite duplicates and removes incomplete folders on failure', async ({ page }) => {
+  await connectDocuments(page); await button(page, 'Documents/').click();
+  await startCreate(page, 'folder');
+  const name = page.getByLabel('name', { exact: true });
+  await name.fill('Adobe'); await button(page, 'create page folder').click();
+  await expect(page.getByRole('alert')).toContainText('already exists');
+  expect(await page.evaluate(async () => {
+    const folder = await (await (await navigator.storage.getDirectory()).getDirectoryHandle('Documents')).getDirectoryHandle('Adobe');
+    return folder.getFileHandle('Adobe.main').then(() => true, () => false);
+  })).toBe(false);
+  await page.evaluate(() => {
+    const createWritable = FileSystemFileHandle.prototype.createWritable;
+    FileSystemFileHandle.prototype.createWritable = function(options) {
+      if (this.name === 'broken.main') return Promise.reject(new Error('Main file write failed'));
+      return createWritable.call(this, options);
+    };
+  });
+  await name.fill('broken'); await button(page, 'create page folder').click();
+  await expect(page.getByRole('alert')).toContainText('Main file write failed');
+  expect(await page.evaluate(async () => {
+    const folder = await (await navigator.storage.getDirectory()).getDirectoryHandle('Documents');
+    return folder.getDirectoryHandle('broken').then(() => true, () => false);
+  })).toBe(false);
+  await name.fill('working'); await button(page, 'create page folder').click();
+  await expect(page.getByRole('heading', { name: 'working/', exact: true })).toBeVisible();
+  await expect(button(page, 'working.main')).toBeVisible();
+});
+
 test('folder creation previews paths and opens new folders, text files, and SVG states', async ({ page }) => {
   await connectDocuments(page);
   await button(page, 'Documents/').click();
@@ -2635,6 +2706,13 @@ test('relocate mode chooses folders only, cancels with Escape, and creates a des
   await page.getByRole('searchbox').fill('travel');
   await expect(page.locator('.search-status')).toContainText('1 result found');
   await expect(button(page, 'open')).toHaveCount(0);
+  const search = page.getByRole('dialog', { name: 'Search all files', exact: true });
+  await page.keyboard.press('Escape');
+  await expect(search.getByRole('heading', { name: 'search all files and folders' })).toBeFocused();
+  await expect(search.getByRole('searchbox')).toHaveValue('travel');
+  await page.keyboard.press('Escape');
+  await expect(search).toHaveCount(0);
+  await expect(page.getByRole('complementary', { name: 'relocate' })).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(page.getByRole('complementary', { name: 'relocate' })).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'travel.txt', exact: true })).toBeVisible();

@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import Action from './Action.svelte';
   import StorageNotice from './StorageNotice.svelte';
-  import { assetTypes, assetName, validAssetName, type AssetType } from '../asset-types';
+  import { assetTypes, assetName, validAssetName, validAssetInput, type AssetType } from '../asset-types';
 
   let { path, machineFolder, githubFolder = false, busy, supported, error, onCreate, onCancel }: {
     path: string;
@@ -28,9 +28,12 @@
   {#if error}<StorageNotice {error} />{/if}
   {#each assetTypes as type (type.id)}
     <div class="creation-option">
-      <Action label={`create ${type.label}`} disabled={busy || !supported || !validAssetName(name.trim()) || !validAssetName(assetName(name, type))}
+      <Action label={`create ${type.label}`} disabled={busy || !supported || !validAssetInput(name, type)}
         onSelect={() => onCreate(name, type)} />
       <p class="path" aria-label={`Path for ${type.label}`}>{path}/{assetName(name, type) || '…'}{type.kind === 'directory' ? '/' : ''}</p>
+      {#if type.initialFileName}
+        <p class="path" aria-label="Path for page text file">{path}/{name.trim() || '…'}/{name.trim() ? type.initialFileName(name.trim()) : '….main'}</p>
+      {/if}
     </div>
   {/each}
   {#if name && !validAssetName(name.trim())}<p class="notice">Choose a name without slashes or control characters. “.”, “..”, and “.git” are reserved.</p>{/if}

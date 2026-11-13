@@ -660,6 +660,21 @@ test('keeping an unreadable GitHub version hides the file without removing its g
   await expect(action(page, 'linked.txt')).toBeVisible();
 });
 
+test('page folder creation publishes its main text file to GitHub in one commit', async ({ page }) => {
+  const repo = await github(page, { 'note.txt': 'Existing note' });
+  await connect(page);
+  await action(page, 'create new file/folder').click();
+  await page.getByLabel('name', { exact: true }).fill('math.2999');
+  await action(page, 'create page folder').click();
+  await expect(page.getByRole('heading', { name: 'math.2999/', exact: true })).toBeVisible();
+  await expect(action(page, 'math.2999.main')).toBeVisible();
+  await expect.poll(() => repo.content('math.2999/math.2999.main')).toBe('');
+  expect(repo.messages).toEqual(['create: math.2999']);
+  await action(page, 'open').click();
+  await expect(editor(page, 'math.2999.main')).toBeFocused();
+  await expect(editor(page, 'math.2999.main')).toHaveText('');
+});
+
 test('normal folder actions and drawing editing publish to GitHub', async ({ page }) => {
   const repo = await github(page, { 'ink.svg': serializeDrawing([]) });
   await connect(page);

@@ -11,7 +11,6 @@
   import Control from '../lib/components/Control.svelte';
   import { dialogShortcuts, shortcutScope } from '../lib/shortcut-scope.svelte';
   import Action from '../lib/components/Action.svelte';
-  import SearchPanel from '../lib/components/SearchPanel.svelte';
   import CreateAsset from '../lib/components/CreateAsset.svelte';
   import GitHubSettings from '../lib/components/GitHubSettings.svelte';
   import GitHubConflictDialog from '../lib/components/GitHubConflictDialog.svelte';
@@ -44,7 +43,7 @@
   let children = $state.raw<StateNode[]>([]);
   let rootIds = $state.raw<string[]>([]);
   let permissions = $state<Record<string, PermissionState>>({});
-  let panel = $state<'search' | 'settings' | 'configure' | 'github' | null>(null);
+  let panel = $state<'settings' | 'configure' | 'github' | null>(null);
   let loading = $state(true);
   let busy = $state(false);
   let picking = $state(false);
@@ -385,6 +384,12 @@
     return true;
   }
 
+  async function chooseGlobalLocation(node: StateNode) {
+    globalSearch = false;
+    await tick();
+    chooseLocation(node);
+  }
+
   async function exitEditor() {
     // Keep this file selected if browser history moved during editing.
     if (page.state.notework !== currentId) {
@@ -647,7 +652,7 @@
         {/key}
       {:else}
       <nav aria-label="state navigation">
-        <Action label="search" onSelect={() => togglePanel('search')} disabled={loading || busy} />
+        <Action label="search" onSelect={() => { globalSearch = true; }} disabled={loading || busy} />
         {#if current}
           <Action label={`configure ${resourceType}`} onSelect={() => togglePanel('configure')} disabled={busy || loading} />
           {#if current.kind === 'directory'}
@@ -693,10 +698,7 @@
         {#if panel}
           <div class="panel-controls"><Action label={`close ${panel === 'settings' ? 'app settings' : panel === 'configure' ? `configure ${resourceType}` : panel}`} onSelect={() => { panel = null; state_viewport.viewport?.scrollTo({ top: 0 }); }} /></div>
         {/if}
-        {#if panel === 'search'}
-          <SearchPanel {workspace} from={currentId} onNavigate={navigate} onOpen={openNode} {graphRevision}
-            relocating={!!relocateTarget} onChoose={chooseLocation} {busy} />
-        {:else if panel === 'configure' && current}
+        {#if panel === 'configure' && current}
           <section class="panel" aria-labelledby="configure-heading">
             <h2 id="configure-heading">configure {resourceType}</h2>
             {#if current.kind === 'directory'}
@@ -876,7 +878,8 @@
   <AppKeyboard enabled={virtualKeyboard} choice={keyboardChoice} />
   <GitHubSyncProgress />
   {#if heldModifier && !globalSearch}<aside class="modifier-hints" aria-label="Command and Control shortcuts">C · Copy &nbsp; V · Paste &nbsp; P · Search all files &nbsp; S · Save</aside>{/if}
-  {#if globalSearch}<GlobalSearch {workspace} from={currentId} {graphRevision} onSelect={selectGlobalResult} onClose={() => { globalSearch = false; }} />{/if}
+  {#if globalSearch}<GlobalSearch {workspace} from={currentId} {graphRevision} relocating={!!relocateTarget}
+    onChoose={chooseGlobalLocation} onSelect={selectGlobalResult} onClose={() => { globalSearch = false; }} />{/if}
   {#if picking}
     <LocalPicker onSelect={add} onCancel={() => { picking = false; }} />
   {/if}
