@@ -47,12 +47,13 @@
   import { GitHubFile } from '../github/repository';
   import { draftQueue } from '../github/storage';
 
-  let { workspace, node, wrapLines, prettyFontSize, vimMode, stylusOnly, showLineNumbers, showLineIndex, pdfMargins, autosaveMs, onExit, onMissing, onOpenLink }: {
+  let { workspace, node, wrapLines, prettyFontSize, prettyMargin, vimMode, stylusOnly, showLineNumbers, showLineIndex, pdfMargins, autosaveMs, onExit, onMissing, onOpenLink }: {
     workspace: Workspace; node: StateNode;
     wrapLines: boolean;
     showLineNumbers: boolean;
     showLineIndex: boolean;
     prettyFontSize: boolean;
+    prettyMargin: boolean;
     vimMode: boolean;
     stylusOnly: boolean;
     autosaveMs: number;
@@ -652,7 +653,7 @@
               }
             })))),
             vimMode ? vim() : [],
-            wikiDisplay(leaveEditor), pageWidgets.field, prettyDisplay(prettyFontSize), textLock.of([]),
+            wikiDisplay(leaveEditor), pageWidgets.field, prettyDisplay(prettyFontSize, prettyMargin), textLock.of([]),
             wrapLines ? EditorView.lineWrapping : [],
             showLineNumbers ? lineNumbers() : [], showLineIndex ? lineIndex : [], drawSelection(), highlightActiveLine(), history(),
             bracketMatching(), closeBrackets(), highlightSelectionMatches(),

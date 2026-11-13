@@ -1405,6 +1405,58 @@ test('pretty font sizing can be turned off without losing bold headings or spaci
   await expect(heading).toHaveCSS('padding-top', `${base * 2.75}px`);
 });
 
+test('pretty margin can be disabled, persists, and stays independent of font sizing', async ({ page }) => {
+  await createNote(page, 'compact-pretty.txt');
+  const editor = page.getByRole('textbox', { name: 'Edit compact-pretty.txt' });
+  const headings = editor.locator('.cm-pretty-heading');
+  const titles = headings.locator('.cm-pretty-text');
+  await page.keyboard.insertText('\\pretty1[\n  Scoped heading\n    Scoped child\n]\n\\pretty\n  Heading\n    Child');
+  const base = await editor.evaluate((element) => parseFloat(getComputedStyle(element).fontSize));
+  await expect(headings).toHaveCount(2);
+  for (const heading of await headings.all()) {
+    await expect(heading).toHaveCSS('padding-top', `${base * 2.75}px`);
+  }
+
+  const settings = async () => {
+    await toolbar(page, 'Exit').click();
+    await button(page, '..').click();
+    await button(page, 'app settings').click();
+  };
+  const reopen = async () => {
+    await button(page, 'close app settings').click();
+    await button(page, 'compact-pretty.txt').click();
+    await openEditor(page);
+    await expect(headings).toHaveCount(2);
+  };
+  await settings();
+  await button(page, 'pretty margin: on').press('Enter');
+  await expect(button(page, 'pretty margin: off')).toBeVisible();
+  await page.reload();
+  await button(page, 'app settings').click();
+  await expect(button(page, 'pretty margin: off')).toBeVisible();
+  await reopen();
+  for (const heading of await headings.all()) await expect(heading).toHaveCSS('padding-top', '0px');
+  for (const title of await titles.all()) {
+    await expect(title).toHaveCSS('font-size', `${base * 3.75}px`);
+    await expect(title).toHaveCSS('font-weight', '700');
+  }
+
+  await settings();
+  await button(page, 'pretty font sizing: on').click();
+  await reopen();
+  for (const heading of await headings.all()) await expect(heading).toHaveCSS('padding-top', '0px');
+  for (const title of await titles.all()) await expect(title).toHaveCSS('font-size', `${base}px`);
+
+  await settings();
+  await button(page, 'pretty margin: off').click();
+  await reopen();
+  for (const heading of await headings.all()) await expect(heading).toHaveCSS('padding-top', `${base * 2.75}px`);
+  for (const title of await titles.all()) {
+    await expect(title).toHaveCSS('font-size', `${base}px`);
+    await expect(title).toHaveCSS('font-weight', '700');
+  }
+});
+
 test('brush inserts a movable SVG page, swaps the inline toolbar, and saves an exact drawing extent', async ({ page }) => {
   await page.setViewportSize({ width: 1050, height: 1500 });
   await createNote(page, 'sketch.txt');

@@ -143,7 +143,7 @@ const prettyField = StateField.define({
 });
 
 const prettyTheme = EditorView.baseTheme({
-  '.cm-line.cm-pretty-heading': {
+  '&.cm-pretty-margin .cm-line.cm-pretty-heading': {
     // Padding adds space inside the block measured by CodeMirror.
     paddingBlockStart: 'max(0px, calc(3em - var(--pretty-order) * .25em))'
   },
@@ -154,6 +154,8 @@ const prettyTheme = EditorView.baseTheme({
   }
 });
 
-export function prettyDisplay(resizeText: boolean) {
-  return [prettyField, prettyTheme, resizeText ? EditorView.editorAttributes.of({ class: 'cm-pretty-size' }) : []];
+export function prettyDisplay(resizeText: boolean, margin: boolean) {
+  return [prettyField, prettyTheme,
+    resizeText ? EditorView.editorAttributes.of({ class: 'cm-pretty-size' }) : [],
+    margin ? EditorView.editorAttributes.of({ class: 'cm-pretty-margin' }) : []];
 }

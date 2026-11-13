@@ -64,6 +64,7 @@
   let activeEditor = $state<{ saveForNavigation: () => Promise<boolean>; resumeEditing?: () => void }>();
   let wrapLines = $state(true);
   let prettyFontSize = $state(true);
+  let prettyMargin = $state(true);
   let vimMode = $state(false);
   let stylusOnly = $state(false);
   let autosaveSeconds = $state(DEFAULT_AUTOSAVE_SECONDS);
@@ -117,6 +118,8 @@
     try { wrapLines = localStorage.getItem('notework:wrap-lines') !== 'false'; }
     catch { /* Use the default when storage is unavailable. */ }
     try { prettyFontSize = localStorage.getItem('notework:pretty-font-size') !== 'false'; }
+    catch { /* Use the default when storage is unavailable. */ }
+    try { prettyMargin = localStorage.getItem('notework:pretty-margin') !== 'false'; }
     catch { /* Use the default when storage is unavailable. */ }
     try { vimMode = localStorage.getItem('notework:vim-mode') === 'true'; }
     catch { /* Use the default when storage is unavailable. */ }
@@ -638,7 +641,7 @@
           {#if current.drawing}
             <StandaloneDrawing bind:this={activeEditor} {pdfMargins} {stylusOnly} autosaveMs={autosaveSeconds * 1000} {workspace} node={current} onExit={exitEditor} onMissing={() => { void unavailableCurrent(id, 'missing'); }} />
           {:else}
-            <TextEditor bind:this={activeEditor} {showLineNumbers} {showLineIndex} {workspace} node={current} {wrapLines} {prettyFontSize} {vimMode} {stylusOnly} {pdfMargins} autosaveMs={autosaveSeconds * 1000} onExit={exitEditor}
+            <TextEditor bind:this={activeEditor} {showLineNumbers} {showLineIndex} {workspace} node={current} {wrapLines} {prettyFontSize} {prettyMargin} {vimMode} {stylusOnly} {pdfMargins} autosaveMs={autosaveSeconds * 1000} onExit={exitEditor}
               onMissing={() => { void unavailableCurrent(id, 'missing'); }} onOpenLink={openLinkedFile} />
           {/if}
         {/key}
@@ -785,6 +788,10 @@
             <Action label={`pretty font sizing: ${prettyFontSize ? 'on' : 'off'}`} onSelect={() => {
               prettyFontSize = !prettyFontSize;
               saveAppearancePreference('notework:pretty-font-size', prettyFontSize);
+            }} />
+            <Action label={`pretty margin: ${prettyMargin ? 'on' : 'off'}`} onSelect={() => {
+              prettyMargin = !prettyMargin;
+              saveAppearancePreference('notework:pretty-margin', prettyMargin);
             }} />
             <Action label={`draw with only physical stylus: ${stylusOnly ? 'enabled' : 'disabled'}`} onSelect={() => {
               stylusOnly = !stylusOnly;
