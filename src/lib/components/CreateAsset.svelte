@@ -3,6 +3,7 @@
   import Action from './Action.svelte';
   import StorageNotice from './StorageNotice.svelte';
   import { assetTypes, assetName, validAssetName, validAssetInput, type AssetType } from '../asset-types';
+  import { stripFilenameEditingArtifacts } from '../filenames';
 
   let { path, machineFolder, githubFolder = false, busy, supported, error, onCreate, onCancel }: {
     path: string;
@@ -22,7 +23,7 @@
 <section aria-labelledby="create-heading">
   <Action label="cancel creation" onSelect={onCancel} disabled={busy} />
   <h1 id="create-heading">create new file/folder</h1>
-  <label class="field"><span>name</span><input bind:this={input} bind:value={name} maxlength="255" autocomplete="off" disabled={busy} /></label>
+  <label class="field"><span>name</span><input bind:this={input} bind:value={() => name, (value) => { name = stripFilenameEditingArtifacts(value); }} maxlength="255" autocomplete="off" disabled={busy} /></label>
   <p class="muted">{githubFolder ? 'New assets are saved in this folder on GitHub.' : machineFolder ? 'New assets are saved in this folder on your computer. Creating an item may ask for write access.' : 'New assets are saved inside this folder in browser storage.'}</p>
   {#if !supported}<p class="notice" role="alert">{machineFolder ? 'Local creation needs browser filesystem support.' : 'Browser storage is unavailable. Use HTTPS and allow site storage.'}</p>{/if}
   {#if error}<StorageNotice {error} />{/if}

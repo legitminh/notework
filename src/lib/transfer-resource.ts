@@ -5,6 +5,7 @@ import { saveWorkspace, snapshotWorkspace } from './persistence';
 import { Workspace, ROOT, nodeId, type StateNode } from './workspace';
 import { GitHubDirectory, GitHubFile, withGitHubRepositories, type GitHubRepository } from './github/repository';
 import { GitHubWriteUncertain } from './github/api';
+import { cleanFilename, invalidFilenameMessage } from './filenames';
 
 const native = (handle: LocalHandle) => handle as unknown as FileSystemHandle;
 const startsWith = (path: string[], prefix: string[]) => prefix.every((part, i) => path[i] === part);
@@ -45,8 +46,8 @@ async function transferResourceInternal(workspace: Workspace, source: StateNode,
   const destinationRepo = relocating ? (target ? workspace.github(target.sourceId) : undefined) : sourceRepo;
   if (sourceRepo && !source.path.length) throw new Error('Manage the repository itself in GitHub settings.');
   sourceRepo?.assertTransferable(source.path.join('/'));
-  if (!relocating) name = name.trim();
-  if (!relocating && (!validFilename(name) || name.toLowerCase() === '.git')) throw new Error('Enter a valid name without a folder path.');
+  if (!relocating) name = cleanFilename(name);
+  if (!relocating && (!validFilename(name) || name.toLowerCase() === '.git')) throw new Error(invalidFilenameMessage(name));
   if (!relocating && name === source.name) return { node: source, warning: '', remap: (id: string) => id };
   if (!relocating && name.toLowerCase() === source.name.toLowerCase()) throw new Error('Rename to a different name first, then change its capitalization.');
   // Start permission requests in the explicit Rename/Choose/Yes gesture.

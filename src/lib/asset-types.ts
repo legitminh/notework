@@ -1,5 +1,6 @@
 import { blankImage, imageFormats } from './images';
 import { serializeDrawing } from './drawing';
+import { cleanFilename } from './filenames';
 
 export interface AssetType {
   id: string;
@@ -21,7 +22,7 @@ export const assetTypes: readonly AssetType[] = [
 ];
 
 export function assetName(input: string, type: AssetType) {
-  const name = input.trim();
+  const name = cleanFilename(input);
   return name && type.extension && !name.toLowerCase().endsWith(type.extension) ? name + type.extension : name;
 }
 
@@ -33,6 +34,6 @@ export function validAssetName(name: string) {
 export function validAssetInput(input: string, type: AssetType) {
   const name = assetName(input, type);
   const initialFile = type.initialFileName?.(name);
-  return validAssetName(input.trim()) && validAssetName(name) &&
+  return validAssetName(cleanFilename(input)) && validAssetName(name) &&
     (initialFile === undefined || validAssetName(initialFile));
 }

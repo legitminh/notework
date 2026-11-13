@@ -1157,6 +1157,50 @@ test('a deleted browser document is pruned instead of being recreated', async ({
   await page.reload(); await expect(button(page, 'temporary.txt')).toHaveCount(0);
 });
 
+for (const storage of ['browser', 'local'] as const) {
+  test(`Vietnamese filenames ignore pasted Backspace artifacts during rename in ${storage} storage`, async ({ page }) => {
+    if (storage === 'local') {
+      await connectDocuments(page); await button(page, 'Documents/').click();
+      await button(page, 'readme.txt').click(); await openEditor(page);
+    } else await createNote(page, 'original.txt');
+    const content = 'Ghi chú tiếng Việt: siêu việt\n' + 'Tiếng Việt'.normalize('NFD');
+    await page.getByRole('textbox', { name: /^Edit / }).fill(content);
+    await toolbar(page, 'Exit').click();
+    const name = 'viet.outputmode.siêu.việt';
+    await button(page, 'configure file').click(); await button(page, 'rename').click();
+    const dialog = page.getByRole('dialog', { name: 'Rename file', exact: true });
+    const field = dialog.getByRole('textbox', { name: 'new name', exact: true });
+    await field.fill('viet.outputmode.siêu\b.việt');
+    await expect(field).toHaveValue(name);
+    await dialog.getByRole('button', { name: 'Rename and update links', exact: true }).click();
+    await expect(dialog).not.toBeVisible();
+    await expect(page.getByRole('heading', { name, exact: true })).toBeVisible();
+    await page.reload();
+    if (storage === 'local') await button(page, 'Documents/').click();
+    await button(page, name).click(); await openEditor(page);
+    await expect(page.getByRole('textbox', { name: `Edit ${name}`, exact: true }).locator('.cm-line')).toHaveText(content.split('\n'));
+  });
+}
+
+test('rename identifies other hidden control characters and clears errors when the name changes', async ({ page }) => {
+  await createNote(page, 'original.txt'); await toolbar(page, 'Exit').click();
+  await button(page, 'configure file').click(); await button(page, 'rename').click();
+  const dialog = page.getByRole('dialog', { name: 'Rename file', exact: true });
+  const field = dialog.getByRole('textbox', { name: 'new name', exact: true });
+  await field.fill('ghi\u001bchú');
+  await dialog.getByRole('button', { name: 'Rename and update links', exact: true }).click();
+  await expect(dialog.getByRole('alert')).toContainText('invisible control character (U+001B)');
+  await field.fill('ghi/chú');
+  await expect(dialog.getByRole('alert')).toHaveCount(0);
+  await dialog.getByRole('button', { name: 'Rename and update links', exact: true }).click();
+  await expect(dialog.getByRole('alert')).toContainText('without a folder path');
+  await field.fill('ghi chú');
+  await expect(dialog.getByRole('alert')).toHaveCount(0);
+  await dialog.getByRole('button', { name: 'Rename and update links', exact: true }).click();
+  await expect(dialog).not.toBeVisible();
+  await expect(page.getByRole('heading', { name: 'ghi chú', exact: true })).toBeVisible();
+});
+
 test('wiki suggestions create a sibling on save and rename updates saved backlinks', async ({ page }) => {
   await createNote(page, 'origin.txt');
   const editor = page.getByRole('textbox', { name: 'Edit origin.txt' });
@@ -1813,7 +1857,8 @@ for (const storage of ['browser', 'local'] as const) {
     await name.fill('x'.repeat(251));
     await expect(button(page, 'create page folder')).toBeDisabled();
     await expect(button(page, 'create folder')).toBeEnabled();
-    await name.fill(' math.2999 ');
+    await name.fill(' math.2999\b ');
+    await expect(name).toHaveValue(' math.2999 ');
     const parent = storage === 'local' ? 'Documents' : 'home';
     await expect(page.getByLabel('Path for page text file', { exact: true })).toHaveText(`${parent}/math.2999/math.2999.main`);
     await button(page, 'create page folder').click();

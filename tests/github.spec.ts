@@ -298,6 +298,32 @@ test('Vietnamese and Unicode controls survive autosave, Exit, and reopening the 
   await expect(editor(page, name)).toContainText('Cơ sở ngữ âm tiếng Việt');
 });
 
+test('Vietnamese filenames ignore pasted Backspace artifacts and preserve GitHub notes and backlinks', async ({ page }) => {
+  const content = 'Ghi chú tiếng Việt: siêu việt\n' + 'Tiếng Việt'.normalize('NFD');
+  const repo = await github(page, { 'original.txt': content, 'index.txt': '[[original.txt]]' });
+  await connect(page);
+  await openNote(page, 'index.txt');
+  await editor(page, 'index.txt').fill('[[original.txt]]\nLiên kết');
+  await exit(page).click();
+  await action(page, '..').click();
+  await action(page, 'original.txt').click();
+  await action(page, 'configure file').click(); await action(page, 'rename').click();
+  const dialog = page.getByRole('dialog', { name: 'Rename file', exact: true });
+  const field = dialog.getByRole('textbox', { name: 'new name', exact: true });
+  // Keep decomposed Vietnamese accents as entered; remove only the hidden editing artifact.
+  const name = 'viet.outputmode.siêu.việt'.normalize('NFD');
+  await field.fill('viet.outputmode.siêu\b.việt'.normalize('NFD'));
+  await expect(field).toHaveValue(name);
+  await dialog.getByRole('button', { name: 'Rename and update links', exact: true }).click();
+  await expect(dialog).not.toBeVisible();
+  await expect(page.getByRole('heading', { name, exact: true })).toBeVisible();
+  await expect.poll(() => repo.content(name)).toBe(content);
+  expect(repo.content('original.txt')).toBeUndefined();
+  expect(repo.content('index.txt')).toBe(`[[${name}]]\nLiên kết`);
+  await page.reload(); await action(page, 'notebook/').click(); await openNote(page, name);
+  await expect(editor(page, name).locator('.cm-line')).toHaveText(content.split('\n'));
+});
+
 test('name search across a GitHub tree reads only matching blobs and normalizes Unicode', async ({ page }) => {
   const name = 'Việt.phonetic.basis';
   const unrelated = Object.fromEntries(Array.from({ length: 80 }, (_, i) => [`archive/${i}.txt`, `archive note ${i}`]));

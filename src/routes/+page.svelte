@@ -24,6 +24,7 @@
   import TextEditor from '../lib/components/TextEditor.svelte';
   import StandaloneDrawing from '../lib/components/StandaloneDrawing.svelte';
   import { renameResource } from '../lib/rename-resource';
+  import { stripFilenameEditingArtifacts } from '../lib/filenames';
   import { relocateResource } from '../lib/relocate-resource';
   import LocalPicker from '../lib/components/LocalPicker.svelte';
   import { Workspace, ROOT, nodeId, parentId, storageLabel, type StateNode } from '../lib/workspace';
@@ -849,7 +850,9 @@
     oncancel={(event) => { if (busy) event.preventDefault(); }}>
     <h2 id="rename-title">Rename {renameTarget?.kind === 'directory' ? 'folder' : 'file'}</h2>
     <form bind:this={renameForm} use:submitOnEnter onsubmit={(event) => { event.preventDefault(); void renameCurrent(); }}>
-      <label class="field">new name <input bind:value={renameName} required maxlength="255" disabled={busy || loading} /></label>
+      <label class="field">new name <input bind:value={() => renameName, (value) => {
+        renameName = stripFilenameEditingArtifacts(value); renameError = '';
+      }} required maxlength="255" disabled={busy || loading} /></label>
       {#if renameError}<StorageNotice error={renameError} />{/if}
       <div class="editor-controls">
         <Control onclick={() => renameForm.requestSubmit()} disabled={busy || loading}>Rename and update links</Control>
