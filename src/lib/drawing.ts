@@ -1,5 +1,8 @@
 export type Point = readonly [number, number];
-export type Stroke = readonly Point[];
+export type Stroke = readonly Point[] & { width?: number; erase?: boolean };
+export const strokeWidth = (stroke: Stroke) => stroke.width ?? STROKE_WIDTH;
+export const sizedStroke = (points: readonly Point[], width: number, erase = false): Stroke =>
+  Object.assign([...points], { width, erase });
 export type Drawing = readonly Stroke[];
 
 export const DRAWING_WIDTH = 1024;
@@ -12,8 +15,8 @@ export const svgPagePattern = /^[ \t]*\\(?:svg|png|jpeg|heic|ora)page\[([^\[\]\r
 
 export function drawingBottom(strokes: Drawing) {
   let bottom = 0;
-  for (const stroke of strokes) for (const [, y] of stroke) bottom = Math.max(bottom, y);
-  return strokes.length ? Math.ceil(bottom + STROKE_WIDTH / 2) : 0;
+  for (const stroke of strokes) for (const [, y] of stroke) bottom = Math.max(bottom, y + strokeWidth(stroke) / 2);
+  return strokes.length ? Math.ceil(bottom) : 0;
 }
 
 export function strokePoints(stroke: Stroke) {
@@ -23,7 +26,7 @@ export function strokePoints(stroke: Stroke) {
 
 export function serializeDrawing(strokes: Drawing) {
   const height = Math.max(1, drawingBottom(strokes));
-  const lines = strokes.map((stroke) => `  <polyline points="${strokePoints(stroke)}"/>`).join('\n');
+  const lines = strokes.map((stroke) => `  <polyline points="${strokePoints(stroke)}" stroke-width="${strokeWidth(stroke)}"/>`).join('\n');
   return `${header} width="${DRAWING_WIDTH}" height="${height}" viewBox="0 0 ${DRAWING_WIDTH} ${height}" preserveAspectRatio="xMinYMin meet">\n<g fill="none" stroke="#202733" stroke-width="${STROKE_WIDTH}" stroke-linecap="round" stroke-linejoin="round">\n${lines}\n</g>\n</svg>\n`;
 }
 
@@ -48,7 +51,9 @@ export async function readDrawing(file: File): Promise<Drawing> {
       if (!Number.isFinite(y) || x > DRAWING_WIDTH || y > 10_000_000) throw new Error('This drawing contains an out-of-range point.');
       return [x, y];
     });
-    return points;
+    const width = Number(line.getAttribute('stroke-width') ?? svg.firstElementChild!.getAttribute('stroke-width') ?? STROKE_WIDTH);
+    if (!Number.isFinite(width) || width <= 0 || width > DRAWING_WIDTH) throw new Error('This drawing contains an invalid pen size.');
+    return sizedStroke(points, width);
   });
 }
 

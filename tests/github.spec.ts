@@ -59,6 +59,7 @@ async function github(page: Page, initial: FixtureFiles) {
     expect(request.headers().authorization).toMatch(/^Bearer test-token/);
     if (request.headers().authorization !== `Bearer ${token}`) return respond({}, 401);
     if (method === 'GET' && !path) return respond({ default_branch: 'main', permissions: { push: true } });
+    if (method === 'GET' && path === '/commits') return respond([{ commit: { committer: { date: '2026-01-01T00:00:00Z' } } }]);
     if (method === 'GET' && path === '/git/ref/heads/main') return respond({ object: { sha: head } });
     if (method === 'GET' && path.startsWith('/git/commits/')) {
       const value = commits.get(path.split('/').at(-1)!);
@@ -407,7 +408,7 @@ for (const format of ['png', 'jpeg', 'ora']) {
     await expect(localCanvas).toBeVisible(); await expect(remoteCanvas).toBeVisible();
     await expect(dialog.getByRole('textbox')).toHaveCount(0);
     for (const [side, color] of [[localCanvas, [255, 0, 0, 255]], [remoteCanvas, [0, 0, 255, 255]]] as const) {
-      const pixel = await side.locator('image').first().evaluate(async (image) => {
+      const pixel = await side.locator('image[data-image-layer=active]').evaluate(async (image) => {
         const blob = await (await fetch(image.getAttribute('href')!)).blob();
         const bitmap = await createImageBitmap(blob);
         const canvas = document.createElement('canvas'); canvas.width = bitmap.width; canvas.height = bitmap.height;
@@ -422,7 +423,17 @@ for (const format of ['png', 'jpeg', 'ora']) {
       await expect(remote.getByLabel('active layer').locator('option')).toHaveCount(2);
       await expect(local.getByLabel('active layer').locator('option')).toHaveCount(1);
     }
+    await remote.getByRole('button', { name: 'Brush', exact: true }).click();
+    const size = remote.getByRole('slider', { name: 'Pen size', exact: true });
+    await expect(size).toBeVisible();
+    await expect(local.getByRole('slider')).toHaveCount(0);
+    await page.keyboard.press('ArrowUp');
+    await expect(size).toHaveAttribute('aria-valuenow', '4');
+    await page.keyboard.press('Escape');
+    await expect(size).toHaveCount(0);
+    await expect(dialog).toBeVisible();
     await drawVersion(page, remoteCanvas);
+    await expect(remoteCanvas.locator('polyline')).toHaveAttribute('stroke-width', '4');
     await remoteCanvas.press('ControlOrMeta+z');
     await expect(remoteCanvas.locator('polyline')).toHaveCount(0);
     await remoteCanvas.press('ControlOrMeta+Shift+z');
@@ -833,4 +844,20 @@ test('choosing upstream during conflict review preserves a newer draft’s origi
   await expect(dialog.getByRole('textbox', { name: 'Your version' })).toHaveValue('Newer local draft');
   await dialog.getByRole('button', { name: 'Keep your version', exact: true }).click();
   await expect.poll(() => repo.content('note.txt')).toBe('Newer local draft');
+});
+
+
+test('search orders GitHub files by actual edit dates instead of blob identities', async ({ page }) => {
+  await github(page, { 'a-old.txt': 'Old', 'z-new.txt': 'New' });
+  await page.route(/\/commits\?/, async route => {
+    const query = new URL(route.request().url()).searchParams;
+    expect(query.get('per_page')).toBe('1');
+    expect(query.get('sha')).toMatch(/^commit-/);
+    await route.fulfill({ json: [{ commit: { committer: { date: query.get('path') === 'z-new.txt' ? '2026-11-14T12:00:00Z' : '2026-01-01T00:00:00Z' } } }] });
+  });
+  await connect(page);
+  await action(page, 'search').click();
+  await page.getByRole('searchbox').fill('.txt');
+  await expect(page.locator('.search-status')).toHaveText('2 results found');
+  await expect(page.locator('.search-result-row .resource-hint')).toHaveText(['notebook/z-new.txt', 'notebook/a-old.txt']);
 });

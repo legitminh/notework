@@ -1,21 +1,21 @@
 import { StateEffect, StateField, type EditorState, type Text } from '@codemirror/state';
 import { Decoration, EditorView, WidgetType } from '@codemirror/view';
-import { DRAWING_WIDTH, DRAWING_PAGE_HEIGHT, STROKE_WIDTH, drawingBottom, strokePoints, svgPagePattern, type Drawing } from './drawing';
+import { DRAWING_WIDTH, DRAWING_PAGE_HEIGHT, strokeWidth, drawingBottom, strokePoints, svgPagePattern, type Drawing } from './drawing';
 
 export interface SvgPage { from: number; to: number; name: string }
 interface ActivePage { from: number; host: HTMLElement }
 const svgNamespace = 'http://www.w3.org/2000/svg';
 
 class SvgPageWidget extends WidgetType {
-  constructor(readonly page: SvgPage, readonly drawing: Drawing | undefined, readonly open: (page: SvgPage) => void, readonly image?: { src: string; height: number }) { super(); }
+  constructor(readonly page: SvgPage, readonly drawing: Drawing | undefined, readonly open: (page: SvgPage) => void, readonly image?: { src: string; height: number }, readonly readOnly = false) { super(); }
   eq(other: SvgPageWidget) {
     return this.page.from === other.page.from && this.page.name === other.page.name && this.drawing === other.drawing && this.image === other.image;
   }
   toDOM() {
-    const button = document.createElement('button');
-    button.type = 'button';
+    const button = document.createElement(this.readOnly ? 'div' : 'button');
+    if (button instanceof HTMLButtonElement) button.type = 'button';
     button.className = 'svg-page-preview';
-    button.setAttribute('aria-label', `Edit drawing ${this.page.name}`);
+    button.setAttribute('aria-label', `${this.readOnly ? 'Preview of' : 'Edit drawing'} ${this.page.name}`);
     const svg = document.createElementNS(svgNamespace, 'svg');
     const height = this.image?.height ?? (drawingBottom(this.drawing ?? []) || DRAWING_PAGE_HEIGHT);
     svg.setAttribute('viewBox', `0 0 ${DRAWING_WIDTH} ${height}`);
@@ -28,7 +28,7 @@ class SvgPageWidget extends WidgetType {
       path.setAttribute('points', strokePoints(stroke));
       path.setAttribute('stroke', 'currentColor');
       path.setAttribute('fill', 'none');
-      path.setAttribute('stroke-width', String(STROKE_WIDTH));
+      path.setAttribute('stroke-width', String(strokeWidth(stroke)));
       path.setAttribute('stroke-linecap', 'round');
       path.setAttribute('stroke-linejoin', 'round');
       svg.append(path);
@@ -62,14 +62,15 @@ function scan(doc: Text): SvgPage[] {
   return pages;
 }
 
-export function svgPages(open: (page: SvgPage) => void, vimMode: () => boolean) {
+export function svgPages(open: (page: SvgPage) => void, vimMode: () => boolean, readOnly = false) {
   const setPreview = StateEffect.define<{ name: string; strokes: Drawing; image?: { src: string; height: number } }>();
   const setActive = StateEffect.define<ActivePage | undefined>();
   function decorate(state: EditorState, pages: SvgPage[], drawings: Map<string, { strokes: Drawing; image?: { src: string; height: number } }>, active?: ActivePage) {
     return Decoration.set(pages.flatMap((page) => {
+      if (readOnly && !drawings.has(page.name)) return [];
       if (active?.from === page.from) return [Decoration.replace({ block: true, widget: new DrawingHost(active.host) }).range(page.from, page.to)];
-      if (state.selection.ranges.some((range) => range.from <= page.to && range.to >= page.from)) return [];
-      const widget = new SvgPageWidget(page, drawings.get(page.name)?.strokes, open, drawings.get(page.name)?.image);
+      if (!readOnly && state.selection.ranges.some((range) => range.from <= page.to && range.to >= page.from)) return [];
+      const widget = new SvgPageWidget(page, drawings.get(page.name)?.strokes, open, drawings.get(page.name)?.image, readOnly);
       // Vim measures display lines for vertical motions. Keep a real line to land on.
       if (vimMode()) return [
         Decoration.line({ class: 'svg-page-source' }).range(page.from),

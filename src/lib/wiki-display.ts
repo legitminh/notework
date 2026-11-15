@@ -1,12 +1,12 @@
 import { Decoration, EditorView, MatchDecorator, ViewPlugin, type ViewUpdate } from '@codemirror/view';
 import { wikiPattern } from './wiki';
 
-export function wikiDisplay(open: (token: string) => void) {
+export function wikiDisplay(open: (token: string) => void, readOnly = false) {
   const matcher = new MatchDecorator({
     regexp: new RegExp(wikiPattern),
     decoration(match, view, from) {
       const to = from + match[0].length;
-      if (view.state.selection.ranges.some((range) => range.from <= to && range.to >= from)) return null;
+      if (!readOnly && view.state.selection.ranges.some((range) => range.from <= to && range.to >= from)) return null;
       return Decoration.mark({
         class: 'cm-wiki-link',
         attributes: { 'data-wiki-target': match[1].trim() }

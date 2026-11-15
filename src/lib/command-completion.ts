@@ -54,6 +54,7 @@ interface EditorCommand {
 
 const commands: readonly EditorCommand[] = [
   ...['svg', 'png', 'jpeg', 'heic', 'ora'].map((format) => ({ name: `${format}page`, detail: `Insert a ${format.toUpperCase()} page`, targets: targetsFor(format) })),
+  { name: 'prettify', detail: 'Format and color parent lines', placement: 'next-line' },
   { name: 'pretty', detail: 'Format the following lines', placement: 'next-line' },
   { name: 'unpretty', detail: 'Return to regular text', placement: 'next-line' },
   { name: 'pretty1', detail: 'Format a block, then return to regular text', placement: 'brackets' },
@@ -61,7 +62,7 @@ const commands: readonly EditorCommand[] = [
 ];
 
 const commandOptions = commands.map(({ name, detail, targets, placement }): Completion => ({
-  label: `\\${name}`, detail, type: 'keyword',
+  label: `\\${name}`, detail, type: 'keyword', boost: name === 'pretty' ? 1 : 0,
   apply(editor, completion, from, to) {
     const suffix = editor.state.sliceDoc(to, editor.state.doc.lineAt(to).to);
     const rest = /^[a-z0-9-]*/i.exec(suffix)![0].length;

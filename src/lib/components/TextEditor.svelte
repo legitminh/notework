@@ -66,6 +66,11 @@
   let container: HTMLDivElement;
   let toolbar = $state<HTMLDivElement>();
   let usingTools = $state(false);
+  export async function focusToolbar() {
+    while (loading && active) await new Promise((resolve) => setTimeout(resolve, 20));
+    usingTools = true;
+    toolbar?.focus({ preventScroll: true });
+  }
   let drawingEditor = $state<{ resumeEditing: () => void; saveForNavigation: () => Promise<boolean> }>();
   let nextLink = $state<string>();
   let followingLink = false;
@@ -725,8 +730,7 @@
       use:preserveContentFocus={() => !usingTools && !!view?.hasFocus}>
       <Control aria-keyshortcuts="Control+Escape" onclick={requestExit} disabled={saving || githubPublishing}>Exit<span class="shortcut-hint" aria-hidden="true">Ctrl+Esc</span></Control>
       <Control aria-keyshortcuts={vimMode ? undefined : 'Control+F'} onclick={find} disabled={loading || githubPublishing}><span class="visually-hidden">Find and replace</span><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="10" cy="10" r="6" /><path d="m14.5 14.5 5 5" /></svg>{#if !vimMode}<span class="shortcut-hint" aria-hidden="true">Ctrl+F</span>{/if}</Control>
-      <Control onclick={() => { void insertDrawing(); }} disabled={loading || saving || githubPublishing} aria-keyshortcuts="Meta+B">+svg<span class="shortcut-hint" aria-hidden="true">Command+B</span></Control>
-      <Control onclick={() => formatDialog.showModal()} disabled={loading || saving || githubPublishing}>Draw…</Control>
+      <Control onclick={() => formatDialog.showModal()} disabled={loading || saving || githubPublishing}>Draw…<span class="shortcut-hint" aria-hidden="true">Command+B · SVG</span></Control>
       <Control onclick={() => imagePicker.click()} disabled={loading || saving || githubPublishing}>Insert image</Control>
       <Control onclick={() => openExport()} disabled={loading || githubPublishing}>Export</Control>
     </div>

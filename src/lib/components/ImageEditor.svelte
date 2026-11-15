@@ -20,6 +20,7 @@
   let host: HTMLDivElement;
   let current: DrawingResource;
   let editor: ImageCanvasEditor;
+  export async function focusToolbar() { await editor?.focusToolbar(); }
   export async function saveForNavigation() { return await editor?.saveForNavigation() ?? false; }
   export function resumeEditing() { editor?.resumeEditing(); }
   async function persist(image: ImageDocument, requestWrite: boolean) {

@@ -1,20 +1,22 @@
 <script lang="ts">
+  import { SubKeyframe, VerticalHoverSlider, type SubKeyframeController } from '@legitminh/keyflow';
   import Control from './Control.svelte';
   import StorageNotice from './StorageNotice.svelte';
   import EditorTitle from './EditorTitle.svelte';
   import { preserveContentFocus } from '../editor-focus';
   import { onMount } from 'svelte';
   import { shortcutScope } from '../shortcut-scope.svelte';
-  import { DRAWING_WIDTH, DRAWING_PAGE_HEIGHT, STROKE_WIDTH, drawingBottom, strokePoints, touchesStroke, type Drawing, type Point } from '../drawing';
+  import { DRAWING_WIDTH, DRAWING_PAGE_HEIGHT, STROKE_WIDTH, drawingBottom, strokePoints, strokeWidth, sizedStroke, touchesStroke, type Drawing, type Point } from '../drawing';
   import { drawingGestures } from '../drawing-gestures';
   import { areaPath, dragBox, growSelection, roundCoordinate, transformSelection, type Corner, type Selection } from '../drawing-selection';
   import { WritePermissionRequired } from '../wiki';
   import { GitHubEditCancelled } from '../github/repository';
   import { draftQueue } from '../github/storage';
 
-  let { name, initial, initialDraft = false, onSave, onCommit, onDelete, onExit, backgroundHref, foregroundHref, imageHeight, strokeOpacity = 1, surfaceTarget, stylusOnly, onExport, autosaveMs, usingTools = $bindable(false) }: {
+  let { name, initial, initialDraft = false, onSave, onCommit, onDelete, onExit, backgroundHref, editableHref, foregroundHref, imageHeight, strokeOpacity = 1, surfaceTarget, stylusOnly, onExport, autosaveMs, usingTools = $bindable(false) }: {
     name: string;
     backgroundHref?: string;
+    editableHref?: string;
     foregroundHref?: string;
     imageHeight?: number;
     strokeOpacity?: number;
@@ -43,6 +45,12 @@
   const moveKey = 'm';
   const corners: Corner[] = ['nw', 'ne', 'sw', 'se'];
   let tool = $state<Tool>('brush');
+  let sizeMenu = $state<SubKeyframeController>();
+  let sizeTool = $state<'brush' | 'eraser'>('brush');
+  let toolsBeforeSize = false;
+  let penSize = $state(STROKE_WIDTH);
+  let eraserSize = $state(16);
+  const maskPrefix = `erase-${crypto.randomUUID()}`;
   let selection = $state.raw<Selection>();
   let saving = $state(false);
   let publishing = $state(false);
@@ -51,13 +59,15 @@
   let dirty = $state(false);
   let error = $state.raw<unknown>();
   let waitingForPermission = $state(false);
-  let toolbar: HTMLDivElement;
+  let toolbar = $state<HTMLDivElement>();
   let canvas: SVGSVGElement;
   let canvasLayer: HTMLDivElement;
   let pageViewport: HTMLDivElement;
   const touches = new Set<number>();
   let multiTouch = false;
   let gesture = $state.raw<Gesture>();
+  const visibleStrokes = $derived([...strokes, ...((gesture?.kind === 'brush' || (editableHref && gesture?.kind === 'eraser')) && points.length ? [sizedStroke(points, tool === 'eraser' ? eraserSize : penSize, tool === 'eraser')] : [])]);
+  const erasing = $derived(visibleStrokes.some((stroke) => stroke.erase));
   let mouse: PointerEvent | undefined;
   let autosaveTimer: ReturnType<typeof setTimeout> | undefined;
   let lastSaveAt = 0;
@@ -146,12 +156,12 @@
     if (!gesture || event.pointerId !== gesture.input) return;
     const p = point(event, gesture.kind === 'transform' ? undefined : gesture.limit);
     if (!p) return;
-    if (gesture.kind === 'brush' || gesture.kind === 'lasso') {
+    if (gesture.kind === 'brush' || gesture.kind === 'lasso' || (editableHref && gesture.kind === 'eraser')) {
       const previous = points.at(-1);
       const distance = previous ? Math.hypot(p[0] - previous[0], p[1] - previous[1]) : Infinity;
       if (distance >= 1 || (final && gesture.kind === 'lasso' && distance > 0)) points = [...points, p];
     } else if (gesture.kind === 'eraser') {
-      const remaining = strokes.filter((stroke) => !touchesStroke(stroke, p, scale));
+      const remaining = strokes.filter((stroke) => !touchesStroke(stroke, p, scale, (eraserSize + strokeWidth(stroke)) * scale / 2));
       if (remaining.length !== strokes.length) strokes = remaining;
     } else applyTransform(p);
   }
@@ -166,7 +176,14 @@
   }
 
   function chooseTool(next: Tool) {
-    if (tool === next && next !== 'lasso') return;
+    if (tool === next && next !== 'lasso') {
+      cancelGesture();
+      sizeTool = next;
+      toolsBeforeSize = usingTools;
+      usingTools = true;
+      void sizeMenu?.enter();
+      return;
+    }
     cancelGesture();
     selection = undefined;
     tool = next;
@@ -180,6 +197,8 @@
     commit(strokes, strokes.filter((_, i) => !indices.has(i)));
     scheduleAutosave();
   }
+
+  export function focusToolbar() { usingTools = true; toolbar?.focus({ preventScroll: true }); }
 
   export function resumeEditing() {
     usingTools = false;
@@ -243,7 +262,7 @@
     const { before, kind, limit } = gesture;
     gesture = undefined;
     if (kind === 'lasso') selection = growSelection(strokes, points, frameMinimum, limit, selection);
-    else commit(before, kind === 'brush' && points.length ? [...strokes, points] : strokes);
+    else commit(before, (kind === 'brush' || (editableHref && kind === 'eraser')) && points.length ? [...strokes, sizedStroke(points, kind === 'eraser' ? eraserSize : penSize, kind === 'eraser')] : strokes);
     points = [];
     if (dirty) scheduleAutosave();
   }
@@ -353,7 +372,7 @@
       if (event.altKey || event.isComposing) return;
       // Both conflict versions use this editor. Only the focused version handles shortcuts.
       if (modal && (canvas.closest('dialog') !== modal || !(target instanceof Node) ||
-          (!canvas.parentElement?.parentElement?.contains(target) && !toolbar.contains(target)))) return;
+          (!canvas.parentElement?.parentElement?.contains(target) && !toolbar?.contains(target)))) return;
       const key = event.key.toLowerCase();
       if (!(event.metaKey || event.ctrlKey)) {
         const input = event.code || key;
@@ -373,7 +392,7 @@
           cancelGesture();
           selection = undefined;
           usingTools = true;
-          toolbar.focus({ preventScroll: true });
+          toolbar?.focus({ preventScroll: true });
         }
         return;
       }
@@ -439,6 +458,18 @@
   {#if onExit}<Control onclick={exit} disabled={saving || publishing}>Exit<span class="shortcut-hint" aria-hidden="true">Ctrl+Esc</span></Control>{/if}
   <Control onclick={() => chooseTool('brush')} aria-pressed={tool === 'brush'}>Brush<span class="shortcut-hint" aria-hidden="true">Command+B</span></Control>
   <Control onclick={() => chooseTool('eraser')} aria-pressed={tool === 'eraser'}>Eraser</Control>
+  <SubKeyframe bind:this={sizeMenu} label={sizeTool === 'brush' ? 'Pen size' : 'Eraser size'} showTrigger={false} enterTrigger={null}
+    class="drawing-size-menu" disabled={saving || publishing || (!!shortcutScope.dialog && toolbar?.closest('dialog') !== shortcutScope.dialog)}
+    onclose={() => { usingTools = toolsBeforeSize; if (!usingTools) canvas?.focus({ preventScroll: true }); }}>
+    {#snippet children()}
+      <p>{sizeTool === 'brush' ? `Pen size: ${penSize}` : `Eraser size: ${eraserSize}`}</p>
+      {#if sizeTool === 'brush'}
+        <VerticalHoverSlider bind:value={penSize} min={1} max={64} step={1} speed={20} label="Pen size" />
+      {:else}
+        <VerticalHoverSlider bind:value={eraserSize} min={1} max={128} step={1} speed={40} label="Eraser size" />
+      {/if}
+    {/snippet}
+  </SubKeyframe>
   <Control onclick={() => chooseTool('lasso')} aria-pressed={tool === 'lasso'}>Lasso</Control>
   <Control onclick={undo} disabled={!undoStack.length || saving || publishing}>Undo<span class="shortcut-hint" aria-hidden="true">Command+Z</span></Control>
   <Control onclick={redo} disabled={!redoStack.length || saving || publishing}>Redo<span class="shortcut-hint" aria-hidden="true">Command+Shift+Z</span></Control>
@@ -459,9 +490,27 @@
         onpointerup={(event) => finish(event)} onpointercancel={(event) => finish(event, true)}
         onlostpointercapture={(event) => finish(event, true)}>
         {#if backgroundHref}<image href={backgroundHref} width={DRAWING_WIDTH} height={imageHeight} pointer-events="none" />{/if}
-        {#each [...strokes, ...(gesture?.kind === 'brush' && points.length ? [points] : [])] as stroke, index}
-          <polyline points={strokePoints(stroke)} fill="none" stroke="currentColor" opacity={strokeOpacity} stroke-width={STROKE_WIDTH}
-            stroke-linecap="round" stroke-linejoin="round" data-lasso-drag={selection?.indices.has(index) && !tracing ? '' : undefined} />
+        {#if editableHref && erasing}
+          <defs>
+            {#each [-1, ...visibleStrokes.map((_, index) => index)] as index}
+              <mask id={`${maskPrefix}-${index}`} maskUnits="userSpaceOnUse" x="0" y="0" width={DRAWING_WIDTH} height={canvasHeight} style="mask-type: luminance">
+                <rect width={DRAWING_WIDTH} height={canvasHeight} fill="white" />
+                {#each visibleStrokes.slice(index + 1).filter((stroke) => stroke.erase) as stroke}
+                  <polyline points={strokePoints(stroke)} fill="none" stroke="black" stroke-width={strokeWidth(stroke)} stroke-linecap="round" stroke-linejoin="round" />
+                {/each}
+              </mask>
+            {/each}
+          </defs>
+        {/if}
+        {#if editableHref}
+          <image data-image-layer="active" href={editableHref} width={DRAWING_WIDTH} height={imageHeight} opacity={strokeOpacity} mask={erasing ? `url(#${maskPrefix}--1)` : undefined} pointer-events="none" />
+        {/if}
+        {#each visibleStrokes as stroke, index}
+          {#if !stroke.erase}
+            <polyline points={strokePoints(stroke)} fill="none" stroke="currentColor" opacity={strokeOpacity} stroke-width={strokeWidth(stroke)}
+              mask={editableHref && erasing ? `url(#${maskPrefix}-${index})` : undefined}
+              stroke-linecap="round" stroke-linejoin="round" data-lasso-drag={selection?.indices.has(index) && !tracing ? '' : undefined} />
+          {/if}
         {/each}
         {#if foregroundHref}<image href={foregroundHref} width={DRAWING_WIDTH} height={imageHeight} pointer-events="none" />{/if}
         {#if outline}
@@ -516,6 +565,9 @@
 
 
 <style>
+  .drawing-controls { position: relative; }
+  .drawing-controls :global(.drawing-size-menu) { position: absolute; top: 100%; left: 0; z-index: 5; }
+  .drawing-controls :global(.subkeyframe-panel) { max-height: min(28rem, 65dvh); overflow-y: auto; min-width: 12rem; }
   .drawing-canvas-layer { position: relative; width: 100%; max-width: var(--page-max-width); }
   .drawing-canvas { max-width: 100%; }
   .drawing-canvas.image-canvas { background-image: conic-gradient(#ddd 25%, #fff 0 50%, #ddd 0 75%, #fff 0); background-size: 16px 16px; color: #202733; }

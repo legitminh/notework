@@ -4,7 +4,7 @@
   import Control from './Control.svelte';
   import StorageNotice from './StorageNotice.svelte';
   import { imageFormat, imageCanvas, canvasBlob, composite, paintBlob, type ImageDocument, type ImageLayer } from '../images';
-  import { DRAWING_WIDTH, STROKE_WIDTH, type Drawing } from '../drawing';
+  import { DRAWING_WIDTH, strokeWidth, type Drawing } from '../drawing';
 
   let { name, initial, initialDraft = false, stylusOnly, autosaveMs, onSave, onCommit, onExit, onDelete, onExport, surfaceTarget, usingTools = $bindable(false) }: {
     name: string; initial: ImageDocument; initialDraft?: boolean; stylusOnly: boolean; autosaveMs: number;
@@ -21,9 +21,10 @@
   let error = $state.raw<unknown>();
   let background = $state('');
   let foreground = $state('');
+  let editable = $state('');
   let base: Blob;
   let active = false;
-  let editor = $state<{ saveForNavigation: (publish?: boolean) => Promise<boolean>; resumeEditing: () => void }>();
+  let editor = $state<{ saveForNavigation: (publish?: boolean) => Promise<boolean>; resumeEditing: () => void; focusToolbar: () => void }>();
   const layered = $derived(imageFormat(name) === 'ora');
   const urls = new Set<string>();
   function url(blob: Blob) { const value = URL.createObjectURL(blob); urls.add(value); return value; }
@@ -33,10 +34,11 @@
     urls.clear();
     base = document!.layers[selected].png;
     // ORA stores its topmost layer first; strokes live at the selected layer's position.
-    const behind = await canvasBlob(await composite(document!, document!.layers.slice(selected)));
+    const behind = await canvasBlob(await composite(document!, document!.layers.slice(selected + 1)));
     const ahead = await canvasBlob(await composite(document!, document!.layers.slice(0, selected)));
     if (!active) return;
     background = url(behind);
+    editable = url(base);
     foreground = url(ahead);
     session++; ready = true;
   }
@@ -44,9 +46,11 @@
     const canvas = imageCanvas(document!.width, document!.height), context = canvas.getContext('2d')!;
     await paintBlob(context, base);
     context.scale(document!.width / DRAWING_WIDTH, document!.width / DRAWING_WIDTH);
-    context.strokeStyle = '#202733'; context.lineWidth = STROKE_WIDTH; context.lineCap = 'round'; context.lineJoin = 'round';
+    context.strokeStyle = '#202733'; context.lineCap = 'round'; context.lineJoin = 'round';
     for (const stroke of strokes) {
       if (!stroke.length) continue;
+      context.globalCompositeOperation = stroke.erase ? 'destination-out' : 'source-over';
+      context.lineWidth = strokeWidth(stroke);
       context.beginPath(); context.moveTo(stroke[0][0], stroke[0][1]);
       for (const [x, y] of stroke.slice(1)) context.lineTo(x, y);
       if (stroke.length === 1) context.lineTo(stroke[0][0] + .01, stroke[0][1]);
@@ -61,6 +65,10 @@
     document = image;
   }
   export async function saveForNavigation() { return !busy && ready && (await editor?.saveForNavigation() ?? false); }
+  export async function focusToolbar() {
+    while (active && !editor && !error) await new Promise((resolve) => setTimeout(resolve, 20));
+    editor?.focusToolbar();
+  }
   export function resumeEditing() { editor?.resumeEditing(); }
   async function changeLayer(index: number) {
     if (busy || !editor) return;
@@ -119,7 +127,7 @@
   {#if ready && document}
     {#key session}
       <DrawingEditor bind:this={editor} bind:usingTools {name} initial={[]} {stylusOnly} {autosaveMs} {surfaceTarget}
-        backgroundHref={background} foregroundHref={foreground} imageHeight={document.height / document.width * DRAWING_WIDTH}
+        backgroundHref={background} editableHref={editable} foregroundHref={foreground} imageHeight={document.height / document.width * DRAWING_WIDTH}
         strokeOpacity={document.layers[selected].visible ? document.layers[selected].opacity : 0}
         {initialDraft}
         onSave={async (strokes, requestWrite) => persist(await withStrokes(strokes), requestWrite)}

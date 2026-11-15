@@ -13,7 +13,7 @@ declare global {
 const button = (page: Page, name: string) => page.locator(`[data-action=${JSON.stringify(name)}] button`);
 const errors = new WeakMap<Page, string[]>();
 const toolbar = (page: Page, name: string) =>
-  page.getByRole('group', { name: 'Editor toolbar' }).getByRole('button', { name: name === 'Brush' ? '+svg' : name, exact: true });
+  page.getByRole('group', { name: 'Editor toolbar' }).getByRole('button', { name: name === 'Brush' ? 'Draw…' : name, exact: true });
 const openEditor = (page: Page) => button(page, 'open').click();
 const forceSave = (page: Page) => page.keyboard.press('ControlOrMeta+s');
 async function pressShortcut(page: Page, control: Locator) {
@@ -25,6 +25,7 @@ async function pressShortcut(page: Page, control: Locator) {
 // Existing preview tests leave the new immediate drawing mode before inspecting source/preview.
 async function insertDrawing(page: Page) {
   await toolbar(page, 'Brush').click();
+  await page.getByRole('dialog', { name: 'Choose drawing format' }).getByRole('button', { name: 'SVG', exact: true }).click();
   await page.getByRole('group', { name: 'Drawing toolbar' }).getByRole('button', { name: 'Exit', exact: true }).click();
 }
 
@@ -198,7 +199,7 @@ test('folder direct children, file display, parent navigation, and browser back'
   await expect(button(page, 'notes.txt')).toBeVisible();
   await button(page, 'notes.txt').click();
   await expect(button(page, 'open')).toBeVisible();
-  await expect(page.locator('.cm-content')).toHaveCount(0);
+  await expect(page.locator('.file-preview .cm-content')).toHaveAttribute('contenteditable', 'false');
   await openEditor(page);
   await expect(page.locator('.cm-content')).toHaveText('A nested note about semantic roles.');
   await toolbar(page, 'Exit').click();
@@ -206,7 +207,7 @@ test('folder direct children, file display, parent navigation, and browser back'
   await expect(page.getByRole('heading', { name: 'Adobe/' })).toBeVisible();
   await page.goBack();
   await expect(button(page, 'open')).toBeVisible();
-  await expect(page.locator('.cm-content')).toHaveCount(0);
+  await expect(page.locator('.file-preview .cm-content')).toHaveAttribute('contenteditable', 'false');
   await page.goForward();
   await expect(page.getByRole('heading', { name: 'Adobe/' })).toBeVisible();
 });
@@ -304,7 +305,7 @@ test('search spans connected sources from any file and respects hidden children'
 });
 
 for (const mode of ['navigation', 'Cmd/Ctrl+P'] as const) {
-  test(`${mode} search ranks child files before same-named files in parent folders`, async ({ page }) => {
+  test(`${mode} search ranks most recently edited files first`, async ({ page }) => {
     await connectDocuments(page);
     await page.evaluate(async () => {
       const documents = await (await navigator.storage.getDirectory()).getDirectoryHandle('Documents');
@@ -325,7 +326,7 @@ for (const mode of ['navigation', 'Cmd/Ctrl+P'] as const) {
     await page.getByRole('searchbox').fill('readme');
     await expect(page.locator('.search-status')).toContainText('3 results found');
     await expect(page.locator('.search-result-row .resource-hint')).toHaveText([
-      'Documents/Adobe/readme.txt', 'Documents/Adobe/Deep/readme.txt', 'Documents/readme.txt'
+      'Documents/Adobe/Deep/readme.txt', 'Documents/Adobe/readme.txt', 'Documents/readme.txt'
     ]);
     await page.locator('.search-result-row').first().locator('[data-action="open"] button').click();
     await expect(page.getByRole('textbox', { name: 'Edit readme.txt', exact: true })).toHaveText('Child note');
@@ -1619,7 +1620,7 @@ test('brush inserts a movable SVG page, swaps the inline toolbar, and saves an e
   const editor = page.getByRole('textbox', { name: 'Edit sketch.txt' });
   await page.keyboard.insertText('before');
   await toolbar(page, 'Brush').hover();
-  await expect(toolbar(page, 'Brush').getByText('Command+B', { exact: true })).toBeVisible();
+  await expect(toolbar(page, 'Brush').getByText('Command+B · SVG', { exact: true })).toBeVisible();
   await page.keyboard.press('Meta+b');
   await page.getByRole('group', { name: 'Drawing toolbar' }).getByRole('button', { name: 'Exit', exact: true }).click();
   await page.keyboard.insertText('after');

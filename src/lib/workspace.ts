@@ -2,7 +2,7 @@ import { isMissing, type LocalDirectory, type LocalHandle } from './filesystem';
 import { imageFormat } from './images';
 import { isDrawingFile } from './drawing';
 import { HiddenResource, inspectText, type TextFormat } from './text-resource';
-import { GitHubDirectory, type GitHubRepository } from './github/repository';
+import { GitHubFile, GitHubDirectory, type GitHubRepository } from './github/repository';
 import type { GitHubConnection } from './github/api';
 
 export const ROOT = 'root';
@@ -37,6 +37,7 @@ export interface StateNode {
   name: string;
   kind: 'file' | 'directory';
   drawing?: boolean;
+  modified?: number;
   storage: Storage;
   uri: string;
 }
@@ -309,20 +310,16 @@ export class Workspace {
 
   async searchReachable(from: string, query: string, signal: AbortSignal,
     onProgress: (results: StateNode[], progress: SearchProgress) => void, resultLimit = 1000, includeFolders = false) {
-    return this.searchNodes([from], query, signal, onProgress, resultLimit, includeFolders);
+    return this.searchNodes([from], query, signal,
+      (results, progress) => onProgress([...results].sort((a, b) => (b.modified ?? 0) - (a.modified ?? 0) || a.name.localeCompare(b.name)), progress),
+      resultLimit, includeFolders);
   }
 
   async searchAll(from: string, query: string, signal: AbortSignal,
     onProgress: (results: StateNode[], progress: SearchProgress) => void, resultLimit = 1000) {
-    const context = this.known.get(from);
-    const folder = context?.kind === 'file' ? context.path.slice(0, -1) : context?.path;
-    const childDepth = (node: StateNode) => context && folder && node.sourceId === context.sourceId &&
-      node.path.length > folder.length && folder.every((part, index) => node.path[index] === part)
-      ? node.path.length - folder.length : Number.MAX_SAFE_INTEGER;
-    const fold = (value: string) => value.normalize('NFC').toLocaleLowerCase();
     const compare = (a: StateNode, b: StateNode) =>
-      fold(a.name).localeCompare(fold(b.name), undefined, { numeric: true }) ||
-      childDepth(a) - childDepth(b) || this.label(a).localeCompare(this.label(b)) || a.id.localeCompare(b.id);
+      (b.modified ?? 0) - (a.modified ?? 0) ||
+      a.name.localeCompare(b.name, undefined, { numeric: true }) || this.label(a).localeCompare(this.label(b));
     // Retained source handles are not search grants. Follow only the active root graph.
     return this.searchNodes([ROOT], query, signal,
       (results, progress) => onProgress([...results].sort(compare), progress), resultLimit, true);
@@ -375,7 +372,12 @@ export class Workspace {
         }
       }
       signal.throwIfAborted();
-      if (matches) results.push(this.remember(source.id, path, handle));
+      if (matches) {
+        const node = this.remember(source.id, path, handle);
+        if (handle.kind === 'file') node.modified = handle instanceof GitHubFile
+          ? await handle.repository.editedAt(handle.path) : (await handle.getFile()).lastModified;
+        results.push(node);
+      }
       for (const target of links) if (!enqueue(target)) break;
     };
 

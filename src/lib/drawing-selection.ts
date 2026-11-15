@@ -1,5 +1,5 @@
 import { union } from 'polyclip-ts';
-import { DRAWING_WIDTH, STROKE_WIDTH, type Drawing, type Point } from './drawing';
+import { DRAWING_WIDTH, strokeWidth, sizedStroke, type Drawing, type Point } from './drawing';
 
 export type Box = { left: number; top: number; right: number; bottom: number };
 export type Corner = 'nw' | 'ne' | 'sw' | 'se';
@@ -23,10 +23,10 @@ export function growSelection(strokes: Drawing, trace: readonly Point[], minimum
     left = Math.min(left, x); right = Math.max(right, x);
     top = Math.min(top, y); bottom = Math.max(bottom, y);
   }
-  const radius = STROKE_WIDTH / 2;
   const indices = new Set(previous?.indices);
   strokes.forEach((stroke, index) => {
-    if (indices.has(index) || !stroke.length || !stroke.every(([x, y]) =>
+    const radius = strokeWidth(stroke) / 2;
+    if (stroke.erase || indices.has(index) || !stroke.length || !stroke.every(([x, y]) =>
       x >= left + radius && x <= right - radius && y >= top + radius && y <= bottom - radius)) return;
     const [x, y] = stroke[0];
     let inside = false;
@@ -98,10 +98,10 @@ export function transformSelection(strokes: Drawing, selection: Selection, box: 
   const transform = ([x, y]: Point): [number, number] =>
     [box.left + (x - left) * sx, box.top + (y - top) * sy];
   return {
-    strokes: strokes.map((stroke, i) => selection.indices.has(i) ? stroke.map((point): Point => {
+    strokes: strokes.map((stroke, i) => selection.indices.has(i) ? sizedStroke(stroke.map((point): Point => {
       const [x, y] = transform(point);
       return [roundCoordinate(x), roundCoordinate(y)];
-    }) : stroke),
+    }), strokeWidth(stroke), stroke.erase) : stroke),
     selection: { ...selection, box, area: selection.area.map((polygon) => polygon.map((ring) => ring.map(transform))) }
   };
 }

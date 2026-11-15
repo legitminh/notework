@@ -114,9 +114,10 @@ test('line numbers can be removed and mod-4 edges use zero-based little endian c
   await page.screenshot({ path: '/private/tmp/notework-line-index.png' });
 });
 
-test('+svg enters drawing immediately; Delete drawing removes its reference and saved file', async ({ page }) => {
+test('Draw SVG enters drawing immediately; Delete drawing removes its reference and saved file', async ({ page }) => {
   await create(page, 'note.txt'); await action(page, 'open').click();
-  await textTools(page).getByRole('button', { name: '+svg', exact: true }).click();
+  await textTools(page).getByRole('button', { name: 'Draw…', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Choose drawing format' }).getByRole('button', { name: 'SVG', exact: true }).click();
   const canvas = page.getByRole('img', { name: /^Drawing canvas for / });
   await expect(canvas).toBeVisible();
   const name = (await canvas.getAttribute('aria-label'))!.slice('Drawing canvas for '.length);
@@ -295,4 +296,127 @@ test('updated flick keyboard enters uppercase and editing gestures in the editor
   await expect(dialog.getByRole('searchbox')).toHaveValue('gestures');
   await dialog.locator('[data-action="open"] button').click();
   await expect(editor).toHaveText('ab z1 ');
+});
+
+test('navigation previews are read only, render prettify, and open the matching editor', async ({ page }) => {
+  await create(page, 'preview.txt'); await action(page, 'open').click();
+  const editor = page.getByRole('textbox', { name: 'Edit preview.txt', exact: true });
+  await editor.fill('\\prettify\nParent\n\tChild\n\t\tLeaf\nOther');
+  await textTools(page).getByRole('button', { name: 'Exit', exact: true }).click();
+  const preview = page.locator('.file-preview');
+  await expect(preview.locator('.cm-pretty-heading')).toHaveCount(2);
+  await expect(preview.locator('.cm-content')).toHaveAttribute('contenteditable', 'false');
+  await expect(preview.locator('.cm-pretty-heading').first()).toHaveCSS('color', 'rgb(0, 0, 0)');
+  const hues = await preview.locator('.cm-pretty-heading').evaluateAll(lines => lines.map(line => (line as HTMLElement).style.getPropertyValue('--pretty-hue')));
+  expect(hues).toEqual(['0', '45']);
+  const shades = await preview.locator('.cm-pretty-heading').first().evaluate(line => {
+    const root = document.documentElement;
+    const saved = root.style.getPropertyValue('--background');
+    const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
+    const context = canvas.getContext('2d')!;
+    const result = ['white', 'black'].map(background => {
+      root.style.setProperty('--background', background);
+      context.fillStyle = getComputedStyle(line).backgroundColor; context.fillRect(0, 0, 1, 1);
+      return Array.from(context.getImageData(0, 0, 1, 1).data);
+    });
+    if (saved) root.style.setProperty('--background', saved); else root.style.removeProperty('--background');
+    return result;
+  });
+  expect(shades).toEqual([[255, 128, 128, 255], [128, 0, 0, 255]]);
+  await expect(preview.getByRole('button', { name: 'Open preview.txt', exact: true })).toBeVisible();
+  await preview.getByRole('button', { name: 'Open preview.txt', exact: true }).click();
+  await expect(editor).toBeEditable();
+  await expect(editor).toContainText('Parent');
+});
+
+test('bracket shortcuts traverse separate navigation and editor histories and branch after going back', async ({ page }) => {
+  await create(page, 'first.txt'); await action(page, 'open').click();
+  await page.getByRole('textbox', { name: 'Edit first.txt', exact: true }).fill('first');
+  await textTools(page).getByRole('button', { name: 'Exit', exact: true }).click();
+  await home(page); await create(page, 'second.txt'); await action(page, 'open').click();
+  const second = page.getByRole('textbox', { name: 'Edit second.txt', exact: true });
+  await second.fill('second');
+  await page.keyboard.press('ControlOrMeta+[');
+  await expect(second).toBeVisible();
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('ControlOrMeta+[');
+  await expect(page.getByRole('textbox', { name: 'Edit first.txt', exact: true })).toHaveText('first');
+  await expect(textTools(page)).toBeFocused();
+  await page.keyboard.press('ControlOrMeta+]');
+  await expect(second).toHaveText('second');
+  await expect(textTools(page)).toBeFocused();
+  await textTools(page).getByRole('button', { name: 'Exit', exact: true }).click();
+  await expect(page.locator('.file-preview')).toBeVisible();
+  await page.keyboard.press('ControlOrMeta+[');
+  await expect(page.getByRole('heading', { name: 'home', exact: true })).toBeVisible();
+  await page.keyboard.press('ControlOrMeta+]');
+  await expect(page.locator('.file-preview').getByRole('button', { name: 'Open second.txt', exact: true })).toBeVisible();
+  await page.keyboard.press('ControlOrMeta+[');
+  await expect(page.getByRole('heading', { name: 'home', exact: true })).toBeVisible();
+  await action(page, 'first.txt').click();
+  await expect(page.locator('.file-preview').getByRole('button', { name: 'Open first.txt', exact: true })).toBeVisible();
+  await page.keyboard.press('ControlOrMeta+]');
+  await expect(page.locator('.file-preview').getByRole('button', { name: 'Open first.txt', exact: true })).toBeVisible();
+  await home(page); await create(page, 'third.png', 'png image'); await action(page, 'open').click();
+  await expect(page.getByRole('img', { name: 'Drawing canvas for third.png', exact: true })).toBeVisible();
+  await page.keyboard.press('Escape'); await page.keyboard.press('ControlOrMeta+[');
+  await expect(second).toHaveText('second'); await expect(textTools(page)).toBeFocused();
+  await page.keyboard.press('ControlOrMeta+]');
+  await expect(drawTools(page)).toBeFocused();
+});
+
+test('pen size uses a nested Keyflow slider, remains scoped, and survives SVG save/reopen', async ({ page }) => {
+  await create(page, 'sized.svg', 'svg file'); await action(page, 'open').click();
+  await drawTools(page).getByRole('button', { name: 'Brush', exact: true }).click();
+  const slider = page.getByRole('slider', { name: 'Pen size', exact: true });
+  await expect(slider).toBeVisible();
+  const old = Number(await slider.getAttribute('aria-valuenow'));
+  await page.keyboard.down('ArrowUp'); await page.waitForTimeout(150); await page.keyboard.up('ArrowUp');
+  await expect.poll(async () => Number(await slider.getAttribute('aria-valuenow'))).toBeGreaterThan(old);
+  const size = Number(await slider.getAttribute('aria-valuenow'));
+  await page.keyboard.press('Escape');
+  await expect(slider).toHaveCount(0);
+  await stroke(page);
+  await expect(page.locator('.drawing-canvas > polyline')).toHaveAttribute('stroke-width', String(size));
+  await drawTools(page).getByRole('button', { name: 'Exit', exact: true }).click();
+  await action(page, 'open').click();
+  await expect(page.locator('.drawing-canvas > polyline')).toHaveAttribute('stroke-width', String(size));
+});
+
+test('raster eraser removes saved pixels locally, supports undo, and keeps surrounding pixels', async ({ page }) => {
+  await create(page, 'erase-note.txt'); await action(page, 'open').click();
+  const png = await page.evaluate(async () => {
+    const canvas = document.createElement('canvas'); canvas.width = 400; canvas.height = 200;
+    const context = canvas.getContext('2d')!; context.fillStyle = 'red'; context.fillRect(0, 0, 400, 200);
+    const blob = await new Promise<Blob>(resolve => canvas.toBlob(blob => resolve(blob!)));
+    return Array.from(new Uint8Array(await blob.arrayBuffer()));
+  });
+  await page.getByLabel('Image file to insert').setInputFiles({ name: 'erase.png', mimeType: 'image/png', buffer: Buffer.from(png) });
+  const canvas = page.getByRole('img', { name: /^Drawing canvas for erase-.*\.png/ });
+  await expect(canvas).toBeVisible();
+  const name = (await canvas.getAttribute('aria-label'))!.slice('Drawing canvas for '.length);
+  const eraser = drawTools(page).getByRole('button', { name: 'Eraser', exact: true });
+  await eraser.click(); await eraser.click();
+  const slider = page.getByRole('slider', { name: 'Eraser size', exact: true });
+  await expect(slider).toBeVisible();
+  await page.keyboard.down('ArrowUp'); await page.waitForTimeout(100); await page.keyboard.up('ArrowUp');
+  await page.keyboard.press('Escape');
+  const box = (await canvas.boundingBox())!;
+  const center = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  await page.mouse.move(center.x - 12, center.y); await page.mouse.down();
+  await page.mouse.move(center.x + 12, center.y, { steps: 8 }); await page.mouse.up();
+  await expect(canvas.locator('mask polyline')).not.toHaveCount(0);
+  await drawTools(page).getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(canvas.locator('mask polyline')).toHaveCount(0);
+  await drawTools(page).getByRole('button', { name: 'Redo', exact: true }).click();
+  await drawTools(page).getByRole('button', { name: 'Exit', exact: true }).click();
+  await expect(textTools(page)).toBeVisible();
+  const data = await bytes(page, name);
+  const pixels = await page.evaluate(async data => {
+    const bitmap = await createImageBitmap(new Blob([new Uint8Array(data!)], { type: 'image/png' }));
+    const canvas = document.createElement('canvas'); canvas.width = bitmap.width; canvas.height = bitmap.height;
+    const context = canvas.getContext('2d')!; context.drawImage(bitmap, 0, 0); bitmap.close();
+    return [Array.from(context.getImageData(200, 100, 1, 1).data), Array.from(context.getImageData(50, 50, 1, 1).data)];
+  }, data);
+  expect(pixels).toEqual([[0, 0, 0, 0], [255, 0, 0, 255]]);
 });

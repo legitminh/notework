@@ -1,9 +1,10 @@
+import { f } from '@legitminh/keyflow';
 import { getIndentUnit } from '@codemirror/language';
 import { countColumn, StateField, type EditorState, type Range, type Text } from '@codemirror/state';
 import { Decoration, EditorView } from '@codemirror/view';
 import { svgPagePattern } from './drawing';
 
-const modeSwitch = /^[ \t]*\\(pretty|unpretty)(?:\[\])?[ \t]*$/i;
+const modeSwitch = /^[ \t]*\\(pretty|unpretty|prettify|unprettify)(?:\[\])?[ \t]*$/i;
 const blockStart = /^[ \t]*\\(pretty1|unpretty1)\[/i;
 const hideLine = Decoration.replace({ block: true });
 const hideSyntax = Decoration.replace({});
@@ -55,14 +56,15 @@ function layout(state: EditorState) {
   const scopes: PrettyBlock[] = [];
   const source: SourceLine[] = [];
   const headings: Range<Decoration>[] = [];
-  let previous: { from: number; indent: number; textFrom: number; textTo: number } | undefined;
+  let previous: { from: number; indent: number; depth: number; textFrom: number; textTo: number } | undefined;
+  const ancestors: number[] = [];
   let pretty = false, from = 0;
 
   for (const raw of doc.iterLines()) {
     const to = from + raw.length;
     const opening = blocks.get(from);
     if (opening) {
-      previous = undefined;
+      previous = undefined; ancestors.length = 0;
       scopes.push(opening);
       pretty = opening.pretty;
     }
@@ -80,28 +82,34 @@ function layout(state: EditorState) {
 
     if (toggle) {
       previous = undefined;
-      pretty = toggle[1].toLowerCase() === 'pretty';
+      pretty = ['pretty', 'prettify'].includes(toggle[1].toLowerCase());
+      ancestors.length = 0;
     } else if (pretty && line.trim() && !svgPagePattern.test(line)) {
       const indentLength = /^[ \t]*/.exec(line)![0].length;
       const indent = countColumn(line, tabSize, indentLength);
       // A line has positive degree as soon as the next line is more indented.
       if (previous && indent > previous.indent) {
         const order = Math.floor(previous.indent / indentWidth);
+        const bucket = f(256, 32, previous.depth);
+        const hue = bucket === undefined ? undefined : bucket * 360 / 256;
         headings.push(Decoration.line({
           class: 'cm-pretty-heading',
-          attributes: { style: `--pretty-order: ${order}` }
+          attributes: { style: `--pretty-order: ${order};${hue === undefined ? "" : `--pretty-hue: ${hue}; background-color: color-mix(in srgb, hsl(${hue} 100% 50%) 50%, var(--background)); color: #000;`}` }
         }).range(previous.from));
         // Keep leading spaces and tabs in the editor's normal font.
         headings.push(headingText.range(previous.textFrom, previous.textTo));
       }
-      previous = { from, indent, textFrom: contentFrom + indentLength, textTo: contentTo };
+      while (ancestors.length && ancestors.at(-1)! >= indent) ancestors.pop();
+      const depth = ancestors.length;
+      ancestors.push(indent);
+      previous = { from, indent, depth, textFrom: contentFrom + indentLength, textTo: contentTo };
     } else {
       previous = undefined;
     }
 
     if (closing) {
       previous = undefined;
-      scopes.pop();
+      scopes.pop(); ancestors.length = 0;
       // The utility commands expand to explicit mode switches on both sides.
       pretty = !closing.pretty;
     }
@@ -114,7 +122,7 @@ function hideInactiveSource(state: EditorState, source: SourceLine[]) {
   const editing = new Set(state.selection.ranges.map(({ head }) => state.doc.lineAt(head).from));
   const decorations: Range<Decoration>[] = [];
   for (const { from, to, content } of source) {
-    if (editing.has(from)) continue;
+    if (!state.readOnly && editing.has(from)) continue;
     if (!content) decorations.push(hideLine.range(from, to));
     else {
       if (content.from > from) decorations.push(hideSyntax.range(from, content.from));
@@ -147,7 +155,7 @@ const prettyTheme = EditorView.baseTheme({
     // Padding adds space inside the block measured by CodeMirror.
     paddingBlockStart: 'max(0px, calc(3em - var(--pretty-order) * .25em))'
   },
-  '.cm-pretty-text': { fontWeight: 'bold' },
+  '.cm-pretty-text': { fontWeight: 'bold', color: '#000' },
   '&.cm-pretty-size .cm-pretty-text': {
     // The heading inherits the regular editor size as its unit.
     fontSize: 'max(1.25em, calc(4em - var(--pretty-order) * .25em))'

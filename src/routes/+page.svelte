@@ -3,6 +3,8 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import { Keyflow, Document, ThemeToggle, min_box, state_viewport, lockstep_scrolling, key_presets, set_available_keys } from '@legitminh/keyflow';
+  import { NavigationHistory } from '../lib/navigation-history';
+  import FilePreview from '../lib/components/FilePreview.svelte';
   import AppKeyboard from '../lib/components/AppKeyboard.svelte';
   import GlobalSearch from '../lib/components/GlobalSearch.svelte';
   import GitHubSyncProgress from '../lib/components/GitHubSyncProgress.svelte';
@@ -40,6 +42,11 @@
 
   let workspace = $state.raw(new Workspace());
   let current = $state.raw<StateNode | null>(null);
+  const navigationHistory = new NavigationHistory(ROOT);
+  const editorHistory = new NavigationHistory();
+  let traversingHistory = false;
+  let historyQueue = Promise.resolve();
+  let pendingNavigation: Promise<void> | undefined;
   let edges = $state.raw<StateNode[]>([]);
   let children = $state.raw<StateNode[]>([]);
   let rootIds = $state.raw<string[]>([]);
@@ -61,7 +68,7 @@
   let showLineIndex = $state(false);
   let globalSearch = $state(false);
   let heldModifier = $state(false);
-  let activeEditor = $state<{ saveForNavigation: () => Promise<boolean>; resumeEditing?: () => void }>();
+  let activeEditor = $state<{ saveForNavigation: () => Promise<boolean>; resumeEditing?: () => void; focusToolbar?: () => void | Promise<void> }>();
   let wrapLines = $state(true);
   let prettyFontSize = $state(true);
   let prettyMargin = $state(true);
@@ -173,6 +180,12 @@
     const modifierDown = (event: KeyboardEvent) => {
       if (event.isComposing || event.altKey) return;
       if (event.key === 'Meta' || event.key === 'Control') heldModifier = true;
+      if ((event.metaKey || event.ctrlKey) && !event.shiftKey && ['[', ']'].includes(event.key) &&
+          !document.querySelector('dialog[open]') && (!editing || document.activeElement?.closest('.editor-controls'))) {
+        event.preventDefault(); event.stopImmediatePropagation();
+        if (!event.repeat) queueHistory(event.key === '[' ? -1 : 1);
+        return;
+      }
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'p') {
         event.preventDefault(); event.stopImmediatePropagation(); heldModifier = false;
         if (!event.repeat && !loading && !document.querySelector('dialog[open]')) globalSearch = true;
@@ -238,7 +251,38 @@
     await refresh();
   }
 
-  async function navigate(id: string, updateHistory = true) {
+  function queueHistory(delta: number) {
+    historyQueue = historyQueue.then(() => traverseHistory(delta)).catch((error) => { message = explainError(error); });
+  }
+
+  async function traverseHistory(delta: number) {
+    while (pendingNavigation) await pendingNavigation;
+    if (traversingHistory || busy || loading || creating || relocateTarget) return;
+    const history = editing ? editorHistory : navigationHistory;
+    const target = history.target(delta);
+    if (!target) return;
+    traversingHistory = true;
+    try {
+      const wasEditing = editing;
+      if (wasEditing && !await activeEditor?.saveForNavigation()) return;
+      await navigate(target, true, false);
+      if (currentId !== target) return;
+      history.move(delta);
+      if (wasEditing) {
+        await tick();
+        await activeEditor?.focusToolbar?.();
+      }
+    } finally { traversingHistory = false; }
+  }
+
+  async function navigate(id: string, updateHistory = true, recordVisit = true) {
+    const operation = performNavigate(id, updateHistory, recordVisit);
+    pendingNavigation = operation;
+    try { await operation; }
+    finally { if (pendingNavigation === operation) pendingNavigation = undefined; }
+  }
+
+  async function performNavigate(id: string, updateHistory: boolean, recordVisit: boolean) {
     const version = ++navigationVersion;
     refreshVersion++;
     try {
@@ -267,6 +311,7 @@
       }
       if (version !== navigationVersion) return;
       current = node; creating = false;
+      if (recordVisit) (editing ? editorHistory : navigationHistory).visit(id);
       await refresh();
       if (version !== navigationVersion) return;
       await tick();
@@ -297,6 +342,7 @@
     if (current?.id !== id || needsPermission) return;
     panel = null;
     editing = true;
+    editorHistory.visit(id);
     state_viewport.viewport?.scrollTo({ top: 0 });
   }
 
@@ -398,6 +444,7 @@
     }
     await refresh(true);
     editing = false;
+    navigationHistory.visit(currentId);
     await tick();
     state_viewport.viewport?.scrollTo({ top: 0 });
     displayElement?.focus({ preventScroll: true });
@@ -833,7 +880,10 @@
             <Action label="choose" onSelect={() => chooseLocation(current)} disabled={busy || loading} />
           {/if}
           {#if current.kind === 'file' && !relocateTarget}
-            <Action label="open" onSelect={openFile} disabled={busy || loading} />
+            {#key current.uri}
+              <FilePreview {workspace} node={current} {wrapLines} {prettyFontSize} {prettyMargin} {showLineNumbers}
+                onOpen={openFile} disabled={busy || loading} />
+            {/key}
           {:else if current.kind === 'directory'}
             <p class="muted">{children.length} direct {children.length === 1 ? 'child' : 'children'} · {edges.length} reachable {edges.length === 1 ? 'state' : 'states'}</p>
           {/if}

@@ -22,7 +22,12 @@
     workspace: Workspace; node: StateNode; onExit: () => void | Promise<void>; onMissing: () => void;
   } = $props();
   const sync = getBackgroundSync();
-  let drawingEditor = $state<{ saveForNavigation: () => Promise<boolean> }>();
+  let drawingEditor = $state<{ saveForNavigation: () => Promise<boolean>; focusToolbar: () => void | Promise<void> }>();
+  let mounted = false;
+  export async function focusToolbar() {
+    while (mounted && !drawingEditor && !error) await new Promise((resolve) => setTimeout(resolve, 20));
+    await drawingEditor?.focusToolbar();
+  }
   export async function saveForNavigation() { return await drawingEditor?.saveForNavigation() ?? !resource; }
   let resource = $state.raw<DrawingResource>();
   let error = $state.raw<unknown>();
@@ -35,6 +40,7 @@
   }
 
   onMount(() => {
+    mounted = true;
     let active = true;
     void (async () => {
       try {
@@ -48,7 +54,7 @@
         else error = cause;
       }
     })();
-    return () => { active = false; };
+    return () => { active = false; mounted = false; };
   });
 </script>
 

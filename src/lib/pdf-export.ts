@@ -3,7 +3,7 @@ import {
   setStrokingColor, setLineWidth, setLineCap, setLineJoin, LineCapStyle, LineJoinStyle,
   moveTo, lineTo, stroke
 } from 'pdf-lib';
-import { DRAWING_WIDTH, DRAWING_PAGE_HEIGHT, STROKE_WIDTH, drawingBottom, svgPagePattern, type Drawing } from './drawing';
+import { DRAWING_WIDTH, DRAWING_PAGE_HEIGHT, strokeWidth, drawingBottom, svgPagePattern, type Drawing } from './drawing';
 import { wikiPattern } from './wiki';
 
 import type { ExportStyle } from './export-style';
@@ -183,11 +183,11 @@ export async function createPdf(source: PdfSource, signal: AbortSignal): Promise
       if (!points.length) continue;
       const at = ([x, y]: readonly number[]) => ({ x: left * scale + x * unit, y: page.getHeight() - (top + drawing.top) * scale - y * unit });
       if (points.length === 1) {
-        page.drawCircle({ ...at(points[0]), size: STROKE_WIDTH / 2 * unit, color: ink });
+        page.drawCircle({ ...at(points[0]), size: strokeWidth(points) / 2 * unit, color: ink });
         continue;
       }
       const start = at(points[0]);
-      page.pushOperators(pushGraphicsState(), setStrokingColor(ink), setLineWidth(STROKE_WIDTH * unit),
+      page.pushOperators(pushGraphicsState(), setStrokingColor(ink), setLineWidth(strokeWidth(points) * unit),
         setLineCap(LineCapStyle.Round), setLineJoin(LineJoinStyle.Round), moveTo(start.x, start.y));
       for (const point of points.slice(1)) { const { x, y } = at(point); page.pushOperators(lineTo(x, y)); }
       page.pushOperators(stroke(), popGraphicsState());
@@ -240,13 +240,13 @@ export async function createRaster(source: PdfSource, format: 'png' | 'jpeg', si
       finally { bitmap.close(); }
     }
     const unit = drawing.width / DRAWING_WIDTH;
-    context.lineWidth = STROKE_WIDTH * unit;
     for (const points of drawing.strokes) {
       if (!points.length) continue;
+      context.lineWidth = strokeWidth(points) * unit;
       const at = ([x, y]: readonly number[]) => [left + x * unit, top + drawing.top + y * unit] as const;
       if (points.length === 1) {
         const [x, y] = at(points[0]);
-        context.beginPath(); context.arc(x, y, STROKE_WIDTH / 2 * unit, 0, Math.PI * 2); context.fill();
+        context.beginPath(); context.arc(x, y, strokeWidth(points) / 2 * unit, 0, Math.PI * 2); context.fill();
         continue;
       }
       const [x, y] = at(points[0]);

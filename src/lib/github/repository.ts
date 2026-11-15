@@ -36,6 +36,7 @@ export class GitHubRepository {
   private directoryIndex?: Map<string, Map<string, 'file' | 'directory'>>;
   private syncing?: Promise<void>;
   private modified = Date.now();
+  private editDates = new Map<string, Promise<number>>();
   private mutationTail = Promise.resolve();
   readonly queuedPaths = new Set<string>();
   private drafts = new Map<string, GitHubDraft>();
@@ -178,6 +179,26 @@ export class GitHubRepository {
   }
 
   entryMode(path: string) { return this.entries.get(path)?.mode; }
+
+  /** File.lastModified is a blob identity here, not a timestamp. */
+  async editedAt(path: string) {
+    const staged = this.pending.get(path)?.modified ?? this.drafts.get(path)?.modified;
+    if (staged !== undefined) return staged;
+    const entry = this.entries.get(path);
+    if (!entry || !this.snapshot) return 0;
+    const key = `${this.snapshot.head}:${path}`;
+    let date = this.editDates.get(key);
+    if (!date) {
+      date = this.api.request<{ commit: { committer: { date: string } } }[]>(
+        `/commits?path=${encodeURIComponent(path)}&sha=${encodeURIComponent(this.snapshot.head)}&per_page=1`, 'read the last edit date'
+      ).then((commits) => {
+        const timestamp = Date.parse(commits[0]?.commit.committer.date);
+        return Number.isFinite(timestamp) ? timestamp : 0;
+      }).catch(() => { this.editDates.delete(key); return 0; });
+      this.editDates.set(key, date);
+    }
+    return date;
+  }
 
   async file(path: string) {
     const change = this.pending.get(path);
