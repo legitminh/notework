@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { Point } from '../drawing';
   import ExportDialog from './ExportDialog.svelte';
   import ImageCanvasEditor from './ImageCanvasEditor.svelte';
   import { exportStyle } from '../export-style';
@@ -10,7 +11,8 @@
   import { GitHubFile } from '../github/repository';
   import { getBackgroundSync } from '../github/background.svelte';
 
-  let { resource, node, stylusOnly, autosaveMs, pdfMargins, onExit, onSaved, onDelete, surfaceTarget, usingTools = $bindable(false) }: {
+  let { resource, node, stylusOnly, autosaveMs, pdfMargins, onExit, onSaved, onDelete, surfaceTarget, usingTools = $bindable(false), initialPoint }: {
+    initialPoint?: Point;
     resource: DrawingResource; node: StateNode; stylusOnly: boolean; autosaveMs: number; pdfMargins: PdfMargins;
     onExit: () => void | Promise<void>; onSaved?: (resource: DrawingResource) => void;
     onDelete?: () => void | Promise<void>; surfaceTarget?: HTMLElement; usingTools?: boolean;
@@ -40,7 +42,7 @@
 </script>
 
 <div class="image-editor-host" bind:this={host}>
-  <ImageCanvasEditor bind:this={editor} bind:usingTools name={resource.handle.name} initial={resource.image!}
+  <ImageCanvasEditor {initialPoint} bind:this={editor} bind:usingTools name={resource.handle.name} initial={resource.image!}
     initialDraft={resource.handle instanceof GitHubFile && !!resource.handle.repository.draft(resource.handle.path)}
     {stylusOnly} {autosaveMs} {surfaceTarget} onSave={persist}
     onCommit={resource.storage === 'github' ? commit : undefined} {onExit} {onDelete} onExport={exportPng} />

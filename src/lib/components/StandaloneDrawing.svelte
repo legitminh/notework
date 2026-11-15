@@ -11,11 +11,12 @@
   import type { PdfMargins } from '../export-preferences';
   import { exportStyle } from '../export-style';
   import type { PdfSource } from '../pdf-export';
-  import type { Drawing } from '../drawing';
+  import type { Drawing, Point } from '../drawing';
   import DrawingEditor from './DrawingEditor.svelte';
   import ImageEditor from './ImageEditor.svelte';
 
-  let { workspace, node, onExit, onMissing, stylusOnly, pdfMargins, autosaveMs }: {
+  let { workspace, node, onExit, onMissing, stylusOnly, pdfMargins, autosaveMs, initialPoint }: {
+    initialPoint?: Point;
     stylusOnly: boolean;
     autosaveMs: number;
     pdfMargins: PdfMargins;
@@ -42,10 +43,16 @@
   onMount(() => {
     mounted = true;
     let active = true;
+    let releaseGitHubFile: (() => void) | undefined;
     void (async () => {
       try {
         const handle = await workspace.handle(node.id);
         if (handle.kind !== 'file') throw new Error('The drawing is no longer a file.');
+        if (handle instanceof GitHubFile) {
+          const file = await handle.getFile();
+          if (!active) return;
+          releaseGitHubFile = handle.repository.retainFile(handle.path, file);
+        }
         const loaded = await loadDrawing(handle, node.storage);
         if (active) resource = loaded;
       } catch (cause) {
@@ -54,16 +61,16 @@
         else error = cause;
       }
     })();
-    return () => { active = false; mounted = false; };
+    return () => { active = false; mounted = false; releaseGitHubFile?.(); };
   });
 </script>
 
 {#if resource}
   {#if resource.image}
-    <ImageEditor bind:this={drawingEditor} {resource} {node} {stylusOnly} {autosaveMs} {pdfMargins} {onExit} onSaved={(saved) => { resource = saved; }} />
+    <ImageEditor {initialPoint} bind:this={drawingEditor} {resource} {node} {stylusOnly} {autosaveMs} {pdfMargins} {onExit} onSaved={(saved) => { resource = saved; }} />
   {:else}
   <div class="standalone-drawing-editor" bind:this={editor}>
-  <DrawingEditor bind:this={drawingEditor} {stylusOnly} {autosaveMs} name={node.name} initial={resource.strokes} initialDraft={hasDrawingDraft(resource)} {onExit} onExport={exportDrawing}
+  <DrawingEditor {initialPoint} bind:this={drawingEditor} {stylusOnly} {autosaveMs} name={node.name} initial={resource.strokes} initialDraft={hasDrawingDraft(resource)} {onExit} onExport={exportDrawing}
     onSave={async (strokes, requestWrite) => { resource = await saveDrawing(resource!, strokes, requestWrite); }}
     onCommit={node.storage === 'github' ? async () => {
       if (resource?.handle instanceof GitHubFile) await sync.enqueue(node, resource.handle);

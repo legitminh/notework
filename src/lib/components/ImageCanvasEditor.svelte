@@ -4,9 +4,10 @@
   import Control from './Control.svelte';
   import StorageNotice from './StorageNotice.svelte';
   import { imageFormat, imageCanvas, canvasBlob, composite, paintBlob, type ImageDocument, type ImageLayer } from '../images';
-  import { DRAWING_WIDTH, strokeWidth, type Drawing } from '../drawing';
+  import { DRAWING_WIDTH, strokeWidth, type Point, type Drawing } from '../drawing';
 
-  let { name, initial, initialDraft = false, stylusOnly, autosaveMs, onSave, onCommit, onExit, onDelete, onExport, surfaceTarget, usingTools = $bindable(false) }: {
+  let { name, initial, initialDraft = false, stylusOnly, autosaveMs, onSave, onCommit, onExit, onDelete, onExport, surfaceTarget, usingTools = $bindable(false), initialPoint }: {
+    initialPoint?: Point;
     name: string; initial: ImageDocument; initialDraft?: boolean; stylusOnly: boolean; autosaveMs: number;
     onSave: (image: ImageDocument, requestWrite: boolean) => Promise<void>;
     onCommit?: () => Promise<void>; onExit?: () => void | Promise<void>;
@@ -126,7 +127,7 @@
   {#if error}<StorageNotice {error} />{/if}
   {#if ready && document}
     {#key session}
-      <DrawingEditor bind:this={editor} bind:usingTools {name} initial={[]} {stylusOnly} {autosaveMs} {surfaceTarget}
+      <DrawingEditor initialPoint={session === 1 ? initialPoint : undefined} bind:this={editor} bind:usingTools {name} initial={[]} {stylusOnly} {autosaveMs} {surfaceTarget}
         backgroundHref={background} editableHref={editable} foregroundHref={foreground} imageHeight={document.height / document.width * DRAWING_WIDTH}
         strokeOpacity={document.layers[selected].visible ? document.layers[selected].opacity : 0}
         {initialDraft}

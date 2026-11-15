@@ -15,6 +15,7 @@ class SvgPageWidget extends WidgetType {
     const button = document.createElement(this.readOnly ? 'div' : 'button');
     if (button instanceof HTMLButtonElement) button.type = 'button';
     button.className = 'svg-page-preview';
+    button.dataset.pageFrom = String(this.page.from);
     button.setAttribute('aria-label', `${this.readOnly ? 'Preview of' : 'Edit drawing'} ${this.page.name}`);
     const svg = document.createElementNS(svgNamespace, 'svg');
     const height = this.image?.height ?? (drawingBottom(this.drawing ?? []) || DRAWING_PAGE_HEIGHT);

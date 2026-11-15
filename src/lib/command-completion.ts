@@ -5,11 +5,11 @@ import { resourceProximity } from './resource-proximity';
 import { wikiScore, wikiToken } from './wiki';
 import type { StateNode, Workspace } from './workspace';
 
-function drawingTargets(workspace: Workspace, source: StateNode, query: string, files: StateNode[]): Completion[] {
+function drawingTargets(workspace: Workspace, source: StateNode, query: string, files: StateNode[], onlyDrawings = true): Completion[] {
   const distance = resourceProximity(workspace, source);
   const bindings = workspace.data.wiki?.[source.id];
   return files.map((file) => workspace.known.get(file.id))
-    .filter((file): file is StateNode => !!file?.drawing && file.id !== source.id)
+    .filter((file): file is StateNode => !!file && (!onlyDrawings || !!file.drawing) && file.id !== source.id)
     .map((file) => {
       const path = workspace.label(file);
       return { file, path, score: Math.min(wikiScore(query, file.name), wikiScore(query, path)), ...distance(file) };
@@ -53,6 +53,7 @@ interface EditorCommand {
 }
 
 const commands: readonly EditorCommand[] = [
+  { name: 'page', detail: 'Embed a read-only file', targets: (workspace, source, query, files) => drawingTargets(workspace, source, query, files, false) },
   ...['svg', 'png', 'jpeg', 'heic', 'ora'].map((format) => ({ name: `${format}page`, detail: `Insert a ${format.toUpperCase()} page`, targets: targetsFor(format) })),
   { name: 'prettify', detail: 'Format and color parent lines', placement: 'next-line' },
   { name: 'pretty', detail: 'Format the following lines', placement: 'next-line' },

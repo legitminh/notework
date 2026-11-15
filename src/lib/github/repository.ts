@@ -34,12 +34,13 @@ export class GitHubRepository {
   private removals = new Map<string, string>();
   private files = new Map<string, Promise<Blob>>();
   private directoryIndex?: Map<string, Map<string, 'file' | 'directory'>>;
-  private syncing?: Promise<void>;
+  private syncing?: Promise<boolean>;
   private modified = Date.now();
   private editDates = new Map<string, Promise<number>>();
   private mutationTail = Promise.resolve();
   readonly queuedPaths = new Set<string>();
   private drafts = new Map<string, GitHubDraft>();
+  private openFiles = new Map<string, { file: File; users: number }>();
 
   constructor(readonly id: string, readonly connection: GitHubConnection, private token: string, snapshot?: GitSnapshot) {
     this.api = new GitHubApi(connection, token, id);
@@ -104,16 +105,18 @@ export class GitHubRepository {
     return this.snapshot;
   }
 
-  async sync() {
+  async sync(poll = false) {
     if (!this.token) throw new GitHubApiError(401, 'connect', this.id);
     if (!navigator.onLine) throw new Error('GitHub is offline. Changes can stay in this browser until you reconnect.');
     return this.syncing ??= (async () => {
-      const head = await this.api.head();
-      if (head !== this.snapshot?.head) {
+      const head = await this.api.head(poll);
+      if (head && head !== this.snapshot?.head) {
         const snapshot = await this.api.snapshot(head);
         await storeSnapshot(this.id, snapshot);
         this.install(snapshot);
+        return true;
       }
+      return false;
     })().finally(() => { this.syncing = undefined; });
   }
 
@@ -133,6 +136,18 @@ export class GitHubRepository {
     return request;
   }
 
+  /** An upstream deletion must not evict an editor before its draft is saved. */
+  retainFile(path: string, file: File) {
+    const retained = this.openFiles.get(path) ?? { file, users: 0 };
+    retained.users++;
+    this.openFiles.set(path, retained);
+    this.directoryIndex = undefined;
+    return () => {
+      if (--retained.users === 0) this.openFiles.delete(path);
+      this.directoryIndex = undefined;
+    };
+  }
+
   private directories() {
     this.current();
     if (this.directoryIndex) return this.directoryIndex;
@@ -146,14 +161,14 @@ export class GitHubRepository {
       }
       return map;
     }
-    for (const path of new Set([...this.entries.keys(), ...this.pending.keys(), ...this.drafts.keys()])) {
+    for (const path of new Set([...this.entries.keys(), ...this.pending.keys(), ...this.drafts.keys(), ...this.openFiles.keys()])) {
       const change = this.pending.get(path);
       const entry = this.entries.get(path);
       const draft = this.drafts.get(path);
-      if (change ? !change.blob : !entry && !draft) continue;
+      if (change ? !change.blob : !entry && !draft && !this.openFiles.has(path)) continue;
       if (path.split('/').some((part) => part.toLowerCase() === '.git')) continue;
       const list = children(parent(path));
-      if (name(path) !== keep && (change || draft || (entry && supportedBlob(entry)))) list.set(name(path), 'file');
+      if (name(path) !== keep && (change || draft || this.openFiles.has(path) || (entry && supportedBlob(entry)))) list.set(name(path), 'file');
     }
     return this.directoryIndex = dirs;
   }
@@ -166,7 +181,7 @@ export class GitHubRepository {
 
   has(path: string) {
     const change = this.pending.get(path);
-    return change ? !!change.blob : this.entries.has(path);
+    return change ? !!change.blob : this.entries.has(path) || this.openFiles.has(path);
   }
 
   assertTransferable(path: string) {
@@ -205,6 +220,7 @@ export class GitHubRepository {
     const entry = this.entries.get(path);
     const draft = this.drafts.get(path);
     if (!change && draft) return new File([draft.content], name(path), { lastModified: draft.modified });
+    if (!change && !entry && this.openFiles.has(path)) return this.openFiles.get(path)!.file;
     if (change ? !change.blob : !entry || !supportedBlob(entry)) throw missing();
     const blob = change?.blob ?? await this.blob(entry!.sha);
     // The same immutable blob must keep the same file identity across reads.

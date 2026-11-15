@@ -306,25 +306,27 @@ test('navigation previews are read only, render prettify, and open the matching 
   const preview = page.locator('.file-preview');
   await expect(preview.locator('.cm-pretty-heading')).toHaveCount(2);
   await expect(preview.locator('.cm-content')).toHaveAttribute('contenteditable', 'false');
-  await expect(preview.locator('.cm-pretty-heading').first()).toHaveCSS('color', 'rgb(0, 0, 0)');
+  await expect(preview.locator('.cm-pretty-heading').first()).toHaveCSS('color', 'rgb(128, 0, 0)');
+  await expect(preview.locator('.cm-pretty-heading').first()).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  await expect(preview.locator('.cm-pretty-line').filter({ hasText: 'Leaf' })).toHaveCSS('color', 'rgb(0, 0, 0)');
   const hues = await preview.locator('.cm-pretty-heading').evaluateAll(lines => lines.map(line => (line as HTMLElement).style.getPropertyValue('--pretty-hue')));
   expect(hues).toEqual(['0', '45']);
   const shades = await preview.locator('.cm-pretty-heading').first().evaluate(line => {
     const root = document.documentElement;
-    const saved = root.style.getPropertyValue('--background');
+    const saved = root.style.getPropertyValue('--pretty-lightness');
     const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
     const context = canvas.getContext('2d')!;
-    const result = ['white', 'black'].map(background => {
-      root.style.setProperty('--background', background);
-      context.fillStyle = getComputedStyle(line).backgroundColor; context.fillRect(0, 0, 1, 1);
+    const result = ['25%', '75%'].map(lightness => {
+      root.style.setProperty('--pretty-lightness', lightness);
+      context.fillStyle = getComputedStyle(line).color; context.fillRect(0, 0, 1, 1);
       return Array.from(context.getImageData(0, 0, 1, 1).data);
     });
-    if (saved) root.style.setProperty('--background', saved); else root.style.removeProperty('--background');
+    if (saved) root.style.setProperty('--pretty-lightness', saved); else root.style.removeProperty('--pretty-lightness');
     return result;
   });
-  expect(shades).toEqual([[255, 128, 128, 255], [128, 0, 0, 255]]);
-  await expect(preview.getByRole('button', { name: 'Open preview.txt', exact: true })).toBeVisible();
-  await preview.getByRole('button', { name: 'Open preview.txt', exact: true }).click();
+  expect(shades).toEqual([[128, 0, 0, 255], [255, 128, 128, 255]]);
+  await expect(preview.getByRole('button', { name: 'Open preview.txt from preview', exact: true })).toBeVisible();
+  await preview.getByRole('button', { name: 'Open preview.txt from preview', exact: true }).click();
   await expect(editor).toBeEditable();
   await expect(editor).toContainText('Parent');
 });
@@ -350,13 +352,13 @@ test('bracket shortcuts traverse separate navigation and editor histories and br
   await page.keyboard.press('ControlOrMeta+[');
   await expect(page.getByRole('heading', { name: 'home', exact: true })).toBeVisible();
   await page.keyboard.press('ControlOrMeta+]');
-  await expect(page.locator('.file-preview').getByRole('button', { name: 'Open second.txt', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'open: second.txt', exact: true })).toBeVisible();
   await page.keyboard.press('ControlOrMeta+[');
   await expect(page.getByRole('heading', { name: 'home', exact: true })).toBeVisible();
   await action(page, 'first.txt').click();
-  await expect(page.locator('.file-preview').getByRole('button', { name: 'Open first.txt', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'open: first.txt', exact: true })).toBeVisible();
   await page.keyboard.press('ControlOrMeta+]');
-  await expect(page.locator('.file-preview').getByRole('button', { name: 'Open first.txt', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'open: first.txt', exact: true })).toBeVisible();
   await home(page); await create(page, 'third.png', 'png image'); await action(page, 'open').click();
   await expect(page.getByRole('img', { name: 'Drawing canvas for third.png', exact: true })).toBeVisible();
   await page.keyboard.press('Escape'); await page.keyboard.press('ControlOrMeta+[');
@@ -419,4 +421,147 @@ test('raster eraser removes saved pixels locally, supports undo, and keeps surro
     return [Array.from(context.getImageData(200, 100, 1, 1).data), Array.from(context.getImageData(50, 50, 1, 1).data)];
   }, data);
   expect(pixels).toEqual([[0, 0, 0, 0], [255, 0, 0, 255]]);
+});
+
+test('filename opens separately, and a long preview click opens the clicked text position', async ({ page }) => {
+  await create(page, 'long-preview.txt'); await action(page, 'open').click();
+  const editor = page.getByRole('textbox', { name: 'Edit long-preview.txt', exact: true });
+  await editor.fill(Array.from({ length: 800 }, (_, i) => `Line ${i + 1}: preview content`).join('\n'));
+  await textTools(page).getByRole('button', { name: 'Exit', exact: true }).click();
+  const preview = page.locator('.file-preview');
+  const title = page.getByRole('button', { name: 'open: long-preview.txt', exact: true });
+  await expect(title).toBeVisible();
+  await expect(title.locator('..').locator('..')).not.toHaveClass(/file-preview/);
+  await page.mouse.move(0, 0);
+  await expect(preview.locator('.preview-open-hint')).toHaveCSS('opacity', '0');
+  await expect(preview.locator('.cm-line').first()).toBeVisible();
+  await page.locator('.viewport').evaluate(viewport => {
+    const content = document.querySelector('.file-preview .cm-content')!;
+    const rect = content.getBoundingClientRect();
+    const height = parseFloat(getComputedStyle(content).lineHeight);
+    viewport.scrollBy({ top: rect.top + 499 * height - 200, behavior: 'instant' });
+  });
+  const line = preview.locator('.cm-line').filter({ hasText: /^Line 500:/ });
+  await expect(line).toBeInViewport();
+  const box = (await line.boundingBox())!;
+  await page.mouse.move(box.x + 5, box.y + box.height / 2);
+  await expect(preview.locator('.preview-open-hint')).toHaveCSS('opacity', '1');
+  await page.mouse.click(box.x + 5, box.y + box.height / 2);
+  await expect(editor).toBeFocused();
+  await expect(editor.locator('.cm-line').filter({ hasText: /^Line 500:/ })).toBeInViewport();
+  expect(await page.locator('.editor-scroll').evaluate(element => element.scrollTop)).toBeGreaterThan(1000);
+  await page.keyboard.insertText('@');
+  await expect(editor.locator('.cm-line').filter({ hasText: /@/ })).toHaveText(/^@?L?@?ine 500:/);
+});
+
+test('system is the default theme and Keyflow dropdown persists explicit choices', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await action(page, 'app settings').click();
+  const menu = () => page.getByRole('button', { name: /^color theme:/ });
+  await expect(menu()).toHaveAttribute('aria-label', 'color theme: system');
+  await expect(page.locator('html')).toHaveCSS('--background', 'hsl(0, 0%, 0%)');
+  await menu().click();
+  const choices = page.getByRole('region', { name: 'color theme: system' });
+  await expect(choices).toBeInViewport();
+  await expect(choices.getByRole('list').getByRole('button')).toHaveCount(3);
+  await choices.getByRole('button', { name: /light$/ }).click();
+  await expect(page.locator('html')).toHaveCSS('--background', 'hsl(0, 0%, 100%)');
+  await page.emulateMedia({ colorScheme: 'light' }); await page.emulateMedia({ colorScheme: 'dark' });
+  await expect(page.locator('html')).toHaveCSS('--background', 'hsl(0, 0%, 100%)');
+  await page.reload(); await action(page, 'app settings').click();
+  await expect(menu()).toHaveAttribute('aria-label', 'color theme: light');
+  await menu().click(); await page.getByRole('region', { name: 'color theme: light' }).getByRole('button', { name: /system$/ }).click();
+  await expect(page.locator('html')).toHaveCSS('--background', 'hsl(0, 0%, 0%)');
+  await page.emulateMedia({ colorScheme: 'light' });
+  await expect(page.locator('html')).toHaveCSS('--background', 'hsl(0, 0%, 100%)');
+});
+
+test('page embeds are indented, inherit pretty, save graph links, and open with editor history', async ({ page }) => {
+  const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+  await create(page, 'child.txt'); await action(page, 'open').click();
+  await page.getByRole('textbox', { name: 'Edit child.txt', exact: true }).fill('Child\n  Leaf\nTail');
+  await textTools(page).getByRole('button', { name: 'Exit', exact: true }).click();
+  await home(page); await create(page, 'parent.txt'); await action(page, 'open').click();
+  const parent = page.getByRole('textbox', { name: 'Edit parent.txt', exact: true });
+  await parent.fill('\\pretty\nRoot\n  \\page[child.txt]\nEnd');
+  const embedded = page.getByRole('region', { name: 'Referenced file child.txt', exact: true });
+  await expect(embedded.locator('.cm-content')).toHaveAttribute('contenteditable', 'false');
+  await expect(embedded.locator('.cm-line').first()).toHaveText('  Child');
+  await expect(embedded.locator('.cm-line').nth(1)).toHaveText('    Leaf');
+  await expect(embedded.locator('.cm-pretty-heading')).toHaveCSS('color', 'rgb(128, 96, 0)');
+  await embedded.getByRole('button', { name: 'Open child.txt from preview', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Edit child.txt', exact: true })).toHaveText('Child  LeafTail');
+  await page.keyboard.press('Escape'); await page.keyboard.press('ControlOrMeta+[');
+  await expect(parent).toBeVisible(); await expect(textTools(page)).toBeFocused();
+  await expect(embedded).toBeVisible();
+  expect(Buffer.from((await bytes(page, 'parent.txt'))!).toString()).toContain('\\page[child.txt]');
+  expect(Buffer.from((await bytes(page, 'child.txt'))!).toString()).toBe('Child\n  Leaf\nTail');
+  expect(errors).toEqual([]);
+});
+
+test('nested page references stop cycles and missing references do not create files', async ({ page }) => {
+  await create(page, 'cycle.txt'); await action(page, 'open').click();
+  const editor = page.getByRole('textbox', { name: 'Edit cycle.txt', exact: true });
+  await editor.fill('\\page[cycle.txt]\n\\page[missing.txt]\nEnd');
+  await expect(page.getByText('Circular page reference: cycle.txt', { exact: true })).toBeVisible();
+  await expect(page.getByText('Referenced file “missing.txt” is unavailable.', { exact: true })).toBeVisible();
+  await page.keyboard.press('ControlOrMeta+s');
+  await expect(page.getByText('saved in browser storage', { exact: true })).toBeVisible();
+  expect(await bytes(page, 'missing.txt')).toBeNull();
+});
+
+test('a click low in a drawing preview opens that drawing point without adding ink', async ({ page }) => {
+  await create(page, 'tall.svg', 'svg file');
+  await expect(page.getByRole('button', { name: 'open: tall.svg', exact: true })).toBeVisible();
+  await page.evaluate(async () => {
+    const documents = await (await (await navigator.storage.getDirectory()).getDirectoryHandle('notework')).getDirectoryHandle('documents');
+    for await (const bucket of documents.values()) {
+      if (bucket.kind !== 'directory') continue;
+      try {
+        const file = await bucket.getFileHandle('tall.svg'); const writer = await file.createWritable();
+        await writer.write('<svg xmlns="http://www.w3.org/2000/svg" data-notework-drawing="1" width="1024" height="3002" viewBox="0 0 1024 3002"><g fill="none" stroke="#202733" stroke-width="3"><polyline points="500,100 500,3000"/></g></svg>');
+        await writer.close(); return;
+      } catch { /* Isolated test buckets only. */ }
+    }
+    throw new Error('Missing test drawing');
+  });
+  await home(page); await action(page, 'tall.svg').click();
+  const image = page.locator('.file-preview img'); await expect(image).toBeVisible();
+  await image.evaluate(img => {
+    const rect = img.getBoundingClientRect();
+    document.querySelector('.viewport')!.scrollBy({ top: rect.top + 2400 / 1024 * rect.width - 200, behavior: 'instant' });
+  });
+  const box = (await image.boundingBox())!;
+  await page.mouse.click(box.x + box.width / 2, box.y + 2400 / 1024 * box.width);
+  const canvas = page.getByRole('img', { name: 'Drawing canvas for tall.svg', exact: true });
+  await expect(canvas).toBeVisible();
+  await expect.poll(() => canvas.evaluate(svg => {
+    const point = new DOMPoint(512, 2400).matrixTransform((svg as SVGSVGElement).getScreenCTM()!);
+    const surface = svg.closest('.drawing-surface')!.getBoundingClientRect();
+    return point.y > surface.top && point.y < surface.bottom;
+  })).toBe(true);
+  await expect(canvas.locator('polyline')).toHaveCount(1);
+  expect(await page.locator('.drawing-surface').evaluate(surface => surface.scrollTop)).toBeGreaterThan(500);
+});
+
+test('page completion offers text targets and renaming updates the saved page directive', async ({ page }) => {
+  await create(page, 'source-page.txt'); await action(page, 'open').click();
+  await page.getByRole('textbox', { name: 'Edit source-page.txt', exact: true }).fill('Referenced content');
+  await textTools(page).getByRole('button', { name: 'Exit', exact: true }).click();
+  await home(page); await create(page, 'linked-page.txt'); await action(page, 'open').click();
+  const parent = page.getByRole('textbox', { name: 'Edit linked-page.txt', exact: true });
+  await parent.fill('\\page[sour');
+  const option = page.getByRole('option').filter({ hasText: 'source-page.txt' });
+  await expect(option).toBeVisible(); await page.keyboard.press('Tab'); await page.keyboard.press('Enter');
+  await expect(page.getByRole('region', { name: 'Referenced file source-page.txt', exact: true }).locator('.cm-content')).toHaveText('Referenced content');
+  await textTools(page).getByRole('button', { name: 'Exit', exact: true }).click();
+  await home(page); await action(page, 'source-page.txt').click(); await action(page, 'configure file').click(); await action(page, 'rename').click();
+  const dialog = page.getByRole('dialog', { name: 'Rename file', exact: true });
+  await dialog.getByRole('textbox').fill('renamed-page.txt'); await dialog.getByRole('button', { name: 'Rename and update links', exact: true }).click();
+  await expect(dialog).not.toBeVisible();
+  expect(Buffer.from((await bytes(page, 'linked-page.txt'))!).toString()).toContain('\\page[renamed-page.txt]');
+  await home(page); await action(page, 'linked-page.txt').click(); await action(page, 'open').click();
+  await expect(parent).toBeFocused();
+  await page.keyboard.press('ControlOrMeta+End');
+  await expect(page.getByRole('region', { name: 'Referenced file renamed-page.txt', exact: true }).locator('.cm-content')).toHaveText('Referenced content');
 });

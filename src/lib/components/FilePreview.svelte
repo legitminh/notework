@@ -1,29 +1,98 @@
+<script module lang="ts">
+  const previewClicks = new WeakMap<HTMLElement, (event: MouseEvent) => void>();
+</script>
+
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { EditorState } from '@codemirror/state';
+  import { getAllContexts, onMount } from 'svelte';
+  import { countColumn, EditorState } from '@codemirror/state';
   import { EditorView, lineNumbers } from '@codemirror/view';
   import { indentUnit } from '@codemirror/language';
-  import Control from './Control.svelte';
+  import { Interactable } from '@legitminh/keyflow';
+  import { shortcutScope } from '../shortcut-scope.svelte';
   import StorageNotice from './StorageNotice.svelte';
   import type { Workspace, StateNode } from '../workspace';
   import { decodedChunks, inspectTextFile } from '../text-resource';
   import { loadDrawing, loadDrawingReference } from '../drawing-files';
-  import { serializeDrawing } from '../drawing';
+  import { DRAWING_WIDTH, serializeDrawing, type Point } from '../drawing';
+  import type { PreviewLocation } from '../preview-location';
   import { svgPages } from '../svg-pages';
   import { wikiDisplay } from '../wiki-display';
-  import { prettyDisplay } from '../pretty-display';
+  import { prettyDisplay, type PrettyContext } from '../pretty-display';
+  import { wikiCatalog } from '../wiki';
+  import { pageReferences } from '../page-references';
 
-  let { workspace, node, wrapLines, prettyFontSize, prettyMargin, showLineNumbers, onOpen, disabled }: {
-    workspace: Workspace; node: StateNode; wrapLines: boolean; prettyFontSize: boolean; prettyMargin: boolean;
-    showLineNumbers: boolean; onOpen: () => void; disabled: boolean;
+  let { workspace, node, wrapLines, prettyFontSize, prettyMargin, showLineNumbers, onOpen, disabled, indent = '', inheritedPretty, ancestors, onOpenReference, catalog: suppliedCatalog }: {
+    catalog?: () => Promise<StateNode[]>;
+    workspace: Workspace; node: StateNode; indent?: string; inheritedPretty?: PrettyContext; ancestors?: string[]; onOpenReference?: (id: string, location?: PreviewLocation) => void; wrapLines: boolean; prettyFontSize: boolean; prettyMargin: boolean;
+    showLineNumbers: boolean; onOpen: (location?: PreviewLocation) => void; disabled: boolean;
   } = $props();
+  const context = getAllContexts();
+  const catalogAbort = new AbortController();
+  let catalogRequest: Promise<StateNode[]> | undefined;
+  const catalog = () => suppliedCatalog?.() ?? (catalogRequest ??= wikiCatalog(workspace, catalogAbort.signal));
   let host: HTMLDivElement;
   let image = $state('');
   let error = $state.raw<unknown>();
   let loading = $state(true);
+  let view: EditorView | undefined;
+
+  function drawingPoint(rect: DOMRect, event: MouseEvent): Point {
+    const scale = DRAWING_WIDTH / Math.max(1, rect.width);
+    return [Math.max(0, Math.min(rect.width, event.clientX - rect.left)) * scale,
+      Math.max(0, Math.min(rect.height, event.clientY - rect.top)) * scale];
+  }
+
+  function openAtClick(element: HTMLElement) {
+    const click = (event: MouseEvent) => {
+      // Keyboard and assistive activation use the ordinary Keyflow action.
+      if (!event.detail || event.button !== 0 || disabled || loading || shortcutScope.dialog) return;
+      event.preventDefault(); event.stopPropagation();
+      const reference = [...host.querySelectorAll<HTMLElement>('[data-reference-target]')].reverse().find((widget) => {
+        const rect = widget.getBoundingClientRect();
+        return event.clientY >= rect.top && event.clientY <= rect.bottom;
+      });
+      if (reference && onOpenReference) {
+        const nested = reference.querySelector<HTMLElement>('.file-preview');
+        const open = nested && previewClicks.get(nested);
+        if (open) open(event); else onOpenReference(reference.dataset.referenceTarget!);
+        return;
+      }
+      if (node.drawing) {
+        const image = element.querySelector('img');
+        onOpen(image ? { kind: 'drawing', point: drawingPoint(image.getBoundingClientRect(), event) } : undefined);
+        return;
+      }
+      const drawing = [...host.querySelectorAll<HTMLElement>('[data-page-from]')].find((widget) => {
+        if (widget.closest('.file-preview') !== element) return false;
+        const rect = widget.getBoundingClientRect();
+        return event.clientY >= rect.top && event.clientY <= rect.bottom;
+      });
+      if (drawing) {
+        const from = Number(drawing.dataset.pageFrom);
+        const number = view?.state.doc.lineAt(from).number ?? 1;
+        onOpen({ kind: 'inline-drawing', from: from - indent.length * (number - 1),
+          point: drawingPoint(drawing.getBoundingClientRect(), event) });
+      }
+      else if (view) {
+        const position = view.posAtCoords({ x: event.clientX, y: event.clientY }, false);
+        const line = view.state.doc.lineAt(position);
+        onOpen({ kind: 'text', position: line.from - indent.length * (line.number - 1) + Math.max(0, position - line.from - indent.length) });
+      }
+      else onOpen();
+    };
+    const keepScroll = (event: MouseEvent) => { if (event.button === 0) event.preventDefault(); };
+    previewClicks.set(element, click);
+    element.addEventListener('mousedown', keepScroll, true);
+    element.addEventListener('click', click, true);
+    return { destroy() {
+      previewClicks.delete(element);
+      element.removeEventListener('mousedown', keepScroll, true);
+      element.removeEventListener('click', click, true);
+    } };
+  }
+
   onMount(() => {
     let active = true;
-    let view: EditorView | undefined;
     let objectURL: string | undefined;
     void (async () => {
       try {
@@ -42,10 +111,13 @@
           if (!active) return;
           const pages = svgPages(() => {}, () => false, true);
           view = new EditorView({ parent: host, state: EditorState.create({
-            doc: text.replace(/\r\n?/g, '\n'),
+            doc: text.replace(/\r\n?/g, '\n').split('\n').map((line) => indent + line).join('\n'),
             extensions: [EditorState.readOnly.of(true), EditorView.editable.of(false),
-              EditorView.contentAttributes.of({ role: 'document', 'aria-label': `Preview of ${node.name}`, tabindex: '-1' }), indentUnit.of('\t'),
-              prettyDisplay(prettyFontSize, prettyMargin), wikiDisplay(() => {}, true), pages.field,
+              EditorView.contentAttributes.of({ role: 'document', 'aria-label': `Preview of ${node.name}`, tabindex: '-1' }),
+              indentUnit.of('  '), EditorState.tabSize.of(2),
+              prettyDisplay(prettyFontSize, prettyMargin, inheritedPretty),
+              pageReferences({ workspace, source: node, wrapLines, prettyFontSize, prettyMargin, readOnly: true, catalog, ancestors: ancestors ?? [node.id], context, onOpen: (id, location) => onOpenReference?.(id, location) }),
+              wikiDisplay(() => {}, true), pages.field,
               showLineNumbers ? lineNumbers() : [], wrapLines ? EditorView.lineWrapping : [],
               EditorView.theme({
                 '&': { color: 'var(--primary)', backgroundColor: 'var(--background)', fontSize: 'clamp(12px, calc(var(--min-box) * .4), 28px)' },
@@ -66,14 +138,17 @@
       } catch (cause) { if (active) error = cause; }
       finally { if (active) loading = false; }
     })();
-    return () => { active = false; view?.destroy(); if (objectURL) URL.revokeObjectURL(objectURL); };
+    return () => { active = false; catalogAbort.abort(); view?.destroy(); if (objectURL) URL.revokeObjectURL(objectURL); };
   });
 </script>
 
-<div class="file-preview" data-action="open">
-  <Control class="preview-open" aria-label={`Open ${node.name}`} onclick={onOpen} {disabled}>
-    <span class="visually-hidden">Open {node.name}</span>
-  </Control>
+<div class="file-preview" class:embedded={!!inheritedPretty} style:--page-indent={`${countColumn(indent, 2)}ch`} use:openAtClick>
+  <span class="preview-open">
+    <Interactable registered={false} on_close={() => onOpen()} disabled={disabled || loading || !!shortcutScope.dialog}>
+      <span class="visually-hidden">Open {node.name} from preview</span>
+    </Interactable>
+  </span>
+  <div class="preview-open-hint" aria-hidden="true"><span>open</span></div>
   <div class="preview-content">
     {#if loading}<p class="muted">loading preview…</p>{/if}
     {#if image}<img src={image} alt={`Preview of ${node.name}`} />{/if}
@@ -84,8 +159,15 @@
 
 <style>
   .file-preview { position: relative; margin-top: .5em; min-height: 120px; border: 1px solid var(--tertiary); }
-  .file-preview :global(.preview-open) { position: absolute; inset: 0; display: block; z-index: 1; }
-  .file-preview :global(.preview-open > button) { display: block; width: 100%; height: 100%; background: transparent; }
+  .file-preview .preview-open { position: absolute; inset: 0; display: block; z-index: 1; opacity: 0; }
+  .file-preview .preview-open :global(button) { display: block; width: 100%; height: 100%; cursor: pointer; }
+  .file-preview:focus-within { outline: 2px solid var(--primary); outline-offset: 3px; }
+  .preview-open-hint { position: sticky; top: 0; height: 0; z-index: 2; pointer-events: none; opacity: 0; }
+  .preview-open-hint span { display: block; text-align: center; font-size: clamp(12px, .5em, 20px); line-height: 1.7; border-bottom: 1px solid var(--tertiary); background: color-mix(in srgb, var(--background) 90%, transparent); }
+  .file-preview:is(:hover, :focus-within) > .preview-open-hint { opacity: 1; }
   .preview-content { pointer-events: none; overflow: hidden; min-height: 120px; }
+  .embedded { margin: 0; min-height: 0; border: 0; }
+  .embedded .preview-content { min-height: 0; }
+  .embedded img { padding-left: var(--page-indent); }
   img { display: block; width: 100%; height: auto; }
 </style>

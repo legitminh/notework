@@ -1,5 +1,6 @@
 import { isMissing, type LocalDirectory, type LocalFile } from './filesystem';
 import { ROOT, type StateNode, type Workspace } from './workspace';
+import { pageReferencePattern } from './page-pattern';
 
 export const wikiPattern = /\[\[([^\[\]\r\n]+)\]\]/g;
 const fold = (value: string) => value.toLowerCase();
@@ -9,11 +10,15 @@ export function validFilename(name: string) {
   return !!name && name.length <= 255 && !/[\/\\\[\]\x00-\x1f]/.test(name) && name !== '.' && name !== '..' && name !== '.git';
 }
 
-export function wikiTokens(lines: Iterable<string>) {
+export function wikiTokens(lines: Iterable<string>, includePages = true) {
   const tokens = new Set<string>();
-  for (const line of lines) for (const match of line.matchAll(wikiPattern)) {
-    const token = match[1].trim();
-    if (token) tokens.add(token);
+  for (const line of lines) {
+    for (const match of line.matchAll(wikiPattern)) {
+      const token = match[1].trim();
+      if (token) tokens.add(token);
+    }
+    const page = includePages ? pageReferencePattern.exec(line) : null;
+    if (page?.[2].trim()) tokens.add(page[2].trim());
   }
   return tokens;
 }
@@ -38,6 +43,13 @@ export function findWikiTarget(workspace: Workspace, source: StateNode, token: s
   const key = fold(token);
   const exact = catalog.find((node) => node.uri === token);
   if (exact) return exact;
+  if (token.includes('/')) {
+    try {
+      const relative = new URL(token, source.uri).href;
+      const file = catalog.find((node) => node.uri === relative);
+      if (file) return file;
+    } catch { /* Names and graph paths are resolved below. */ }
+  }
   const siblings = catalog.filter((node) => parentUri(node) === parentUri(source) && fold(node.name) === key);
   const exactSibling = siblings.find((node) => node.name === token);
   if (exactSibling) return exactSibling;

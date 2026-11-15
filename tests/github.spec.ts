@@ -19,6 +19,7 @@ async function github(page: Page, initial: FixtureFiles) {
   const commits = new Map<string, { tree: string; parent?: string; message: string }>();
   const messages: string[] = [];
   const requests: string[] = [];
+  const refChecks: { conditional?: string; status: number }[] = [];
   let sequence = 0;
   let head: string;
   let advanceOnPush: FixtureFiles | undefined;
@@ -49,10 +50,11 @@ async function github(page: Page, initial: FixtureFiles) {
     const request = route.request();
     const path = request.url().startsWith(api) ? request.url().slice(api.length).split('?')[0] : '/graphql';
     const method = request.method();
-    const respond = (json: unknown, status = 200) => route.fulfill({ status, json, headers: {
+    const respond = (json: unknown, status = 200, extra: Record<string, string> = {}) => route.fulfill({ status, ...(status === 304 ? { body: '' } : { json }), headers: {
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-GitHub-Api-Version',
-      'Access-Control-Allow-Methods': 'GET, POST, PATCH, OPTIONS'
+      'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-GitHub-Api-Version, If-None-Match',
+      'Access-Control-Expose-Headers': 'ETag, Retry-After, X-RateLimit-Remaining, X-RateLimit-Reset, X-Poll-Interval',
+      'Access-Control-Allow-Methods': 'GET, POST, PATCH, OPTIONS', ...extra
     } });
     if (method === 'OPTIONS') return respond({});
     requests.push(`${method} ${path}`);
@@ -60,7 +62,11 @@ async function github(page: Page, initial: FixtureFiles) {
     if (request.headers().authorization !== `Bearer ${token}`) return respond({}, 401);
     if (method === 'GET' && !path) return respond({ default_branch: 'main', permissions: { push: true } });
     if (method === 'GET' && path === '/commits') return respond([{ commit: { committer: { date: '2026-01-01T00:00:00Z' } } }]);
-    if (method === 'GET' && path === '/git/ref/heads/main') return respond({ object: { sha: head } });
+    if (method === 'GET' && path === '/git/ref/heads/main') {
+      const etag = `"${head}"`;
+      refChecks.push({ conditional: request.headers()['if-none-match'], status: request.headers()['if-none-match'] === etag ? 304 : 200 });
+      return request.headers()['if-none-match'] === etag ? respond(undefined, 304, { ETag: etag }) : respond({ object: { sha: head } }, 200, { ETag: etag });
+    }
     if (method === 'GET' && path.startsWith('/git/commits/')) {
       const value = commits.get(path.split('/').at(-1)!);
       return value ? respond({ tree: { sha: value.tree } }) : respond({}, 404);
@@ -123,7 +129,7 @@ async function github(page: Page, initial: FixtureFiles) {
   });
 
   return {
-    upstream, messages, requests,
+    upstream, messages, requests, refChecks,
     holdPublish() {
       let arrived!: () => void, resume!: () => void;
       const started = new Promise<void>((resolve) => { arrived = resolve; });
@@ -860,4 +866,46 @@ test('search orders GitHub files by actual edit dates instead of blob identities
   await page.getByRole('searchbox').fill('.txt');
   await expect(page.locator('.search-status')).toHaveText('2 results found');
   await expect(page.locator('.search-result-row .resource-hint')).toHaveText(['notebook/z-new.txt', 'notebook/a-old.txt']);
+});
+
+test('GitHub polling defaults to four seconds, persists the interval, and pulls without replacing an open draft', async ({ page }) => {
+  const repo = await github(page, { 'note.txt': 'Original' });
+  await connect(page); await action(page, 'home').click(); await action(page, 'app settings').click();
+  const interval = page.getByLabel('GitHub check interval (seconds)', { exact: true });
+  await expect(interval).toHaveValue('4'); await interval.fill('1');
+  await page.reload(); await action(page, 'app settings').click(); await expect(interval).toHaveValue('1');
+  await action(page, 'close app settings').click(); await action(page, 'notebook/').click();
+  repo.upstream({ 'new.txt': 'Pulled automatically' });
+  await expect(action(page, 'new.txt')).toBeVisible({ timeout: 10_000 });
+  await expect.poll(() => repo.refChecks.some(check => check.status === 304 && !!check.conditional)).toBe(true);
+  await openNote(page); await editor(page, 'note.txt').fill('Local draft');
+  const before = repo.refChecks.length;
+  repo.upstream({ 'note.txt': 'Remote edit' });
+  await expect.poll(() => repo.refChecks.length).toBeGreaterThan(before);
+  await expect(editor(page, 'note.txt')).toHaveText('Local draft');
+  const beforeDelete = repo.refChecks.length;
+  repo.upstream({ 'note.txt': null });
+  await expect.poll(() => repo.refChecks.length).toBeGreaterThan(beforeDelete + 1);
+  await expect(editor(page, 'note.txt')).toHaveText('Local draft');
+  await editor(page, 'note.txt').press('ControlOrMeta+s');
+  await expect(page.getByText('draft saved in this browser · Exit to sync to GitHub', { exact: true })).toBeVisible();
+  expect(repo.messages).toEqual([]);
+});
+
+test('GitHub rate limits pause automatic polling for the required retry period', async ({ page }) => {
+  const repo = await github(page, { 'note.txt': 'Original' });
+  await page.clock.install();
+  await connect(page);
+  let requests = 0;
+  await page.route(/\/git\/ref\/heads\/main$/, async route => {
+    const headers = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Authorization, X-GitHub-Api-Version, If-None-Match', 'Access-Control-Expose-Headers': 'Retry-After', 'Retry-After': '120' };
+    if (route.request().method() === 'OPTIONS') { await route.fulfill({ status: 200, headers }); return; }
+    requests++;
+    await route.fulfill({ status: 429, headers, json: { message: 'rate limit' } });
+  });
+  await page.clock.runFor(4100);
+  await expect.poll(() => requests).toBe(1);
+  await page.clock.runFor(20_000);
+  expect(requests).toBe(1);
+  expect(repo.messages).toEqual([]);
 });

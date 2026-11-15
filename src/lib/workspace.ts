@@ -312,7 +312,7 @@ export class Workspace {
     onProgress: (results: StateNode[], progress: SearchProgress) => void, resultLimit = 1000, includeFolders = false) {
     return this.searchNodes([from], query, signal,
       (results, progress) => onProgress([...results].sort((a, b) => (b.modified ?? 0) - (a.modified ?? 0) || a.name.localeCompare(b.name)), progress),
-      resultLimit, includeFolders);
+      resultLimit, includeFolders, false);
   }
 
   async searchAll(from: string, query: string, signal: AbortSignal,
@@ -326,7 +326,7 @@ export class Workspace {
   }
 
   private async searchNodes(starts: string[], query: string, signal: AbortSignal,
-    onProgress: (results: StateNode[], progress: SearchProgress) => void, resultLimit: number, includeFolders: boolean) {
+    onProgress: (results: StateNode[], progress: SearchProgress) => void, resultLimit: number, includeFolders: boolean, readEditDates = true) {
     const queue: { id: string; resource?: LocatedResource }[] = [];
     const seen = new Set<string>();
     const results: StateNode[] = [];
@@ -374,7 +374,7 @@ export class Workspace {
       signal.throwIfAborted();
       if (matches) {
         const node = this.remember(source.id, path, handle);
-        if (handle.kind === 'file') node.modified = handle instanceof GitHubFile
+        if (readEditDates && handle.kind === 'file') node.modified = handle instanceof GitHubFile
           ? await handle.repository.editedAt(handle.path) : (await handle.getFile()).lastModified;
         results.push(node);
       }

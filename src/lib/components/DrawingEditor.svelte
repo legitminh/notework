@@ -3,7 +3,7 @@
   import Control from './Control.svelte';
   import StorageNotice from './StorageNotice.svelte';
   import EditorTitle from './EditorTitle.svelte';
-  import { preserveContentFocus } from '../editor-focus';
+  import { preserveContentFocus, scrollPointIntoView } from '../editor-focus';
   import { onMount } from 'svelte';
   import { shortcutScope } from '../shortcut-scope.svelte';
   import { DRAWING_WIDTH, DRAWING_PAGE_HEIGHT, STROKE_WIDTH, drawingBottom, strokePoints, strokeWidth, sizedStroke, touchesStroke, type Drawing, type Point } from '../drawing';
@@ -13,8 +13,9 @@
   import { GitHubEditCancelled } from '../github/repository';
   import { draftQueue } from '../github/storage';
 
-  let { name, initial, initialDraft = false, onSave, onCommit, onDelete, onExit, backgroundHref, editableHref, foregroundHref, imageHeight, strokeOpacity = 1, surfaceTarget, stylusOnly, onExport, autosaveMs, usingTools = $bindable(false) }: {
+  let { name, initial, initialDraft = false, onSave, onCommit, onDelete, onExit, backgroundHref, editableHref, foregroundHref, imageHeight, strokeOpacity = 1, surfaceTarget, stylusOnly, onExport, autosaveMs, usingTools = $bindable(false), initialPoint }: {
     name: string;
+    initialPoint?: Point;
     backgroundHref?: string;
     editableHref?: string;
     foregroundHref?: string;
@@ -366,6 +367,14 @@
     saved = initial;
     githubPending = initialDraft;
     lastSaveAt = Date.now();
+    const openingFrame = initialPoint ? requestAnimationFrame(() => {
+      if (!active) return;
+      canvas.focus({ preventScroll: true });
+      scrollPointIntoView(canvas, () => {
+        const matrix = canvas.getScreenCTM();
+        return new DOMPoint(initialPoint![0], initialPoint![1]).matrixTransform(matrix ?? undefined);
+      });
+    }) : undefined;
     const shortcuts = (event: KeyboardEvent) => {
       const modal = shortcutScope.dialog;
       const target = event.target;
@@ -441,6 +450,7 @@
     window.addEventListener('beforeunload', beforeUnload);
     return () => {
       active = false;
+      if (openingFrame !== undefined) cancelAnimationFrame(openingFrame);
       clearAutosave();
       resize.disconnect();
       removeGestures();

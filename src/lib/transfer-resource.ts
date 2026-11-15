@@ -214,8 +214,8 @@ async function transferResourceInternal(workspace: Workspace, source: StateNode,
       const after = (pending?.after ?? before).replace(wikiPattern, (raw, token: string) => {
         const updated = replacements.get(token.trim());
         return updated ? `[[${updated}]]` : raw;
-      }).replace(/^([ \t]*\\(?:svg|png|jpeg|heic|ora)page\[)([^\]\r\n]+)(\][ \t]*\r?)$/gm,
-        (raw, prefix: string, token: string, suffix: string) => replacements.has(token) ? prefix + replacements.get(token) + suffix : raw);
+      }).replace(/^([ \t]*\\(?:svg|png|jpeg|heic|ora)?page\[)([^\]\r\n]+)(\][ \t]*\r?)$/gmi,
+        (raw, prefix: string, token: string, suffix: string) => replacements.has(token.trim()) ? prefix + token.replace(token.trim(), replacements.get(token.trim())!) + suffix : raw);
       if (before === after) continue;
       const targetHandle = await next.handle(afterNode.id) as LocalFile;
       const outside = await sameEntry(native(handle), native(targetHandle));

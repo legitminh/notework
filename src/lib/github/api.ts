@@ -11,13 +11,14 @@ async function base64(blob: Blob) {
 }
 
 export class GitHubApiError extends Error {
-  constructor(readonly status: number, action: string, readonly repositoryId?: string) {
-    super(status === 401 ? 'The GitHub token is missing, expired, or was rejected.'
+  constructor(readonly status: number, action: string, readonly repositoryId?: string, readonly retryAt = 0) {
+    super(retryAt ? 'GitHub rate limit reached. Automatic checks will resume after the required wait.'
+      : status === 401 ? 'The GitHub token is missing, expired, or was rejected.'
       : status === 403 ? 'GitHub refused access. Check the token permissions, branch rules, and API limits.'
       : status === 404 ? 'GitHub could not find the repository, branch, or object. Check the connection in settings.'
       : `GitHub could not ${action} (HTTP ${status}). Check the branch rules or try again.`);
   }
-  get canReconnect() { return [401, 403, 404].includes(this.status); }
+  get canReconnect() { return !this.retryAt && [401, 403, 404].includes(this.status); }
 }
 
 export class GitHubWriteUncertain extends Error {
@@ -25,33 +26,56 @@ export class GitHubWriteUncertain extends Error {
 }
 
 export class GitHubApi {
+  private conditional = new Map<string, { etag: string; value: unknown }>();
+  private blockedUntil = 0;
+  private nextPoll = 0;
   constructor(readonly connection: GitHubConnection, private readonly token: string, private readonly repositoryId: string) {}
 
-  async request<T>(path: string, action: string, method = 'GET', body?: unknown): Promise<T> {
+  async request<T>(path: string, action: string, method = 'GET', body?: unknown, conditional = false): Promise<T> {
     const { owner, repo } = this.connection;
-    return this.fetchJson(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}${path}`, action, method, body);
+    return this.fetchJson(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}${path}`, action, method, body, conditional);
   }
 
-  private async fetchJson<T>(url: string, action: string, method: string, body?: unknown): Promise<T> {
+  private async fetchJson<T>(url: string, action: string, method: string, body?: unknown, conditional = false): Promise<T> {
+    if (Date.now() < this.blockedUntil) throw new GitHubApiError(429, action, this.repositoryId, this.blockedUntil);
+    const cached = conditional ? this.conditional.get(url) : undefined;
     let response: Response;
     try {
       response = await fetch(url, {
         method, redirect: 'error', cache: 'no-store', credentials: 'omit',
         headers: { Accept: 'application/vnd.github+json', Authorization: `Bearer ${this.token}`,
-          'X-GitHub-Api-Version': '2026-03-10', ...(body ? { 'Content-Type': 'application/json' } : {}) },
+          'X-GitHub-Api-Version': '2026-03-10', ...(body ? { 'Content-Type': 'application/json' } : {}),
+          ...(cached ? { 'If-None-Match': cached.etag } : {}) },
         body: body ? JSON.stringify(body) : undefined,
         signal: AbortSignal.timeout(15000)
       });
     } catch {
       throw new Error('Could not reach GitHub. Check your connection and try again.');
     }
-    if (!response.ok) throw new GitHubApiError(response.status, action, this.repositoryId);
-    return response.json() as Promise<T>;
+    const reset = Number(response.headers.get('x-ratelimit-reset')) * 1000;
+    if (response.headers.get('x-ratelimit-remaining') === '0') this.blockedUntil = Math.max(Date.now() + 60_000, Number.isFinite(reset) ? reset : 0);
+    if (conditional) this.nextPoll = Date.now() + Math.max(0, Number(response.headers.get('x-poll-interval')) || 0) * 1000;
+    if (response.status === 304 && cached) return cached.value as T;
+    if (!response.ok) {
+      const detail = await response.clone().json().catch(() => ({})) as { message?: string };
+      if (response.status === 429 || (response.status === 403 && (Date.now() < this.blockedUntil || /rate limit|abuse/i.test(detail.message ?? '')))) {
+        const retry = response.headers.get('retry-after');
+        const until = retry && (/^\d+(?:\.\d+)?$/.test(retry) ? Date.now() + Number(retry) * 1000 : Date.parse(retry));
+        this.blockedUntil = Math.max(this.blockedUntil, Number(until) || Date.now() + 60_000);
+        throw new GitHubApiError(response.status, action, this.repositoryId, this.blockedUntil);
+      }
+      throw new GitHubApiError(response.status, action, this.repositoryId);
+    }
+    const value = await response.json() as T;
+    const etag = response.headers.get('etag');
+    if (conditional && etag) this.conditional.set(url, { etag, value });
+    return value;
   }
 
   private branchRef() { return 'heads/' + this.connection.branch.split('/').map(encodeURIComponent).join('/'); }
-  async head() {
-    return (await this.request<{ object: { sha: string } }>(`/git/ref/${this.branchRef()}`, 'read the branch')).object.sha;
+  async head(poll = false) {
+    if (poll && Date.now() < this.nextPoll) return undefined;
+    return (await this.request<{ object: { sha: string } }>(`/git/ref/${this.branchRef()}`, 'read the branch', 'GET', undefined, true)).object.sha;
   }
 
   async snapshot(head: string): Promise<GitSnapshot> {

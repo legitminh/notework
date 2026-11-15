@@ -2,12 +2,14 @@
   import { onMount, tick, untrack } from 'svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
-  import { Keyflow, Document, ThemeToggle, min_box, state_viewport, lockstep_scrolling, key_presets, set_available_keys } from '@legitminh/keyflow';
+  import { Keyflow, Document, SubKeyframe, set_theme_id, min_box, state_viewport, lockstep_scrolling, key_presets, set_available_keys } from '@legitminh/keyflow';
   import { NavigationHistory } from '../lib/navigation-history';
   import FilePreview from '../lib/components/FilePreview.svelte';
+  import type { PreviewLocation } from '../lib/preview-location';
   import AppKeyboard from '../lib/components/AppKeyboard.svelte';
   import GlobalSearch from '../lib/components/GlobalSearch.svelte';
   import GitHubSyncProgress from '../lib/components/GitHubSyncProgress.svelte';
+  import { DEFAULT_GITHUB_POLL_SECONDS, GITHUB_POLL_SECONDS_KEY, readGitHubPollSeconds } from '../lib/github/poll-preferences';
   import { BackgroundSync, setBackgroundSync } from '../lib/github/background.svelte';
   import { keyboardChoices, isKeyboardChoice, type KeyboardChoice } from '../lib/keyboard';
   import Control from '../lib/components/Control.svelte';
@@ -60,6 +62,7 @@
   let capacity = $state<{ usage: number; quota: number; persistent: boolean }>();
   let storageStatus = $state('');
   let editing = $state(false);
+  let previewLocation = $state.raw<{ id: string; location: PreviewLocation }>();
   let creating = $state(false);
   let virtualKeyboard = $state(false);
   let keyboardChoice = $state<KeyboardChoice>('ascii');
@@ -70,6 +73,59 @@
   let heldModifier = $state(false);
   let activeEditor = $state<{ saveForNavigation: () => Promise<boolean>; resumeEditing?: () => void; focusToolbar?: () => void | Promise<void> }>();
   let wrapLines = $state(true);
+  type ThemeChoice = 'dark' | 'light' | 'system';
+  let themeChoice = $state<ThemeChoice>('system');
+  let themeMenuHost = $state<HTMLDivElement>();
+  let systemDark = $state(false);
+  let githubPollSeconds = $state(DEFAULT_GITHUB_POLL_SECONDS);
+  let githubPullRevision = $state(0);
+  let checkingGitHub = false;
+  let githubPausedUntil = 0;
+  const githubPollFailures = new Map<string, { count: number; next: number }>();
+  $effect(() => {
+    const timer = setInterval(() => { void checkGitHubUpdates(); }, Math.min(2_147_483_647, githubPollSeconds * 1000));
+    return () => clearInterval(timer);
+  });
+  async function checkGitHubUpdates() {
+    if (checkingGitHub || Date.now() < githubPausedUntil || loading || busy || picking || document.hidden || !navigator.onLine) return;
+    checkingGitHub = true;
+    let changed = false;
+    try {
+      for (const source of workspace.data.sources) {
+        const repository = workspace.github(source.id);
+        if (!repository || Date.now() < (githubPollFailures.get(source.id)?.next ?? 0)) continue;
+        try {
+          changed = await repository.exclusive(() => repository.sync(true)) || changed;
+          githubPollFailures.delete(source.id);
+          clearGitHubError(source.id);
+        } catch (error) {
+          const count = (githubPollFailures.get(source.id)?.count ?? 0) + 1;
+          const required = error instanceof GitHubApiError ? error.retryAt : 0;
+          githubPollFailures.set(source.id, { count, next: Math.max(required, Date.now() + Math.min(900_000, 60_000 * 2 ** Math.min(4, count - 1))) });
+          githubError = error;
+          if (required) { githubPausedUntil = required; break; }
+        }
+      }
+      if (changed) { githubPullRevision++; await refresh(); }
+    } finally { checkingGitHub = false; }
+  }
+  function updateGitHubInterval(input: HTMLInputElement) {
+    if (!input.checkValidity() || !Number.isFinite(input.valueAsNumber)) return;
+    githubPollSeconds = input.valueAsNumber;
+    try { localStorage.setItem(GITHUB_POLL_SECONDS_KEY, String(githubPollSeconds)); } catch { /* Applies in this tab. */ }
+  }
+  const themeChoices: ThemeChoice[] = ['dark', 'light', 'system'];
+  function chooseTheme(choice: ThemeChoice) {
+    themeChoice = choice;
+    try { localStorage.setItem('notework:theme', choice); } catch { /* Still applies in this tab. */ }
+  }
+  $effect(() => {
+    // Keyflow's original names describe ink; Notework labels the background.
+    const dark = themeChoice === 'dark' || (themeChoice === 'system' && systemDark);
+    set_theme_id(dark ? 1 : 0);
+    document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+    document.documentElement.style.setProperty('--pretty-lightness', dark ? '75%' : '25%');
+  });
   let prettyFontSize = $state(true);
   let prettyMargin = $state(true);
   let vimMode = $state(false);
@@ -122,6 +178,14 @@
   });
 
   onMount(() => {
+    const appearance = matchMedia('(prefers-color-scheme: dark)');
+    const followSystem = () => { systemDark = appearance.matches; };
+    followSystem();
+    appearance.addEventListener('change', followSystem);
+    try {
+      const saved = localStorage.getItem('notework:theme');
+      if (saved === 'dark' || saved === 'light' || saved === 'system') themeChoice = saved;
+    } catch { /* Follow the system without preference storage. */ }
     try { wrapLines = localStorage.getItem('notework:wrap-lines') !== 'false'; }
     catch { /* Use the default when storage is unavailable. */ }
     try { prettyFontSize = localStorage.getItem('notework:pretty-font-size') !== 'false'; }
@@ -141,6 +205,7 @@
       shortcutAlphabet = localStorage.getItem('notework:shortcut-alphabet') === 'letters' ? 'letters' : 'alphanumeric';
       set_available_keys(shortcutAlphabet === 'letters' ? key_presets.letters : key_presets.alphanumeric);
     } catch { /* Defaults work without preference storage. */ }
+    githubPollSeconds = readGitHubPollSeconds();
     autosaveSeconds = readAutosaveSeconds();
     pdfMargins = readPdfMargins();
     supported = supportsFilesystem();
@@ -197,7 +262,7 @@
     window.addEventListener('keyup', modifierUp, true);
     window.addEventListener('blur', resetModifier);
     window.addEventListener('keydown', cancelOnEscape, true);
-    return () => { sync.stop(); clearInterval(pruneInterval); window.removeEventListener('online', online); window.removeEventListener('keydown', modifierDown, true); window.removeEventListener('keyup', modifierUp, true); window.removeEventListener('blur', resetModifier); window.removeEventListener('keydown', cancelOnEscape, true); navigationVersion++; refreshVersion++; clearInterval(interval); window.removeEventListener('focus', poll); document.removeEventListener('visibilitychange', poll); };
+    return () => { appearance.removeEventListener('change', followSystem); sync.stop(); clearInterval(pruneInterval); window.removeEventListener('online', online); window.removeEventListener('keydown', modifierDown, true); window.removeEventListener('keyup', modifierUp, true); window.removeEventListener('blur', resetModifier); window.removeEventListener('keydown', cancelOnEscape, true); navigationVersion++; refreshVersion++; clearInterval(interval); window.removeEventListener('focus', poll); document.removeEventListener('visibilitychange', poll); };
   });
 
   $effect(() => {
@@ -275,14 +340,15 @@
     } finally { traversingHistory = false; }
   }
 
-  async function navigate(id: string, updateHistory = true, recordVisit = true) {
-    const operation = performNavigate(id, updateHistory, recordVisit);
+  async function navigate(id: string, updateHistory = true, recordVisit = true, openLocation?: PreviewLocation) {
+    const operation = performNavigate(id, updateHistory, recordVisit, openLocation);
     pendingNavigation = operation;
     try { await operation; }
     finally { if (pendingNavigation === operation) pendingNavigation = undefined; }
   }
 
-  async function performNavigate(id: string, updateHistory: boolean, recordVisit: boolean) {
+  async function performNavigate(id: string, updateHistory: boolean, recordVisit: boolean, openLocation?: PreviewLocation) {
+    previewLocation = undefined;
     const version = ++navigationVersion;
     refreshVersion++;
     try {
@@ -310,6 +376,7 @@
         finally { if (pendingHistory === id) pendingHistory = undefined; }
       }
       if (version !== navigationVersion) return;
+      previewLocation = openLocation ? { id, location: openLocation } : undefined;
       current = node; creating = false;
       if (recordVisit) (editing ? editorHistory : navigationHistory).visit(id);
       await refresh();
@@ -324,7 +391,7 @@
     }
   }
 
-  async function openFile() {
+  async function openFile(location?: PreviewLocation) {
     if (current?.kind !== 'file' || busy || relocateTarget) return;
     const id = current.id;
     const repository = workspace.github(current.sourceId);
@@ -341,19 +408,20 @@
     if (needsPermission && source) await reconnect(source.id);
     if (current?.id !== id || needsPermission) return;
     panel = null;
+    previewLocation = location ? { id, location } : undefined;
     editing = true;
     editorHistory.visit(id);
     state_viewport.viewport?.scrollTo({ top: 0 });
   }
 
-  async function openNode(node: StateNode) {
+  async function openNode(node: StateNode, location?: PreviewLocation) {
     if (node.kind !== 'file' || busy || relocateTarget) return;
     await navigate(node.id);
-    if (current?.id === node.id) await openFile();
+    if (current?.id === node.id) await openFile(location);
   }
 
-  async function openLinkedFile(id: string) {
-    await navigate(id);
+  async function openLinkedFile(id: string, location?: PreviewLocation) {
+    await navigate(id, true, true, location);
     if (currentId !== id) throw message instanceof Error ? message : new Error(typeof message === 'string' && message || 'The linked file could not be opened.');
   }
 
@@ -692,9 +760,9 @@
         {@const id = current.id}
         {#key current.uri}
           {#if current.drawing}
-            <StandaloneDrawing bind:this={activeEditor} {pdfMargins} {stylusOnly} autosaveMs={autosaveSeconds * 1000} {workspace} node={current} onExit={exitEditor} onMissing={() => { void unavailableCurrent(id, 'missing'); }} />
+            <StandaloneDrawing initialPoint={previewLocation?.id === id && previewLocation.location.kind === 'drawing' ? previewLocation.location.point : undefined} bind:this={activeEditor} {pdfMargins} {stylusOnly} autosaveMs={autosaveSeconds * 1000} {workspace} node={current} onExit={exitEditor} onMissing={() => { void unavailableCurrent(id, 'missing'); }} />
           {:else}
-            <TextEditor bind:this={activeEditor} {showLineNumbers} {showLineIndex} {workspace} node={current} {wrapLines} {prettyFontSize} {prettyMargin} {vimMode} {stylusOnly} {pdfMargins} autosaveMs={autosaveSeconds * 1000} onExit={exitEditor}
+            <TextEditor initialLocation={previewLocation?.id === id ? previewLocation.location : undefined} bind:this={activeEditor} {showLineNumbers} {showLineIndex} {workspace} node={current} {wrapLines} {prettyFontSize} {prettyMargin} {vimMode} {stylusOnly} {pdfMargins} autosaveMs={autosaveSeconds * 1000} onExit={exitEditor}
               onMissing={() => { void unavailableCurrent(id, 'missing'); }} onOpenLink={openLinkedFile} />
           {/if}
         {/key}
@@ -803,7 +871,10 @@
             {/if}
 
             <h3>appearance</h3>
-            <div class="action">{#if !shortcutScope.dialog}<ThemeToggle />{/if}</div>
+            <div class="action" bind:this={themeMenuHost}>{#if !shortcutScope.dialog}
+              <SubKeyframe label={`color theme: ${themeChoice}`} items={themeChoices.map((choice) => ({ label: choice, on_select: () => chooseTheme(choice) }))}
+                onopen={async () => { await tick(); themeMenuHost?.querySelector('.subkeyframe-panel')?.scrollIntoView({ block: 'nearest' }); }} />
+            {/if}</div>
             <Action label={`line numbers: ${showLineNumbers ? 'on' : 'off'}`} onSelect={() => {
               showLineNumbers = !showLineNumbers; saveAppearancePreference('notework:line-numbers', showLineNumbers);
             }} />
@@ -850,6 +921,11 @@
             <Action label="smaller type" onSelect={() => min_box.set(Math.max(24, min_box.value - 4))} />
             <Action label="larger type" onSelect={() => min_box.set(Math.min(72, min_box.value + 4))} />
             <p class="muted">Use the colored key labels or click a button. Tab and Enter also work. Scrolling is native.</p>
+            <h3>GitHub updates</h3>
+            <label class="field"><span>GitHub check interval (seconds)</span>
+              <input type="number" min="1" step="any" value={githubPollSeconds} oninput={(event) => updateGitHubInterval(event.currentTarget)} />
+            </label>
+            <p class="muted">Default: 4 seconds. Checks pause while offline or the app is hidden. Unchanged repositories use conditional requests; rate limits pause checks automatically. Open drafts are preserved.</p>
             <h3>autosave</h3>
             <label class="field"><span>autosave at most every (seconds)</span>
               <input type="number" min={MIN_AUTOSAVE_SECONDS} step="1" value={autosaveSeconds}
@@ -874,15 +950,19 @@
 
       <section class="state-display" aria-label="current state" tabindex="-1" bind:this={displayElement}>
         {#if current}
-          <h1>{current.name}{current.kind === 'directory' ? '/' : ''}</h1>
+          <h1 aria-label={current.name + (current.kind === 'directory' ? '/' : '')}>
+            {#if current.kind === 'file' && !relocateTarget}
+              <span data-action="open"><Control onclick={() => openFile()} disabled={busy || loading}>open: {current.name}</Control></span>
+            {:else}{current.name}{current.kind === 'directory' ? '/' : ''}{/if}
+          </h1>
           <p class="path">{workspace.label(current)} · {current.storage === 'local' ? 'computer' : storageLabel(current.storage)} · {current.kind === 'directory' ? 'folder' : 'file'}</p>
           {#if relocateTarget && current.kind === 'directory'}
             <Action label="choose" onSelect={() => chooseLocation(current)} disabled={busy || loading} />
           {/if}
           {#if current.kind === 'file' && !relocateTarget}
-            {#key current.uri}
+            {#key `${current.uri}:${githubPullRevision}`}
               <FilePreview {workspace} node={current} {wrapLines} {prettyFontSize} {prettyMargin} {showLineNumbers}
-                onOpen={openFile} disabled={busy || loading} />
+                onOpen={openFile} onOpenReference={(id, location) => { void workspace.node(id).then((node) => openNode(node, location)).catch((error) => { message = error; }); }} disabled={busy || loading} />
             {/key}
           {:else if current.kind === 'directory'}
             <p class="muted">{children.length} direct {children.length === 1 ? 'child' : 'children'} · {edges.length} reachable {edges.length === 1 ? 'state' : 'states'}</p>

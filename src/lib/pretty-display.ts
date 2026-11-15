@@ -1,6 +1,6 @@
 import { f } from '@legitminh/keyflow';
 import { getIndentUnit } from '@codemirror/language';
-import { countColumn, StateField, type EditorState, type Range, type Text } from '@codemirror/state';
+import { countColumn, Facet, StateField, type EditorState, type Range, type Text } from '@codemirror/state';
 import { Decoration, EditorView } from '@codemirror/view';
 import { svgPagePattern } from './drawing';
 
@@ -12,6 +12,8 @@ const headingText = Decoration.mark({ class: 'cm-pretty-text' });
 
 interface PrettyBlock { start: number; end: number; pretty: boolean }
 interface SourceLine { from: number; to: number; content?: { from: number; to: number } }
+export interface PrettyContext { pretty: boolean; depth: number }
+const inheritedContext = Facet.define<PrettyContext, PrettyContext>({ combine: (values) => values.at(-1) ?? { pretty: false, depth: 0 } });
 
 // Match balanced brackets so wiki links and other bracketed text can appear in a
 // block. Unfinished commands remain source text until their closing bracket exists.
@@ -56,9 +58,11 @@ function layout(state: EditorState) {
   const scopes: PrettyBlock[] = [];
   const source: SourceLine[] = [];
   const headings: Range<Decoration>[] = [];
+  const contexts = new Map<number, PrettyContext>();
+  const inherited = state.facet(inheritedContext);
   let previous: { from: number; indent: number; depth: number; textFrom: number; textTo: number } | undefined;
   const ancestors: number[] = [];
-  let pretty = false, from = 0;
+  let pretty = inherited.pretty, from = 0;
 
   for (const raw of doc.iterLines()) {
     const to = from + raw.length;
@@ -85,16 +89,17 @@ function layout(state: EditorState) {
       pretty = ['pretty', 'prettify'].includes(toggle[1].toLowerCase());
       ancestors.length = 0;
     } else if (pretty && line.trim() && !svgPagePattern.test(line)) {
+      headings.push(Decoration.line({ class: 'cm-pretty-line' }).range(from));
       const indentLength = /^[ \t]*/.exec(line)![0].length;
       const indent = countColumn(line, tabSize, indentLength);
       // A line has positive degree as soon as the next line is more indented.
       if (previous && indent > previous.indent) {
         const order = Math.floor(previous.indent / indentWidth);
-        const bucket = f(256, 32, previous.depth);
+        const bucket = f(256, 32, inherited.depth + previous.depth);
         const hue = bucket === undefined ? undefined : bucket * 360 / 256;
         headings.push(Decoration.line({
           class: 'cm-pretty-heading',
-          attributes: { style: `--pretty-order: ${order};${hue === undefined ? "" : `--pretty-hue: ${hue}; background-color: color-mix(in srgb, hsl(${hue} 100% 50%) 50%, var(--background)); color: #000;`}` }
+          attributes: { style: `--pretty-order: ${order};${hue === undefined ? '' : `--pretty-hue: ${hue};`}` }
         }).range(previous.from));
         // Keep leading spaces and tabs in the editor's normal font.
         headings.push(headingText.range(previous.textFrom, previous.textTo));
@@ -107,6 +112,7 @@ function layout(state: EditorState) {
       previous = undefined;
     }
 
+    contexts.set(from, { pretty, depth: inherited.depth + Math.max(0, ancestors.length - 1) });
     if (closing) {
       previous = undefined;
       scopes.pop(); ancestors.length = 0;
@@ -115,7 +121,7 @@ function layout(state: EditorState) {
     }
     from = to + 1;
   }
-  return { source, headings: Decoration.set(headings) };
+  return { source, headings: Decoration.set(headings, true), contexts };
 }
 
 function hideInactiveSource(state: EditorState, source: SourceLine[]) {
@@ -155,15 +161,22 @@ const prettyTheme = EditorView.baseTheme({
     // Padding adds space inside the block measured by CodeMirror.
     paddingBlockStart: 'max(0px, calc(3em - var(--pretty-order) * .25em))'
   },
-  '.cm-pretty-text': { fontWeight: 'bold', color: '#000' },
+  '.cm-pretty-line': { color: '#000' },
+  '.cm-pretty-line.cm-pretty-heading': { color: 'hsl(var(--pretty-hue, 0) 100% var(--pretty-lightness, 25%))' },
+  '.cm-pretty-line .cm-wiki-link': { color: 'inherit' },
+  '.cm-pretty-text': { fontWeight: 'bold' },
   '&.cm-pretty-size .cm-pretty-text': {
     // The heading inherits the regular editor size as its unit.
     fontSize: 'max(1.25em, calc(4em - var(--pretty-order) * .25em))'
   }
 });
 
-export function prettyDisplay(resizeText: boolean, margin: boolean) {
-  return [prettyField, prettyTheme,
+export function prettyContextAt(state: EditorState, position: number): PrettyContext {
+  return state.field(prettyField, false)?.contexts.get(state.doc.lineAt(position).from) ?? { pretty: false, depth: 0 };
+}
+
+export function prettyDisplay(resizeText: boolean, margin: boolean, context?: PrettyContext) {
+  return [prettyField, prettyTheme, context ? inheritedContext.of(context) : [],
     resizeText ? EditorView.editorAttributes.of({ class: 'cm-pretty-size' }) : [],
     margin ? EditorView.editorAttributes.of({ class: 'cm-pretty-margin' }) : []];
 }
