@@ -745,7 +745,7 @@
 
 <Keyflow options={{ storagePrefix: 'notework:keyflow:', minBox: 40, lockstep: false, keys: key_presets.alphanumeric }}>
   <Document>
-    <main class="app" class:editing-view={editing && !!current} class:line-index-view={editing && showLineIndex} aria-label="notework" aria-busy={loading}>
+    <main class="app" class:editing-view={editing && !!current} aria-label="notework" aria-busy={loading}>
       {#if relocateTarget}
         <aside class="relocate-banner" aria-label="relocate" aria-live="polite">
           <p>choose location for {relocateTarget.name}</p>
@@ -881,7 +881,7 @@
             <Action label={`line index mod 4: ${showLineIndex ? 'on' : 'off'}`} onSelect={() => {
               showLineIndex = !showLineIndex; saveAppearancePreference('notework:line-index', showLineIndex);
             }} />
-            <p class="muted">Zero-based line index: gray/gray = 0, white/gray = 1, gray/white = 2, white/white = 3.</p>
+            <p class="muted">Zero-based line index in spare margins: gray/gray = 0, transparent/gray = 1, gray/transparent = 2, transparent/transparent = 3.</p>
             <h3>keyboard</h3>
             <label class="field">shortcut input space
               <select aria-label="shortcut input space" bind:value={shortcutAlphabet} onchange={() => {

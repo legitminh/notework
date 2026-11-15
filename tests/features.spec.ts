@@ -96,22 +96,50 @@ test('virtual keyboard toggles immediately and stays responsive after modal sear
   expect(errors).toEqual([]);
 });
 
-test('line numbers can be removed and mod-4 edges use zero-based little endian colors', async ({ page }) => {
+test('mod-4 uses spare space without narrowing editors and alternates gray with transparency', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1800, height: 900 });
   await action(page, 'app settings').click();
-  await action(page, 'line numbers: on').click(); await action(page, 'line index mod 4: off').click();
+  await action(page, 'line numbers: on').click();
   await action(page, 'create new file/folder').click();
   await page.getByLabel('name', { exact: true }).fill('lines.txt'); await action(page, 'create text file').click();
   await action(page, 'open').click();
   const text = page.getByRole('textbox', { name: 'Edit lines.txt' }); await text.fill('zero\none\ntwo\nthree\nfour');
   await expect(page.locator('.cm-lineNumbers')).toHaveCount(0);
+  const geometry = () => page.locator('.editor-container').evaluate(container => {
+    const line = container.querySelector('.cm-line')!, content = container.querySelector('.cm-content')!;
+    const box = container.getBoundingClientRect(), row = line.getBoundingClientRect();
+    return { left: box.left, width: box.width, lineLeft: row.left, lineWidth: row.width,
+      borderLeft: getComputedStyle(container).borderLeftWidth, borderRight: getComputedStyle(container).borderRightWidth,
+      contentBorder: getComputedStyle(content).borderLeftWidth, linePadding: getComputedStyle(line).paddingLeft };
+  });
+  const wide = await geometry();
+  expect(wide.left).toBe(0);
+  expect([wide.borderLeft, wide.borderRight, wide.contentBorder, wide.linePadding]).toEqual(['0px', '0px', '0px', '0px']);
+  await page.setViewportSize({ width: 390, height: 844 });
+  const narrow = await geometry();
+  expect(narrow.width).toBe(390);
+  await textTools(page).getByRole('button', { name: 'Exit', exact: true }).click();
+  await home(page); await action(page, 'app settings').click();
+  await action(page, 'line index mod 4: off').click();
+  await action(page, 'lines.txt').click(); await action(page, 'open').click();
   await expect(page.locator('.line-mod-0')).toHaveCount(2);
-  const colors = await page.locator('.line-index').evaluateAll((lines) => lines.slice(0, 4).map((line) => {
-    const left = getComputedStyle(line, '::before'), right = getComputedStyle(line, '::after');
-    return [left.backgroundColor, right.backgroundColor];
-  }));
-  expect(colors).toEqual([['rgb(136, 136, 136)', 'rgb(136, 136, 136)'], ['rgb(255, 255, 255)', 'rgb(136, 136, 136)'], ['rgb(136, 136, 136)', 'rgb(255, 255, 255)'], ['rgb(255, 255, 255)', 'rgb(255, 255, 255)']]);
-  await page.screenshot({ path: '/private/tmp/notework-line-index.png' });
+  expect(await geometry()).toEqual(narrow);
+  await expect.poll(() => page.locator('.line-index').first().evaluate(line =>
+    [getComputedStyle(line, '::before').width, getComputedStyle(line, '::after').width])).toEqual(['0px', '0px']);
+  await page.setViewportSize({ width: 1800, height: 900 });
+  expect(await geometry()).toEqual(wide);
+  await expect.poll(() => page.locator('.line-index').first().evaluate(line =>
+    parseFloat(getComputedStyle(line, '::after').width))).toBeCloseTo(1800 - wide.width, 0);
+  for (const colorScheme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme });
+    const colors = await page.locator('.line-index').evaluateAll((lines) => lines.slice(0, 4).map((line) => {
+      const left = getComputedStyle(line, '::before'), right = getComputedStyle(line, '::after');
+      return [left.backgroundColor, right.backgroundColor];
+    }));
+    const gray = 'rgb(136, 136, 136)', clear = 'rgba(0, 0, 0, 0)';
+    expect(colors).toEqual([[gray, gray], [clear, gray], [gray, clear], [clear, clear]]);
+    await page.screenshot({ path: testInfo.outputPath(`line-index-${colorScheme}.png`) });
+  }
 });
 
 test('Draw SVG enters drawing immediately; Delete drawing removes its reference and saved file', async ({ page }) => {

@@ -703,17 +703,21 @@
             })
           ] })
         });
+        const scroll = container.closest<HTMLElement>('.editor-scroll')!;
         const measurePage = () => {
           if (!view) return;
           const gutter = view.dom.querySelector<HTMLElement>('.cm-gutters');
           const width = Math.max(1, view.scrollDOM.clientWidth - (gutter?.offsetWidth ?? 0));
           view.dom.style.setProperty('--drawing-page-width', `${width}px`);
           const content = (view.contentDOM.querySelector('.cm-line') ?? view.contentDOM).getBoundingClientRect();
-          view.dom.style.setProperty('--line-left-width', `${Math.max(8, content.left)}px`);
-          view.dom.style.setProperty('--line-right-width', `${Math.max(8, window.innerWidth - content.right)}px`);
+          const bounds = scroll.getBoundingClientRect();
+          // Use existing space only; never reserve room or cover line numbers.
+          view.dom.style.setProperty('--line-left-width', `${Math.max(0, content.left - bounds.left - (gutter?.offsetWidth ?? 0))}px`);
+          view.dom.style.setProperty('--line-right-width', `${Math.max(0, bounds.left + scroll.clientWidth - content.right)}px`);
         };
         pageResize = new ResizeObserver(measurePage);
         pageResize.observe(view.scrollDOM);
+        pageResize.observe(scroll);
         const gutter = view.dom.querySelector('.cm-gutters');
         if (gutter) pageResize.observe(gutter);
         measurePage();

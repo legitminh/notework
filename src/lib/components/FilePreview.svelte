@@ -158,7 +158,7 @@
 {#if error}<StorageNotice {error} />{/if}
 
 <style>
-  .file-preview { position: relative; margin-top: .5em; min-height: 120px; border: 1px solid var(--tertiary); }
+  .file-preview { position: relative; margin-top: .5em; min-height: 120px; border-block: 1px solid var(--tertiary); }
   .file-preview .preview-open { position: absolute; inset: 0; display: block; z-index: 1; opacity: 0; }
   .file-preview .preview-open :global(button) { display: block; width: 100%; height: 100%; cursor: pointer; }
   .file-preview:focus-within { outline: 2px solid var(--primary); outline-offset: 3px; }
