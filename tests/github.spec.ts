@@ -909,3 +909,73 @@ test('GitHub rate limits pause automatic polling for the required retry period',
   expect(requests).toBe(1);
   expect(repo.messages).toEqual([]);
 });
+
+test('removing a GitHub root forgets credentials, caches and failed sync jobs across retries and reloads', async ({ page }) => {
+  const repo = await github(page, { 'note.txt': 'Original' });
+  await connect(page); await openNote(page);
+  await editor(page, 'note.txt').fill('Unpublished draft');
+  repo.refuse(true);
+  await exit(page).click();
+  await expect(page.locator('.sync-progress')).toContainText('GitHub refused');
+  await action(page, 'home').click(); await action(page, 'app settings').click();
+  await page.getByRole('button', { name: 'Remove notebook from root', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Remove notebook from root', exact: true })).toHaveCount(0);
+  await expect(page.locator('.sync-progress')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'add notebook to root', exact: true })).toHaveCount(0);
+  const stored = async () => page.evaluate(async () => {
+    const open = (name: string) => new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open(name, 1); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
+    });
+    const workspace = await open('notework'), github = await open('notework-github');
+    const data = await new Promise<unknown>(resolve => {
+      const request = workspace.transaction('workspace').objectStore('workspace').get('current'); request.onsuccess = () => resolve(request.result);
+    });
+    const keys = await new Promise<IDBValidKey[]>(resolve => {
+      const request = github.transaction('data').objectStore('data').getAllKeys(); request.onsuccess = () => resolve(request.result);
+    });
+    workspace.close(); github.close(); return { data, keys };
+  });
+  await expect.poll(stored).toEqual({ data: { sources: [], rootIds: [], links: {}, hidden: { root: [] }, formats: {} }, keys: [] });
+  const requests = repo.requests.length;
+  repo.refuse(false);
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await page.reload();
+  await expect(action(page, 'app settings')).toBeEnabled();
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  expect(repo.requests).toHaveLength(requests);
+  expect(repo.content('note.txt')).toBe('Original');
+  expect((await stored()).keys).toEqual([]);
+});
+
+test('root removal aborts an in-flight sync read and does not recreate its queue', async ({ page }) => {
+  const repo = await github(page, { 'note.txt': 'Original' });
+  await connect(page); await openNote(page);
+  await editor(page, 'note.txt').fill('Draft to forget');
+  repo.refuse(true); await exit(page).click();
+  await expect(page.locator('.sync-progress')).toContainText('GitHub refused');
+  let arrived!: () => void, release!: () => void;
+  const started = new Promise<void>(resolve => { arrived = resolve; });
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/git/ref/heads/main', async route => { arrived(); await gate; await route.fallback(); });
+  repo.refuse(false);
+  await page.getByRole('button', { name: 'Retry GitHub sync', exact: true }).click();
+  await started;
+  try {
+    await action(page, 'home').click(); await action(page, 'app settings').click();
+    await page.getByRole('button', { name: 'Remove notebook from root', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Remove notebook from root', exact: true })).toHaveCount(0);
+    await expect(page.locator('.sync-progress')).toHaveCount(0);
+  } finally { release(); }
+  await page.reload();
+  await expect(action(page, 'app settings')).toBeEnabled();
+  expect(repo.content('note.txt')).toBe('Original');
+  expect(repo.messages).toEqual([]);
+  expect(await page.evaluate(async () => {
+    const db = await new Promise<IDBDatabase>(resolve => {
+      const request = indexedDB.open('notework-github', 1); request.onsuccess = () => resolve(request.result);
+    });
+    return new Promise<IDBValidKey[]>(resolve => {
+      const request = db.transaction('data').objectStore('data').getAllKeys(); request.onsuccess = () => { db.close(); resolve(request.result); };
+    });
+  })).toEqual([]);
+});

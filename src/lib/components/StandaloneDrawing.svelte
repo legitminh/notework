@@ -3,6 +3,7 @@
   import { GitHubFile } from '../github/repository';
   import Control from './Control.svelte';
   import StorageNotice from './StorageNotice.svelte';
+  import ImageLoading from './ImageLoading.svelte';
   import { onMount } from 'svelte';
   import type { Workspace, StateNode } from '../workspace';
   import { hasDrawingDraft, loadDrawing, saveDrawing, type DrawingResource } from '../drawing-files';
@@ -81,7 +82,7 @@
   <Control onclick={onExit}>Exit</Control>
   <StorageNotice {error} />
 {:else}
-  <p class="muted" role="status">opening drawing…</p>
+  <ImageLoading />
 {/if}
 
 {#if exportSource}

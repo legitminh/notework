@@ -1,5 +1,6 @@
-import { emptyWorkspace, type Source, type WorkspaceData } from './workspace';
-import { GitHubRepository } from './github/repository';
+import { emptyWorkspace, Workspace, type Source, type WorkspaceData } from './workspace';
+import { clearRepository } from './github/storage';
+import { GitHubDirectory, GitHubRepository } from './github/repository';
 
 let database: Promise<IDBDatabase> | undefined;
 function openDatabase(): Promise<IDBDatabase> {
@@ -75,7 +76,14 @@ export async function loadWorkspace(): Promise<WorkspaceData> {
       if (!(error instanceof DOMException) || error.name !== 'NotFoundError') throw error;
     }
   }
-  return { ...data, sources };
+  const workspace = new Workspace({ ...data, sources });
+  const removed = sources.filter((source) => !workspace.data.sources.includes(source));
+  for (const source of removed) if (source.handle instanceof GitHubDirectory) {
+    await source.handle.repository.disconnect();
+    await clearRepository(source.id);
+  }
+  await saveWorkspace(workspace.data);
+  return workspace.data;
 }
 
 export async function saveWorkspace(data: WorkspaceData): Promise<void> {

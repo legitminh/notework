@@ -336,7 +336,10 @@ test('navigation previews are read only, render prettify, and open the matching 
   await expect(preview.locator('.cm-content')).toHaveAttribute('contenteditable', 'false');
   await expect(preview.locator('.cm-pretty-heading').first()).toHaveCSS('color', 'rgb(128, 0, 0)');
   await expect(preview.locator('.cm-pretty-heading').first()).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
-  await expect(preview.locator('.cm-pretty-line').filter({ hasText: 'Leaf' })).toHaveCSS('color', 'rgb(0, 0, 0)');
+  for (const colorScheme of ['dark', 'light'] as const) {
+    await page.emulateMedia({ colorScheme });
+    await expect(preview.locator('.cm-pretty-line').filter({ hasText: 'Leaf' })).toHaveCSS('color', colorScheme === 'dark' ? 'rgb(204, 204, 204)' : 'rgb(51, 51, 51)');
+  }
   const hues = await preview.locator('.cm-pretty-heading').evaluateAll(lines => lines.map(line => (line as HTMLElement).style.getPropertyValue('--pretty-hue')));
   expect(hues).toEqual(['0', '45']);
   const shades = await preview.locator('.cm-pretty-heading').first().evaluate(line => {
@@ -357,6 +360,10 @@ test('navigation previews are read only, render prettify, and open the matching 
   await preview.getByRole('button', { name: 'Open preview.txt from preview', exact: true }).click();
   await expect(editor).toBeEditable();
   await expect(editor).toContainText('Parent');
+  for (const colorScheme of ['dark', 'light'] as const) {
+    await page.emulateMedia({ colorScheme });
+    await expect(editor.locator('.cm-pretty-line').filter({ hasText: 'Leaf' })).toHaveCSS('color', colorScheme === 'dark' ? 'rgb(204, 204, 204)' : 'rgb(51, 51, 51)');
+  }
 });
 
 test('bracket shortcuts traverse separate navigation and editor histories and branch after going back', async ({ page }) => {
@@ -592,4 +599,114 @@ test('page completion offers text targets and renaming updates the saved page di
   await expect(parent).toBeFocused();
   await page.keyboard.press('ControlOrMeta+End');
   await expect(page.getByRole('region', { name: 'Referenced file renamed-page.txt', exact: true }).locator('.cm-content')).toHaveText('Referenced content');
+});
+
+for (const format of ['svg', 'png']) {
+  test(`${format} keeps strokes drawn during saves and ignores palm touches around pen input`, async ({ page, context }) => {
+    await create(page, `continuous.${format}`, format === 'svg' ? 'svg file' : 'png image');
+    await action(page, 'open').click();
+    const canvas = page.getByRole('img', { name: `Drawing canvas for continuous.${format}` });
+    await expect(canvas).toBeVisible();
+    const protocol = await context.newCDPSession(page);
+    const position = async (y: number) => canvas.evaluate((svg, y) => {
+      const matrix = (svg as SVGSVGElement).getScreenCTM()!;
+      const a = new DOMPoint(80, y).matrixTransform(matrix), b = new DOMPoint(200, y).matrixTransform(matrix);
+      return { x: a.x, y: a.y, end: b.x };
+    }, y);
+    const draw = async (y: number) => {
+      const p = await position(y);
+      await page.mouse.move(p.x, p.y); await page.mouse.down();
+      await page.mouse.move(p.end, p.y, { steps: 5 }); await page.mouse.up();
+    };
+    await draw(60);
+    await page.evaluate(() => {
+      const original = FileSystemFileHandle.prototype.createWritable;
+      let release!: () => void;
+      const gate = new Promise<void>(resolve => { release = resolve; });
+      Object.assign(window, { releaseDrawingSave: release, drawingSaveStarted: false });
+      FileSystemFileHandle.prototype.createWritable = async function (...args) {
+        FileSystemFileHandle.prototype.createWritable = original;
+        Object.assign(window, { drawingSaveStarted: true });
+        await gate;
+        return original.apply(this, args);
+      };
+    });
+    await page.keyboard.press('Control+s');
+    await expect.poll(() => page.evaluate(() => Reflect.get(window, 'drawingSaveStarted'))).toBe(true);
+    await expect(page.getByText('saving drawing…', { exact: true })).toBeVisible();
+    await draw(120);
+    await expect(canvas.locator(':scope > polyline')).toHaveCount(2);
+    await page.evaluate(() => Reflect.get(window, 'releaseDrawingSave')());
+    await expect(page.getByText('saving drawing…', { exact: true })).toHaveCount(0);
+    const p = await position(180);
+    await protocol.send('Input.dispatchMouseEvent', { type: 'mousePressed', pointerType: 'pen', button: 'left', buttons: 1, x: p.x, y: p.y });
+    await canvas.evaluate(svg => {
+      const contacts = [1, 2].map(identifier => new Touch({ identifier, target: svg, clientX: 30 + identifier * 30, clientY: 50 }));
+      const dispatch = (type: string, touches: Touch[]) => svg.dispatchEvent(new TouchEvent(type, { bubbles: true, cancelable: true, touches, changedTouches: contacts }));
+      dispatch('touchstart', contacts); dispatch('touchend', []); dispatch('touchcancel', []);
+    });
+    await protocol.send('Input.dispatchMouseEvent', { type: 'mouseMoved', pointerType: 'pen', buttons: 1, x: p.end, y: p.y });
+    await protocol.send('Input.dispatchMouseEvent', { type: 'mouseReleased', pointerType: 'pen', button: 'left', buttons: 0, x: p.end, y: p.y });
+    // A palm lifting immediately after the pen must not undo the completed stroke.
+    await canvas.evaluate(svg => {
+      const contacts = [1, 2].map(identifier => new Touch({ identifier, target: svg, clientX: 30 + identifier * 30, clientY: 50 }));
+      svg.dispatchEvent(new TouchEvent('touchstart', { bubbles: true, cancelable: true, touches: contacts, changedTouches: contacts }));
+      svg.dispatchEvent(new TouchEvent('touchend', { bubbles: true, cancelable: true, touches: [], changedTouches: contacts }));
+    });
+    await expect(canvas.locator(':scope > polyline')).toHaveCount(3);
+    await drawTools(page).getByRole('button', { name: 'Exit', exact: true }).click();
+    await expect(action(page, 'open')).toBeVisible();
+    const data = (await bytes(page, `continuous.${format}`))!;
+    if (format === 'svg') expect(Buffer.from(data).toString().match(/<polyline/g)).toHaveLength(3);
+    else expect(await page.evaluate(async data => {
+      const bitmap = await createImageBitmap(new Blob([new Uint8Array(data)], { type: 'image/png' }));
+      const canvas = document.createElement('canvas'); canvas.width = bitmap.width; canvas.height = bitmap.height;
+      const ctx = canvas.getContext('2d')!; ctx.drawImage(bitmap, 0, 0); bitmap.close();
+      return [60, 120, 180].map(y => ctx.getImageData(140, y, 1, 1).data[3]);
+    }, data)).toEqual([255, 255, 255]);
+  });
+}
+
+test('image previews and editors animate a loading icon inside the image while decoding', async ({ page }) => {
+  await create(page, 'loading.png', 'png image');
+  await expect(action(page, 'open')).toBeVisible();
+  await page.reload();
+  await page.evaluate(() => {
+    const original = window.createImageBitmap;
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    Object.assign(window, { releaseImageDecode: release });
+    window.createImageBitmap = (async (...args: Parameters<typeof createImageBitmap>) => {
+      await gate;
+      return original(...args);
+    }) as typeof createImageBitmap;
+  });
+  await action(page, 'loading.png').click();
+  const preview = page.locator('.file-preview');
+  const indicator = preview.getByRole('status', { name: 'Loading image', exact: true });
+  await expect(indicator).toBeVisible();
+  await expect(indicator.locator('svg')).toHaveCSS('animation-name', 'image-loading-spin');
+  const inside = await indicator.evaluate(el => {
+    const icon = el.getBoundingClientRect(), image = el.closest('.file-preview')!.getBoundingClientRect();
+    return icon.top >= image.top && icon.bottom <= image.bottom && icon.left >= image.left && icon.right <= image.right;
+  });
+  expect(inside).toBe(true);
+  await page.evaluate(() => Reflect.get(window, 'releaseImageDecode')());
+  await expect(preview.locator('img')).toBeVisible();
+  await expect(indicator).toHaveCount(0);
+  await page.evaluate(() => {
+    const original = window.createImageBitmap;
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    Object.assign(window, { releaseImageDecode: release });
+    window.createImageBitmap = (async (...args: Parameters<typeof createImageBitmap>) => {
+      await gate;
+      return original(...args);
+    }) as typeof createImageBitmap;
+  });
+  await action(page, 'open').click();
+  await expect(page.getByRole('status', { name: 'Loading image', exact: true })).toBeVisible();
+  await page.evaluate(() => Reflect.get(window, 'releaseImageDecode')());
+  await expect(page.getByRole('img', { name: 'Drawing canvas for loading.png' })).toBeVisible();
+  await expect(page.getByRole('status', { name: 'Loading image', exact: true })).toHaveCount(0);
 });

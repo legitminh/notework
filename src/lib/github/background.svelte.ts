@@ -43,6 +43,7 @@ export class BackgroundSync {
     const job: GitHubSyncJob = { id: crypto.randomUUID(), nodeId: node.id, path: file.path, name: file.name, draft, text, createTokens, createPages };
     // Serialize persistence so concurrent drawing/text exits cannot lose a job.
     const next = this.saving.then(async () => {
+      if (this.repository(file.repository.id) !== file.repository) return;
       const queue = await updateSyncJobs(file.repository.id, (jobs) =>
         jobs.some((job) => job.draft.id === draft.id) ? jobs : [...jobs, job]);
       this.jobs.set(file.repository.id, queue); this.count();
@@ -52,6 +53,16 @@ export class BackgroundSync {
     this.retryAt = 0;
     void this.run();
   }
+  async forget(ids: string[]) {
+    if (!ids.length) return;
+    for (const id of ids) this.jobs.delete(id);
+    this.count();
+    this.problem = undefined; this.conflict = false;
+    await this.saving;
+    for (const id of ids) this.jobs.delete(id);
+    this.count();
+  }
+
   retry(review = false) { this.retryAt = 0; void this.run(review); }
   stop() { this.stopped = true; }
   private run(review = false): Promise<void> {
@@ -62,8 +73,10 @@ export class BackgroundSync {
   }
   private async drain(review: boolean) {
     this.running = true; this.problem = undefined; this.conflict = false;
+    let workingId: string | undefined;
     try {
       for (const [id] of this.jobs) {
+        workingId = id;
         let job: GitHubSyncJob | undefined;
         while (!this.stopped && (job = this.jobs.get(id)?.[0])) {
           const repository = this.repository(id);
@@ -72,12 +85,13 @@ export class BackgroundSync {
           const publish = async () => {
             const persisted = await readSyncJobs(id);
             const latest = persisted.find((item) => item.id === job!.id);
-            if (!latest) return false;
+            if (!latest || this.repository(id) !== repository) return false;
             job = latest;
             return this.publish(repository, latest, review);
           };
           const rebase = await repository.exclusive(publish);
           await this.saving;
+          if (this.repository(id) !== repository) break;
           const queue = await updateSyncJobs(id, (jobs) => jobs.filter((item) => item.id !== job!.id).map((item) =>
             rebase && item.path === job!.path && item.draft.base === job!.draft.base ? { ...item, draft: { ...item.draft, base: repository.editBase(item.path) } } : item));
           this.jobs.set(id, queue); this.completed++; this.count(); this.changed();
@@ -85,6 +99,10 @@ export class BackgroundSync {
         }
       }
     } catch (error) {
+      if (workingId && !this.repository(workingId)) {
+        setTimeout(() => this.retry(), 0);
+        return;
+      }
       this.conflict = error instanceof ConflictPending || error instanceof GitHubEditCancelled;
       this.problem = this.conflict ? 'A GitHub file changed. Review the versions when convenient; your draft is safe.' : error;
       this.retryAt = this.conflict ? Infinity : Date.now() + 30_000;

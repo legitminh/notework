@@ -40,7 +40,7 @@
   let redoStack = $state.raw<Drawing[]>([]);
   let points = $state.raw<Point[]>([]);
   type Tool = 'brush' | 'eraser' | 'lasso';
-  type Gesture = { input: number | string; limit: number; before: Drawing } & (
+  type Gesture = { input: number | string; pointerType?: string; limit: number; before: Drawing } & (
     { kind: Tool } | { kind: 'transform'; origin?: Point; selection: Selection; corner?: Corner }
   );
   const moveKey = 'm';
@@ -222,11 +222,12 @@
   function begin(event: PointerEvent) {
     if (event.pointerType === 'touch') {
       touches.add(event.pointerId);
-      if (touches.size >= 2) { multiTouch = true; cancelGesture(); }
+      if (touches.size >= 2) { multiTouch = true; if (gesture?.pointerType === 'touch') cancelGesture(); }
       if (multiTouch) return;
     }
     if (penOnly && event.pointerType !== 'pen') return;
-    if (event.button !== 0 || gesture || saving || publishing) return;
+    if (event.pointerType === 'pen' && gesture?.pointerType === 'touch') cancelGesture();
+    if (event.button !== 0 || gesture || publishing) return;
     const origin = point(event);
     if (!origin) return;
     event.preventDefault();
@@ -238,7 +239,7 @@
     }
     resumeEditing();
     canvas.setPointerCapture(event.pointerId);
-    gesture = { input: event.pointerId, limit: height, before: strokes, kind: tool };
+    gesture = { input: event.pointerId, pointerType: event.pointerType, limit: height, before: strokes, kind: tool };
     sample(event);
   }
 
@@ -416,7 +417,7 @@
       else undo();
     };
     const removeGestures = drawingGestures(canvas, canvasLayer, pageViewport, {
-      stylusOnly: () => penOnly, cancelGesture,
+      stylusOnly: () => penOnly, cancelGesture: () => { if (gesture?.pointerType === 'touch') cancelGesture(); },
       endTouches: () => { touches.clear(); multiTouch = false; }, undo, redo
     });
     canvasWidth = canvas.getBoundingClientRect().width;

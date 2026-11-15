@@ -70,6 +70,13 @@ export class Workspace {
       delete source.drawingScope;
       delete source.parent;
     }
+    const exclusions = [...(data.hidden[ROOT] ?? [])];
+    for (const id of exclusions) this.forget(id);
+    this.data.hidden[ROOT] = exclusions.filter((id) => {
+      const [sourceId, ...path] = JSON.parse(id) as string[];
+      return path.length && this.data.sources.some((source) => source.id === sourceId);
+    });
+    this.pruneDisconnectedSources();
   }
 
   private remember(sourceId: string, path: string[], handle: LocalHandle): StateNode {
@@ -173,6 +180,28 @@ export class Workspace {
       else for (const [token, target] of Object.entries(targets)) if (affected(target)) delete targets[token];
     }
     this.revision++;
+  }
+
+  /** Drop grants that no root transition or reachable directed link can use, without reading files. */
+  pruneDisconnectedSources() {
+    const reachable = new Set(this.data.rootIds);
+    const within = (id: string, parent: string) => {
+      const parts = JSON.parse(id) as string[], prefix = JSON.parse(parent) as string[];
+      const source = this.data.sources.find((source) => source.id === prefix[0]);
+      return prefix.every((part, index) => parts[index] === part) &&
+        (parts.length === prefix.length || prefix.length > 1 || source?.handle.kind === 'directory');
+    };
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const [from, targets] of Object.entries(this.data.links)) {
+        if (from !== ROOT && ![...reachable].some((id) => within(from, id))) continue;
+        for (const to of targets) if (!reachable.has(to)) { reachable.add(to); changed = true; }
+      }
+    }
+    for (const source of [...this.data.sources]) {
+      if (![...reachable].some((id) => (JSON.parse(id) as string[])[0] === source.id)) this.forget(nodeId(source.id));
+    }
   }
 
   async pruneMissing() {
@@ -444,8 +473,11 @@ export class Workspace {
 
   unlink(from: string, to: string) {
     if (from === ROOT) {
-      this.data.rootIds = this.data.rootIds.filter((id) => id !== to);
-      this.data.hidden[ROOT] = [...new Set([...(this.data.hidden[ROOT] ?? []), to])];
+      this.forget(to);
+      this.pruneDisconnectedSources();
+      // A broader grant may still expose this physical subtree. Keep only its exclusion, never its caches or edges.
+      const [sourceId, ...path] = JSON.parse(to) as string[];
+      if (path.length && this.data.sources.some((source) => source.id === sourceId)) this.data.hidden[ROOT] = [...new Set([...(this.data.hidden[ROOT] ?? []), to])];
     }
     else this.data.links[from] = (this.data.links[from] ?? []).filter((id) => id !== to);
   }

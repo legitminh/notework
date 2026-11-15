@@ -32,7 +32,7 @@
   import { relocateResource } from '../lib/relocate-resource';
   import LocalPicker from '../lib/components/LocalPicker.svelte';
   import { Workspace, ROOT, nodeId, parentId, storageLabel, type StateNode } from '../lib/workspace';
-  import { GitHubRepository, type GitHubConflict, type ResolveGitHubConflict } from '../lib/github/repository';
+  import { GitHubDirectory, GitHubRepository, type GitHubConflict, type ResolveGitHubConflict } from '../lib/github/repository';
   import { GitHubApiError, type GitHubConnection } from '../lib/github/api';
   import { setGitHubRecovery } from '../lib/github/recovery';
   import { clearRepository } from '../lib/github/storage';
@@ -95,10 +95,11 @@
         const repository = workspace.github(source.id);
         if (!repository || Date.now() < (githubPollFailures.get(source.id)?.next ?? 0)) continue;
         try {
-          changed = await repository.exclusive(() => repository.sync(true)) || changed;
+          changed = await repository.exclusive(() => workspace.github(source.id) === repository ? repository.sync(true) : Promise.resolve(false)) || changed;
           githubPollFailures.delete(source.id);
           clearGitHubError(source.id);
         } catch (error) {
+          if (workspace.github(source.id) !== repository) continue;
           const count = (githubPollFailures.get(source.id)?.count ?? 0) + 1;
           const required = error instanceof GitHubApiError ? error.retryAt : 0;
           githubPollFailures.set(source.id, { count, next: Math.max(required, Date.now() + Math.min(900_000, 60_000 * 2 ** Math.min(4, count - 1))) });
@@ -167,7 +168,8 @@
   const currentId = $derived(current?.id ?? ROOT);
   const canCreateHere = $derived(current?.storage === 'github' || (current?.storage === 'local' ? supported : browserDocuments));
   const source = $derived(workspace.data.sources.find((item) => item.id === current?.sourceId));
-  const githubSources = $derived.by(() => { graphRevision; return workspace.data.sources.filter((item) => item.storage === 'github'); });
+  const connectedSources = $derived.by(() => { graphRevision; return [...workspace.data.sources]; });
+  const githubSources = $derived(connectedSources.filter((item) => item.storage === 'github'));
   const githubRoot = $derived(current?.storage === 'github' && !current.path.length);
   const needsPermission = $derived(source?.storage === 'local' && permissions[source.id] !== 'granted');
   const canDeleteCurrent = $derived(!!current && canDeleteResource(workspace, current));
@@ -662,7 +664,29 @@
   }
 
   async function remove(from: string, to: string) {
-    workspace.unlink(from, to); await persist();
+    const sources = [...workspace.data.sources];
+    workspace.unlink(from, to);
+    const removed = sources.filter((source) => !workspace.data.sources.includes(source));
+    const repositories = removed.flatMap((source) => source.handle instanceof GitHubDirectory ? [source.handle.repository] : []);
+    const disconnecting = repositories.map((repository) => repository.disconnect());
+    if (from === ROOT) {
+      const prefix = JSON.parse(to) as string[];
+      const forgotten = (id: string) => {
+        if (id === ROOT) return false;
+        const parts = JSON.parse(id) as string[];
+        return prefix.every((part, index) => parts[index] === part) || removed.some((source) => source.id === parts[0]);
+      };
+      navigationHistory.forget(forgotten); editorHistory.forget(forgotten);
+    }
+    await sync.forget(removed.map((source) => source.id));
+    await Promise.all(disconnecting);
+    for (const source of removed) {
+      delete permissions[source.id];
+      githubPollFailures.delete(source.id);
+      clearGitHubError(source.id);
+      if (source.storage === 'github') await clearRepository(source.id);
+    }
+    await persist();
   }
 
   async function connectGitHub(owner: string, repo: string, branch: string, token: string) {
@@ -855,10 +879,10 @@
             {/each}
             <p class="muted">Removing a transition never deletes the original file or folder.</p>
 
-            {#if workspace.data.sources.length}
+            {#if connectedSources.length}
               <h3>connected sources</h3>
               <div class="source-list">
-                {#each workspace.data.sources as grant (grant.id)}
+                {#each connectedSources as grant (grant.id)}
                   <div class="config-row"><span>{grant.handle.name} · {grant.storage !== 'local' ? storageLabel(grant.storage ?? 'local') : permissions[grant.id] === 'granted' ? 'read access granted' : 'needs permission'}</span></div>
                   {#if grant.storage === 'local' && permissions[grant.id] !== 'granted'}
                     <Action label={`reconnect ${grant.handle.name}`} onSelect={() => reconnect(grant.id)} disabled={busy || loading} />

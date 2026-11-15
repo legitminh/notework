@@ -77,6 +77,16 @@ export class GitHubRepository {
     return next;
   }
 
+  async disconnect() {
+    this.api.disconnect();
+    await Promise.allSettled([this.syncing, this.mutationTail, ...this.files.values()]);
+    this.token = '';
+    this.snapshot = undefined;
+    this.entries.clear(); this.trackedDirectories.clear(); this.pending.clear(); this.removals.clear();
+    this.files.clear(); this.drafts.clear(); this.openFiles.clear(); this.editDates.clear(); this.queuedPaths.clear();
+    this.directoryIndex = undefined;
+  }
+
   assertNoQueuedSync(path: string) {
     if ([...this.queuedPaths].some((queued) => !path || queued === path || queued.startsWith(path + '/'))) {
       throw new Error('This item has pending GitHub sync. Let syncing finish or review its conflict before deleting, moving, or renaming it.');

@@ -10,6 +10,7 @@
   import { Interactable } from '@legitminh/keyflow';
   import { shortcutScope } from '../shortcut-scope.svelte';
   import StorageNotice from './StorageNotice.svelte';
+  import ImageLoading from './ImageLoading.svelte';
   import type { Workspace, StateNode } from '../workspace';
   import { decodedChunks, inspectTextFile } from '../text-resource';
   import { loadDrawing, loadDrawingReference } from '../drawing-files';
@@ -34,6 +35,8 @@
   let image = $state('');
   let error = $state.raw<unknown>();
   let loading = $state(true);
+  let imageReady = $state(false);
+  let imageFailed = $state(false);
   let view: EditorView | undefined;
 
   function drawingPoint(rect: DOMRect, event: MouseEvent): Point {
@@ -127,12 +130,14 @@
               })]
           }) });
           for (const name of new Set(view.state.field(pages.field).pages.map((page) => page.name))) {
+            view.dispatch({ effects: pages.setLoading.of({ name, loading: true }) });
             try {
               const resource = await loadDrawingReference(workspace, node, handle, name);
               if (!active) return;
               if (resource) view.dispatch({ effects: pages.setPreview.of({ name, strokes: resource.strokes,
                 image: resource.image && resource.preview ? { src: resource.preview, height: resource.image.height / resource.image.width * 1024 } : undefined }) });
             } catch { /* Keep the directive visible if its drawing is unavailable. */ }
+            finally { if (active) view?.dispatch({ effects: pages.setLoading.of({ name, loading: false }) }); }
           }
         }
       } catch (cause) { if (active) error = cause; }
@@ -150,8 +155,9 @@
   </span>
   <div class="preview-open-hint" aria-hidden="true"><span>open</span></div>
   <div class="preview-content">
-    {#if loading}<p class="muted">loading preview…</p>{/if}
-    {#if image}<img src={image} alt={`Preview of ${node.name}`} />{/if}
+    {#if node.drawing && !error && !imageFailed && (loading || !imageReady)}<ImageLoading />
+    {:else if loading}<p class="muted">loading preview…</p>{/if}
+    {#if image}<img src={image} alt={`Preview of ${node.name}`} onload={() => { imageReady = true; }} onerror={() => { imageFailed = true; error = new Error('Could not display this image.'); }} />{/if}
     <div bind:this={host}></div>
   </div>
 </div>
@@ -165,7 +171,8 @@
   .preview-open-hint { position: sticky; top: 0; height: 0; z-index: 2; pointer-events: none; opacity: 0; }
   .preview-open-hint span { display: block; text-align: center; font-size: clamp(12px, .5em, 20px); line-height: 1.7; border-bottom: 1px solid var(--tertiary); background: color-mix(in srgb, var(--background) 90%, transparent); }
   .file-preview:is(:hover, :focus-within) > .preview-open-hint { opacity: 1; }
-  .preview-content { pointer-events: none; overflow: hidden; min-height: 120px; }
+  .preview-content { position: relative; pointer-events: none; overflow: hidden; min-height: 120px; }
+  .preview-content :global(.image-loading-surface) { position: absolute; inset: 0; min-height: 0; }
   .embedded { margin: 0; min-height: 0; border: 0; }
   .embedded .preview-content { min-height: 0; }
   .embedded img { padding-left: var(--page-indent); }

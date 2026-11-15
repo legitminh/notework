@@ -361,7 +361,7 @@ test('sources removed from root by an earlier version stay outside system-wide s
   await expect(button(page, 'app settings')).toBeEnabled();
   await page.keyboard.press('ControlOrMeta+p'); await dialog.getByRole('searchbox').fill('Documents');
   await expect(dialog.locator('.search-status')).toContainText('0 results found');
-  expect((await storedGraph(page)).sources.map((source) => source.name)).toContain('Documents');
+  expect((await storedGraph(page)).sources.map((source) => source.name)).not.toContain('Documents');
 });
 
 test('removing a folder from root excludes cached files, old links, and link suggestions until reconnected', async ({ page }) => {
@@ -383,7 +383,10 @@ test('removing a folder from root excludes cached files, old links, and link sug
     await expect(dialog.locator('.search-status')).toContainText('0 results found');
     await dialog.getByRole('button', { name: 'Exit search', exact: true }).click();
   }
-  // The active outside.txt still has an old directed link into the removed source.
+  const forgotten = await storedGraph(page);
+  expect(forgotten.sources.map((source) => source.name)).toEqual(['outside.txt']);
+  expect(JSON.stringify(forgotten)).not.toContain('Documents');
+  // Old directed links into the removed source must also be gone.
   await button(page, 'outside.txt').click(); await openEditor(page);
   const editor = page.getByRole('textbox', { name: 'Edit outside.txt', exact: true });
   await editor.press('ControlOrMeta+End'); await page.keyboard.type('[[notes');
@@ -395,7 +398,8 @@ test('removing a folder from root excludes cached files, old links, and link sug
   await expect(dialog.locator('.search-status')).toContainText('0 results found');
   await dialog.getByRole('button', { name: 'Exit search', exact: true }).click();
   await button(page, 'app settings').click();
-  await page.getByRole('button', { name: 'add Documents to root', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'add Documents to root', exact: true })).toHaveCount(0);
+  await chooseItems(page, ['Documents/']);
   await button(page, 'close app settings').click();
   await button(page, 'search').click(); await dialog.getByRole('searchbox').fill('notes');
   await expect(dialog.locator('.search-status')).toContainText('1 result found');

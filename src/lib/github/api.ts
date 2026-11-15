@@ -26,6 +26,8 @@ export class GitHubWriteUncertain extends Error {
 }
 
 export class GitHubApi {
+  private lifetime = new AbortController();
+  disconnect() { this.lifetime.abort(); this.conditional.clear(); }
   private conditional = new Map<string, { etag: string; value: unknown }>();
   private blockedUntil = 0;
   private nextPoll = 0;
@@ -37,6 +39,7 @@ export class GitHubApi {
   }
 
   private async fetchJson<T>(url: string, action: string, method: string, body?: unknown, conditional = false): Promise<T> {
+    this.lifetime.signal.throwIfAborted();
     if (Date.now() < this.blockedUntil) throw new GitHubApiError(429, action, this.repositoryId, this.blockedUntil);
     const cached = conditional ? this.conditional.get(url) : undefined;
     let response: Response;
@@ -47,11 +50,12 @@ export class GitHubApi {
           'X-GitHub-Api-Version': '2026-03-10', ...(body ? { 'Content-Type': 'application/json' } : {}),
           ...(cached ? { 'If-None-Match': cached.etag } : {}) },
         body: body ? JSON.stringify(body) : undefined,
-        signal: AbortSignal.timeout(15000)
+        signal: AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(15000)])
       });
     } catch {
       throw new Error('Could not reach GitHub. Check your connection and try again.');
     }
+    this.lifetime.signal.throwIfAborted();
     const reset = Number(response.headers.get('x-ratelimit-reset')) * 1000;
     if (response.headers.get('x-ratelimit-remaining') === '0') this.blockedUntil = Math.max(Date.now() + 60_000, Number.isFinite(reset) ? reset : 0);
     if (conditional) this.nextPoll = Date.now() + Math.max(0, Number(response.headers.get('x-poll-interval')) || 0) * 1000;
@@ -67,6 +71,7 @@ export class GitHubApi {
       throw new GitHubApiError(response.status, action, this.repositoryId);
     }
     const value = await response.json() as T;
+    this.lifetime.signal.throwIfAborted();
     const etag = response.headers.get('etag');
     if (conditional && etag) this.conditional.set(url, { etag, value });
     return value;

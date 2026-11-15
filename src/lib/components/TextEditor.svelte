@@ -222,11 +222,14 @@
       if (newDrawings.has(name) || previews.has(name)) continue;
       const loading = catalog().then((files) => loadDrawingReference(workspace, node, handle, name, files));
       previews.set(name, loading);
+      view.dispatch({ effects: pageWidgets.setLoading.of({ name, loading: true }) });
       void loading.then((resource) => {
         if (active && resource && previews.get(name) === loading) {
           view?.dispatch({ effects: pageWidgets.setPreview.of({ name, strokes: resource.strokes, image: resource.preview && resource.image ? { src: resource.preview, height: resource.image.height / resource.image.width * 1024 } : undefined }) });
         }
-      }).catch(() => { /* Opening the preview will report unavailable drawings. */ });
+      }).catch(() => { /* Opening the preview will report unavailable drawings. */ }).finally(() => {
+        if (active && previews.get(name) === loading) view?.dispatch({ effects: pageWidgets.setLoading.of({ name, loading: false }) });
+      });
     }
   }
 

@@ -161,7 +161,7 @@ const prettyTheme = EditorView.baseTheme({
     // Padding adds space inside the block measured by CodeMirror.
     paddingBlockStart: 'max(0px, calc(3em - var(--pretty-order) * .25em))'
   },
-  '.cm-pretty-line': { color: '#000' },
+  '.cm-pretty-line': { color: 'var(--primary)' },
   '.cm-pretty-line.cm-pretty-heading': { color: 'hsl(var(--pretty-hue, 0) 100% var(--pretty-lightness, 25%))' },
   '.cm-pretty-line .cm-wiki-link': { color: 'inherit' },
   '.cm-pretty-text': { fontWeight: 'bold' },

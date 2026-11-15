@@ -3,6 +3,7 @@
   import DrawingEditor from './DrawingEditor.svelte';
   import Control from './Control.svelte';
   import StorageNotice from './StorageNotice.svelte';
+  import ImageLoading from './ImageLoading.svelte';
   import { imageFormat, imageCanvas, canvasBlob, composite, paintBlob, type ImageDocument, type ImageLayer } from '../images';
   import { DRAWING_WIDTH, strokeWidth, type Point, type Drawing } from '../drawing';
 
@@ -29,6 +30,12 @@
   const layered = $derived(imageFormat(name) === 'ora');
   const urls = new Set<string>();
   function url(blob: Blob) { const value = URL.createObjectURL(blob); urls.add(value); return value; }
+  function loadingPortal(element: HTMLElement, target?: HTMLElement) {
+    if (!target) return;
+    const marker = globalThis.document.createComment('image loading');
+    element.before(marker); target.append(element);
+    return { destroy() { marker.before(element); marker.remove(); } };
+  }
   async function prepare() {
     ready = false;
     for (const value of urls) URL.revokeObjectURL(value);
@@ -41,6 +48,10 @@
     background = url(behind);
     editable = url(base);
     foreground = url(ahead);
+    await Promise.all([background, editable, foreground].map(async (src) => {
+      const image = new Image(); image.src = src; await image.decode();
+    }));
+    if (!active) return;
     session++; ready = true;
   }
   async function withStrokes(strokes: Drawing) {
@@ -134,10 +145,13 @@
         onSave={async (strokes, requestWrite) => persist(await withStrokes(strokes), requestWrite)}
         {onCommit} {onExit} {onDelete} onExport={onExport ? (strokes) => { void withStrokes(strokes).then(onExport).catch((cause) => { error = cause; }); } : undefined} />
     {/key}
+  {:else if !error}
+    <div class="image-preparing" use:loadingPortal={surfaceTarget}><ImageLoading /></div>
   {/if}
 </div>
 
 <style>
+  .image-preparing { flex: 1 1 auto; display: flex; }
   .image-editor { min-height: 0; }
   .image-layers { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 14px; }
   .image-layers .field { margin: 0; font-size: inherit; }
