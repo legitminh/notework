@@ -1,9 +1,23 @@
 <script module lang="ts">
   import { getCM, vim, Vim } from '@replit/codemirror-vim';
   import type { EditorView as VimEditorView } from '@codemirror/view';
+  import { foldLine, indentFolding, type FoldAction } from '../indent-folding';
 
   const vimSaves = new WeakMap<VimEditorView, () => void>();
   Vim.defineEx('write', 'w', (cm) => vimSaves.get(cm.cm6)?.());
+  for (const [keys, action] of Object.entries({ zc: 'close', zo: 'open', za: 'toggle', zC: 'closeRecursive', zO: 'openRecursive', zM: 'closeAll', zR: 'openAll' } satisfies Record<string, FoldAction>)) {
+    const name = `notework-${action}`;
+    Vim.defineAction(name, (cm) => foldLine(cm.cm6, action));
+    Vim.mapCommand(keys, 'action', name, {}, { context: 'normal' });
+  }
+  Vim.defineEx('fold', 'fold', (cm) => foldLine(cm.cm6, 'close'));
+  Vim.defineEx('foldopen', 'foldo', (cm) => foldLine(cm.cm6, 'open'));
+  Vim.defineEx('foldclose', 'foldc', (cm) => foldLine(cm.cm6, 'close'));
+  Vim.defineOperator('notework-fold', (cm, _args, _ranges, anchor) => {
+    foldLine(cm.cm6, 'close', cm.indexFromPos(anchor));
+    return anchor;
+  });
+  Vim.mapCommand('zf', 'operator', 'notework-fold', {}, {});
 </script>
 
 <script lang="ts">
@@ -46,7 +60,7 @@
   import { commandCompletion, opensCommandArguments } from '../command-completion';
   import { pageReferences } from '../page-references';
   import { prettyDisplay } from '../pretty-display';
-  import { GitHubFile } from '../github/repository';
+  import { GitHubFile, gitBlobSha } from '../github/repository';
   import { draftQueue } from '../github/storage';
 
   let { workspace, node, wrapLines, prettyFontSize, prettyMargin, vimMode, stylusOnly, showLineNumbers, showLineIndex, pdfMargins, autosaveMs, onExit, onMissing, onOpenLink, initialLocation }: {
@@ -109,6 +123,7 @@
   let autosaveTimer: ReturnType<typeof setTimeout> | undefined;
   let lastSaveAt = 0;
   let githubBase: string | null = null;
+  let githubBasedOn: string | null = null;
   let githubPending = $state(false);
   let githubPublishing = $state(false);
   let queuePersisted = false;
@@ -410,7 +425,10 @@
     const version = revision, snapshot = view!.state.doc;
     if (dirty || replacement) {
       const content = replacement ?? new Blob([...encodedChunks(chunks(snapshot), format)]);
-      await repository.saveDraft(path, { base: repository.draft(path) ? repository.draft(path)!.base : githubBase, content, modified: Date.now() });
+      const previous = repository.draft(path);
+      await repository.saveDraft(path, { base: previous ? previous.base : githubBase,
+        basedOn: previous?.basedOn ?? githubBasedOn, content, modified: Date.now() });
+      githubBasedOn = await gitBlobSha(content);
       githubPending = true;
       savedRevision = version;
       dirty = revision !== version;
@@ -633,7 +651,8 @@
         format = detected;
         if (handle instanceof GitHubFile) {
           const draft = handle.repository.draft(handle.path);
-          githubBase = draft ? draft.base : handle.repository.editBase(handle.path);
+          githubBasedOn = await gitBlobSha(file);
+          githubBase = draft ? draft.base : githubBasedOn;
           githubPending = !!draft;
         }
         let doc = Text.empty;
@@ -679,7 +698,7 @@
               }
             })))),
             vimMode ? vim() : [],
-            wikiDisplay(leaveEditor), pageWidgets.field, prettyDisplay(prettyFontSize, prettyMargin),
+            indentFolding, wikiDisplay(leaveEditor), pageWidgets.field, prettyDisplay(prettyFontSize, prettyMargin),
             pageReferences({ workspace, source: node, wrapLines, prettyFontSize, prettyMargin, catalog, ancestors: [node.id], context: pageContext,
               onOpen: (id, location) => { void followPage(id, location); } }), textLock.of([]),
             wrapLines ? EditorView.lineWrapping : [],
@@ -767,6 +786,7 @@
       <Control aria-keyshortcuts={vimMode ? undefined : 'Control+F'} onclick={find} disabled={loading || githubPublishing}><span class="visually-hidden">Find and replace</span><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="10" cy="10" r="6" /><path d="m14.5 14.5 5 5" /></svg>{#if !vimMode}<span class="shortcut-hint" aria-hidden="true">Ctrl+F</span>{/if}</Control>
       <Control onclick={() => formatDialog.showModal()} disabled={loading || saving || githubPublishing}>Draw…<span class="shortcut-hint" aria-hidden="true">Command+B · SVG</span></Control>
       <Control onclick={() => imagePicker.click()} disabled={loading || saving || githubPublishing}>Insert image</Control>
+      <Control onclick={() => { if (view) foldLine(view); }} disabled={loading || githubPublishing}>Fold</Control>
       <Control onclick={() => openExport()} disabled={loading || githubPublishing}>Export</Control>
     </div>
     {/if}

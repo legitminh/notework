@@ -1,6 +1,14 @@
 import type { GitSnapshot } from './api';
 
-export interface GitHubDraft { base: string | null; content: Blob; modified: number; id?: string }
+export interface GitHubDraft {
+  base: string | null;
+  // Exact bytes the editor started from, including a locally queued draft.
+  // That draft may finish publishing while this editor remains open.
+  basedOn?: string | null;
+  content: Blob;
+  modified: number;
+  id?: string;
+}
 
 export type DraftQueue = <T>(task: () => Promise<T>) => Promise<T>;
 

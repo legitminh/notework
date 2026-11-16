@@ -6,6 +6,7 @@ import { prettyContextAt, type PrettyContext } from './pretty-display';
 import type { PreviewLocation } from './preview-location';
 import type { Workspace, StateNode } from './workspace';
 import PageEmbed from './components/PageEmbed.svelte';
+import { foldsChanged, insideFold } from './indent-folding';
 
 export interface PageReferenceOptions {
   workspace: Workspace;
@@ -51,16 +52,21 @@ export function pageReferences(options: PageReferenceOptions) {
     const decorations = [];
     for (let number = 1; number <= state.doc.lines; number++) {
       const line = state.doc.line(number), match = pageReferencePattern.exec(line.text);
-      if (!match || (!options.readOnly && state.selection.ranges.some((range) => range.from <= line.to && range.to >= line.from))) continue;
-      decorations.push(Decoration.replace({ block: true,
-        widget: new PageWidget(match[2].trim(), match[1], prettyContextAt(state, line.from), options)
-      }).range(line.from, line.to));
+      if (!match || insideFold(state, line.from) || (!options.readOnly && state.selection.ranges.some((range) => range.from <= line.to && range.to >= line.from))) continue;
+      const widget = new PageWidget(match[2].trim(), match[1], prettyContextAt(state, line.from), options);
+      // Vertical motions need a real line to land on. Keep the source line
+      // behind the preview until the selection reaches it and reveals its text.
+      if (!options.readOnly) decorations.push(
+        Decoration.line({ class: 'page-reference-source' }).range(line.from),
+        Decoration.widget({ block: true, side: 1, widget }).range(line.to)
+      );
+      else decorations.push(Decoration.replace({ block: true, widget }).range(line.from, line.to));
     }
     return Decoration.set(decorations);
   }
   return StateField.define({
     create: decorate,
-    update(value, transaction) { return transaction.docChanged || transaction.selection ? decorate(transaction.state) : value; },
+    update(value, transaction) { return transaction.docChanged || transaction.selection || foldsChanged(transaction) ? decorate(transaction.state) : value; },
     provide: (field) => EditorView.decorations.from(field)
   });
 }

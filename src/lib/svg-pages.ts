@@ -1,6 +1,7 @@
 import { imageLoadingIndicator } from './image-loading';
 import { StateEffect, StateField, type EditorState, type Text } from '@codemirror/state';
 import { Decoration, EditorView, WidgetType } from '@codemirror/view';
+import { foldsChanged, insideFold } from './indent-folding';
 import { DRAWING_WIDTH, DRAWING_PAGE_HEIGHT, strokeWidth, drawingBottom, strokePoints, svgPagePattern, type Drawing } from './drawing';
 
 export interface SvgPage { from: number; to: number; name: string }
@@ -74,6 +75,7 @@ export function svgPages(open: (page: SvgPage) => void, vimMode: () => boolean, 
   const setActive = StateEffect.define<ActivePage | undefined>();
   function decorate(state: EditorState, pages: SvgPage[], drawings: Map<string, { strokes: Drawing; image?: { src: string; height: number } }>, active?: ActivePage, loading = new Set<string>()) {
     return Decoration.set(pages.flatMap((page) => {
+      if (insideFold(state, page.from)) return [];
       if (readOnly && !drawings.has(page.name) && !loading.has(page.name)) return [];
       if (active?.from === page.from) return [Decoration.replace({ block: true, widget: new DrawingHost(active.host) }).range(page.from, page.to)];
       if (!readOnly && state.selection.ranges.some((range) => range.from <= page.to && range.to >= page.from)) return [];
@@ -93,7 +95,7 @@ export function svgPages(open: (page: SvgPage) => void, vimMode: () => boolean, 
     },
     update(value, transaction) {
       let { pages, drawings, active, loading } = value;
-      let changed = transaction.docChanged || !!transaction.selection;
+      let changed = transaction.docChanged || !!transaction.selection || foldsChanged(transaction);
       if (transaction.docChanged) {
         pages = scan(transaction.newDoc);
         if (active) active = { ...active, from: transaction.changes.mapPos(active.from) };

@@ -26,6 +26,7 @@ async function github(page: Page, initial: FixtureFiles) {
   let refuseWrites = false;
   let loseResponse = false;
   let pause: { arrived: () => void; release: Promise<void> } | undefined;
+  let pauseRead: { arrived: () => void; release: Promise<void> } | undefined;
   let token = 'test-token';
 
   function blob(content: Buffer) { const id = sha(content); blobs.set(id, content); return id; }
@@ -63,9 +64,14 @@ async function github(page: Page, initial: FixtureFiles) {
     if (method === 'GET' && !path) return respond({ default_branch: 'main', permissions: { push: true } });
     if (method === 'GET' && path === '/commits') return respond([{ commit: { committer: { date: '2026-01-01T00:00:00Z' } } }]);
     if (method === 'GET' && path === '/git/ref/heads/main') {
-      const etag = `"${head}"`;
+      const observedHead = head;
+      const etag = `"${observedHead}"`;
+      if (pauseRead) {
+        const waiting = pauseRead; pauseRead = undefined;
+        waiting.arrived(); await waiting.release;
+      }
       refChecks.push({ conditional: request.headers()['if-none-match'], status: request.headers()['if-none-match'] === etag ? 304 : 200 });
-      return request.headers()['if-none-match'] === etag ? respond(undefined, 304, { ETag: etag }) : respond({ object: { sha: head } }, 200, { ETag: etag });
+      return request.headers()['if-none-match'] === etag ? respond(undefined, 304, { ETag: etag }) : respond({ object: { sha: observedHead } }, 200, { ETag: etag });
     }
     if (method === 'GET' && path.startsWith('/git/commits/')) {
       const value = commits.get(path.split('/').at(-1)!);
@@ -134,6 +140,12 @@ async function github(page: Page, initial: FixtureFiles) {
       let arrived!: () => void, resume!: () => void;
       const started = new Promise<void>((resolve) => { arrived = resolve; });
       pause = { arrived, release: new Promise<void>((resolve) => { resume = resolve; }) };
+      return { started, resume };
+    },
+    holdRead() {
+      let arrived!: () => void, resume!: () => void;
+      const started = new Promise<void>((resolve) => { arrived = resolve; });
+      pauseRead = { arrived, release: new Promise<void>((resolve) => { resume = resolve; }) };
       return { started, resume };
     },
     loseResponse() { loseResponse = true; },
@@ -641,10 +653,22 @@ test('exiting an inline drawing publishes the asset while the note stays in edit
   await expect.poll(() => repo.messages).toEqual(['edit: ink.svg']);
   await expect.poll(() => repo.content('ink.svg')).toContain('<polyline');
   await expect.poll(() => repo.content('note.txt')).toBe(original);
+  await expect(syncProgress(page)).toHaveCount(0);
+  // The note caches this drawing resource across separate edits. Its earlier
+  // publication must become the base for another edit on this same device.
+  await page.getByRole('button', { name: 'Edit drawing ink.svg' }).click();
+  await expect(canvas).toBeVisible();
+  const second = (await canvas.boundingBox())!;
+  await page.mouse.move(second.x + 25, second.y + 100); await page.mouse.down();
+  await page.mouse.move(second.x + 90, second.y + 130, { steps: 4 }); await page.mouse.up();
+  await exit(page, 'Drawing toolbar').click();
+  await expect.poll(() => repo.content('ink.svg')?.match(/<polyline/g)).toHaveLength(2);
+  await expect(syncProgress(page)).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Review GitHub conflict', exact: true })).toHaveCount(0);
   await exit(page).click();
   await expect(action(page, 'open')).toBeVisible();
   await expect.poll(() => repo.content('note.txt')).toBe(original + ' with edits');
-  await expect.poll(() => repo.messages).toEqual(['edit: ink.svg', 'edit: note.txt']);
+  await expect.poll(() => repo.messages).toEqual(['edit: ink.svg', 'edit: ink.svg', 'edit: note.txt']);
 });
 
 test('failed writes retain the draft across reload and accept an upstream deletion without recreating it', async ({ page }) => {
@@ -823,6 +847,49 @@ test('a newer autosave survives publication of the earlier Exit snapshot', async
   await expect.poll(() => repo.content('note.txt')).toBe('Newer autosave');
   expect(repo.messages).toEqual(['edit: note.txt', 'edit: note.txt']);
   await expect(page.getByRole('button', { name: 'Review GitHub conflict', exact: true })).toHaveCount(0);
+});
+
+test('an editor reopened during publication can save after acknowledgement without a false conflict', async ({ page }) => {
+  const repo = await github(page, { 'note.txt': 'Original' });
+  await connect(page); await openNote(page);
+  await editor(page, 'note.txt').fill('First snapshot');
+  const held = repo.holdPublish();
+  await exit(page).click();
+  try {
+    await held.started;
+    await action(page, 'open').click();
+    await expect(editor(page, 'note.txt')).toHaveText('First snapshot');
+  } finally { held.resume(); }
+  await expect(syncProgress(page)).toHaveCount(0);
+  await editor(page, 'note.txt').fill('First snapshot plus further edits');
+  await exit(page).click();
+  await expect.poll(() => repo.content('note.txt')).toBe('First snapshot plus further edits');
+  await expect(page.getByRole('button', { name: 'Review GitHub conflict', exact: true })).toHaveCount(0);
+  expect(repo.messages).toEqual(['edit: note.txt', 'edit: note.txt']);
+});
+
+test('a delayed branch read cannot roll back a successfully published snapshot', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('notework:github-poll-seconds', '3600'));
+  const repo = await github(page, { 'note.txt': 'Original' });
+  await connect(page); await openNote(page);
+  await editor(page, 'note.txt').fill('Published snapshot');
+  const publish = repo.holdPublish();
+  await exit(page).click();
+  await publish.started;
+  await action(page, 'home').click();
+  const read = repo.holdRead();
+  try {
+    await action(page, 'notebook/').click();
+    await read.started;
+    publish.resume();
+    await expect.poll(() => repo.content('note.txt')).toBe('Published snapshot');
+    await expect(syncProgress(page)).toHaveCount(0);
+  } finally { publish.resume(); read.resume(); }
+  await action(page, 'note.txt').click();
+  await expect(page.getByRole('document', { name: 'Preview of note.txt', exact: true })).toHaveText('Published snapshot');
+  await page.reload();
+  await action(page, 'notebook/').click(); await action(page, 'note.txt').click();
+  await expect(page.getByRole('document', { name: 'Preview of note.txt', exact: true })).toHaveText('Published snapshot');
 });
 
 

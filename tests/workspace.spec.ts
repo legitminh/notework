@@ -1778,6 +1778,31 @@ test('Vim j and k land on SVG directives and let you edit them', async ({ page }
   await expect(editor.locator('.cm-line').nth(1)).toHaveText('x\\svgpage[sketch.svg]');
 });
 
+test('Vim j/k and arrows reveal page directives as editable text, including deletion', async ({ page }) => {
+  await page.evaluate(() => localStorage.setItem('notework:vim-mode', 'true'));
+  await page.reload();
+  await createNote(page, 'vim-page.txt');
+  const editor = page.getByRole('textbox', { name: 'Edit vim-page.txt' });
+  await expect(editor).toBeFocused();
+  await page.keyboard.press('i');
+  await page.keyboard.insertText('before\n\\page[embedded.txt]\nafter');
+  await page.keyboard.press('Escape');
+  const preview = page.locator('.editor-container > .cm-editor > .cm-scroller > .cm-content > .page-reference');
+  await expect(preview).toHaveCount(1);
+  await page.keyboard.press('k');
+  await expect(preview).toHaveCount(0);
+  await expect(editor.locator('.cm-line').nth(1)).toHaveText('\\page[embedded.txt]');
+  await page.keyboard.press('k');
+  await expect(preview).toHaveCount(1);
+  await page.keyboard.press('ArrowDown');
+  await expect(preview).toHaveCount(0);
+  await page.keyboard.type('0ix');
+  await page.keyboard.press('Escape');
+  await expect(editor.locator('.cm-line').nth(1)).toHaveText('x\\page[embedded.txt]');
+  await page.keyboard.type('dd');
+  await expect(editor.locator('.cm-line')).toHaveText(['before', 'after']);
+});
+
 test('configure deletes local files and folders through their physical parent handles', async ({ page }) => {
   await connectDocuments(page);
   await button(page, 'Documents/').click();

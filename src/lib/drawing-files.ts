@@ -6,7 +6,7 @@ import { assertAvailable, connectSibling, containingFolder, requireWrite, resolv
 import { readDrawing, serializeDrawing, type Drawing } from './drawing';
 import { writeResourceContent } from './resource-content';
 import { saveWorkspace } from './persistence';
-import { GitHubFile } from './github/repository';
+import { GitHubFile, gitBlobSha } from './github/repository';
 
 function drawingScope(source: StateNode) {
   const parent = parentId(source);
@@ -23,6 +23,7 @@ export interface DrawingResource {
   file: File;
   storage: Storage;
   githubBase?: string | null;
+  githubBasedOn?: string | null;
   image?: ImageDocument;
   preview?: string;
 }
@@ -34,7 +35,8 @@ export function hasDrawingDraft(resource?: DrawingResource) {
 export async function loadDrawing(handle: LocalFile, storage: Storage): Promise<DrawingResource> {
   const file = await handle.getFile();
   const draft = handle instanceof GitHubFile ? handle.repository.draft(handle.path) : undefined;
-  const githubBase = handle instanceof GitHubFile ? (draft ? draft.base : handle.repository.editBase(handle.path)) : undefined;
+  const githubBasedOn = handle instanceof GitHubFile ? await gitBlobSha(file) : undefined;
+  const githubBase = handle instanceof GitHubFile ? (draft ? draft.base : githubBasedOn) : undefined;
   if (imageFormat(file.name)) {
     const image = await readImage(file);
     const preview = await new Promise<string>(async (resolve, reject) => {
@@ -43,9 +45,9 @@ export async function loadDrawing(handle: LocalFile, storage: Storage): Promise<
         reader.readAsDataURL(await canvasBlob(await composite(image)));
       } catch (error) { reject(error); }
     });
-    return { handle, file, strokes: [], storage, githubBase, image, preview };
+    return { handle, file, strokes: [], storage, githubBase, githubBasedOn, image, preview };
   }
-  return { handle, file, strokes: await readDrawing(file), storage, githubBase };
+  return { handle, file, strokes: await readDrawing(file), storage, githubBase, githubBasedOn };
 }
 
 export function canCreateSiblingDrawing(reference: string) {
@@ -91,9 +93,10 @@ export async function saveDrawing(resource: DrawingResource, strokes: Drawing, r
   if (resource.handle instanceof GitHubFile) {
     const { repository, path } = resource.handle;
     const draft = repository.draft(path);
+    const content = new Blob([serializeDrawing(strokes)]);
     await repository.saveDraft(path, { base: draft ? draft.base : resource.githubBase ?? null,
-      content: new Blob([serializeDrawing(strokes)]), modified: Date.now() });
-    return { ...resource, file: await resource.handle.getFile(), strokes };
+      basedOn: draft?.basedOn ?? resource.githubBasedOn, content, modified: Date.now() });
+    return { ...resource, file: await resource.handle.getFile(), strokes, githubBasedOn: await gitBlobSha(content) };
   }
   if (resource.storage === 'local') await requireWrite(resource.handle, requestWrite);
   const latest = await resource.handle.getFile();
@@ -173,7 +176,8 @@ export async function saveImage(resource: DrawingResource, image: ImageDocument,
   if (resource.handle instanceof GitHubFile) {
     const { repository, path } = resource.handle;
     const draft = repository.draft(path);
-    await repository.saveDraft(path, { base: draft ? draft.base : resource.githubBase ?? null, content, modified: Date.now() });
+    await repository.saveDraft(path, { base: draft ? draft.base : resource.githubBase ?? null,
+      basedOn: draft?.basedOn ?? resource.githubBasedOn, content, modified: Date.now() });
   } else {
     const latest = await resource.handle.getFile();
     if (latest.size !== resource.file.size || latest.lastModified !== resource.file.lastModified) throw new Error('The image changed outside the editor. Reopen it before saving.');
@@ -183,5 +187,6 @@ export async function saveImage(resource: DrawingResource, image: ImageDocument,
   const preview = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader(); reader.onload = () => resolve(reader.result as string); reader.onerror = () => reject(reader.error); reader.readAsDataURL(blob);
   });
-  return { ...resource, file: await resource.handle.getFile(), image, preview };
+  return { ...resource, file: await resource.handle.getFile(), image, preview,
+    githubBasedOn: resource.handle instanceof GitHubFile ? await gitBlobSha(content) : resource.githubBasedOn };
 }

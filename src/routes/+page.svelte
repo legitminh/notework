@@ -768,7 +768,7 @@
 </svelte:head>
 
 <Keyflow options={{ storagePrefix: 'notework:keyflow:', minBox: 40, lockstep: false, keys: key_presets.alphanumeric }}>
-  <Document>
+  <Document scrollKeys={editing && current ? false : {}}>
     <main class="app" class:editing-view={editing && !!current} aria-label="notework" aria-busy={loading}>
       {#if relocateTarget}
         <aside class="relocate-banner" aria-label="relocate" aria-live="polite">

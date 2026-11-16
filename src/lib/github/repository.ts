@@ -12,7 +12,7 @@ const key = (path: string, name: string) => {
   if (!name || name === '.' || name === '..' || /[/\x00]/.test(name)) throw new TypeError('Choose a valid item name.');
   return path ? path + '/' + name : name;
 };
-const hash = async (blob: Blob) => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-1',
+export const gitBlobSha = async (blob: Blob) => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-1',
   await new Blob([`blob ${blob.size}\0`, blob]).arrayBuffer())), (byte) => byte.toString(16).padStart(2, '0')).join('');
 
 interface Change { expected: string | null; expectedMode?: string; blob: Blob | null; mode: string; type: GitEntry['type']; modified: number }
@@ -40,6 +40,7 @@ export class GitHubRepository {
   private mutationTail = Promise.resolve();
   readonly queuedPaths = new Set<string>();
   private drafts = new Map<string, GitHubDraft>();
+  private draftTails = new Map<string, Promise<unknown>>();
   private openFiles = new Map<string, { file: File; users: number }>();
 
   constructor(readonly id: string, readonly connection: GitHubConnection, private token: string, snapshot?: GitSnapshot) {
@@ -79,7 +80,7 @@ export class GitHubRepository {
 
   async disconnect() {
     this.api.disconnect();
-    await Promise.allSettled([this.syncing, this.mutationTail, ...this.files.values()]);
+    await Promise.allSettled([this.syncing, this.mutationTail, ...this.draftTails.values(), ...this.files.values()]);
     this.token = '';
     this.snapshot = undefined;
     this.entries.clear(); this.trackedDirectories.clear(); this.pending.clear(); this.removals.clear();
@@ -119,11 +120,15 @@ export class GitHubRepository {
     if (!this.token) throw new GitHubApiError(401, 'connect', this.id);
     if (!navigator.onLine) throw new Error('GitHub is offline. Changes can stay in this browser until you reconnect.');
     return this.syncing ??= (async () => {
+      const startedFrom = this.snapshot;
       const head = await this.api.head(poll);
       if (head && head !== this.snapshot?.head) {
         const snapshot = await this.api.snapshot(head);
-        await storeSnapshot(this.id, snapshot);
+        // A publish (or reconnect) can finish during this read. Its snapshot is
+        // newer than the poll's starting point; never install the delayed read.
+        if (this.snapshot !== startedFrom) return false;
         this.install(snapshot);
+        await storeSnapshot(this.id, snapshot);
         return true;
       }
       return false;
@@ -288,7 +293,7 @@ export class GitHubRepository {
       const blobs = new Map<string, Blob>();
       for (const [path, change] of changes) {
         const current = this.entries.get(path);
-        const sha = change.blob ? await hash(change.blob) : null;
+        const sha = change.blob ? await gitBlobSha(change.blob) : null;
         if ((current?.sha ?? null) === sha && (!sha || current?.mode === change.mode)) continue;
         if ((current?.sha ?? null) !== change.expected || current?.mode !== change.expectedMode) throw new GitHubChanged(path);
         if (change.blob) {
@@ -336,7 +341,16 @@ export class GitHubRepository {
 
   editBase(path: string) { return this.entries.get(path)?.sha ?? null; }
   draft(path: string) { return this.drafts.get(path); }
-  async saveDraft(path: string, draft?: GitHubDraft) {
+  private mutateDraft<T>(path: string, task: () => Promise<T>): Promise<T> {
+    const next = (this.draftTails.get(path) ?? Promise.resolve()).then(task, task);
+    this.draftTails.set(path, next);
+    void next.finally(() => { if (this.draftTails.get(path) === next) this.draftTails.delete(path); }).catch(() => {});
+    return next;
+  }
+  saveDraft(path: string, draft?: GitHubDraft) {
+    return this.mutateDraft(path, () => this.saveDraftNow(path, draft));
+  }
+  private async saveDraftNow(path: string, draft?: GitHubDraft) {
     const previous = this.drafts.get(path);
     if (draft) {
       if (previous?.content === draft.content && previous.base === draft.base) return;
@@ -350,16 +364,19 @@ export class GitHubRepository {
     this.directoryIndex = undefined;
   }
 
-  async acknowledgeDraft(path: string, published: GitHubDraft, rebase = true) {
-    const current = this.drafts.get(path);
-    if (!current) return;
-    if (current.id === published.id) await this.saveDraft(path);
-    else if (rebase && current.base === published.base) {
-      // A reopened editor may save newer text while an older snapshot publishes.
-      const next = { ...current, base: this.editBase(path) };
-      await replaceDraft(this.id, path, current.id, next);
-      if (this.drafts.get(path)?.id === current.id) this.drafts.set(path, next);
-    }
+  acknowledgeDraft(path: string, published: GitHubDraft, rebase = true) {
+    return this.mutateDraft(path, async () => {
+      const current = this.drafts.get(path);
+      if (!current) return;
+      if (current.id === published.id) await this.saveDraftNow(path);
+      else if (rebase && current.base === published.base) {
+        // Serialize against autosave so acknowledgement cannot erase or miss a
+        // draft being saved while an older snapshot finishes publishing.
+        const next = { ...current, base: this.editBase(path) };
+        await replaceDraft(this.id, path, current.id, next);
+        this.drafts.set(path, next);
+      }
+    });
   }
 
   async discardDrafts(path: string) {
@@ -370,8 +387,10 @@ export class GitHubRepository {
     await this.sync();
     const { head } = this.current();
     const base = this.editBase(path);
-    if (base === await hash(draft.content)) return { head, base, content: draft.content, unchanged: true };
-    if (base === draft.base) return { head, base, content: draft.content, unchanged: false };
+    if (base === await gitBlobSha(draft.content)) return { head, base, content: draft.content, unchanged: true };
+    if (base === draft.base || (draft.basedOn !== undefined && base === draft.basedOn)) {
+      return { head, base, content: draft.content, unchanged: false };
+    }
     const upstream = base ? await this.blob(base) : null;
     const content = await resolve({ path, local: draft.content, upstream });
     if (content === undefined) throw new GitHubEditCancelled();
