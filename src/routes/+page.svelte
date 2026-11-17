@@ -8,6 +8,9 @@
   import type { PreviewLocation } from '../lib/preview-location';
   import AppKeyboard from '../lib/components/AppKeyboard.svelte';
   import GlobalSearch from '../lib/components/GlobalSearch.svelte';
+  import SearchMenu, { type SearchMode } from '../lib/components/SearchMenu.svelte';
+  import ContentSearchDialog from '../lib/components/ContentSearch.svelte';
+  import { ContentSearch } from '../lib/content-search';
   import GitHubSyncProgress from '../lib/components/GitHubSyncProgress.svelte';
   import { DEFAULT_GITHUB_POLL_SECONDS, GITHUB_POLL_SECONDS_KEY, readGitHubPollSeconds } from '../lib/github/poll-preferences';
   import { BackgroundSync, setBackgroundSync } from '../lib/github/background.svelte';
@@ -166,6 +169,27 @@
   let pendingHistory: string | undefined;
   let refreshVersion = 0;
   const currentId = $derived(current?.id ?? ROOT);
+  let contentSearch = $state(false);
+  let contentIndex = $state.raw<ContentSearch>();
+  let searchMenu = $state(false);
+  let searchFrom = $state(ROOT);
+  let searchLabel = $state('home');
+  let searchEverywhere = $state(true);
+  async function beginSearch(mode: SearchMode) {
+    searchMenu = false;
+    contentSearch = false; globalSearch = false;
+    // A shortcut immediately after selecting a folder belongs to that destination.
+    if (pendingNavigation) await pendingNavigation;
+    searchEverywhere = mode.startsWith('all-');
+    const folder = current?.kind === 'file' ? parentId(current) : currentId;
+    searchFrom = searchEverywhere ? ROOT : folder;
+    searchLabel = searchFrom === ROOT ? 'home' : current
+      ? workspace.label(current.kind === 'directory' ? current : { ...current, path: current.path.slice(0, -1) }) : 'home';
+    if (mode.endsWith('-text')) {
+      contentIndex ??= new ContentSearch();
+      contentSearch = true;
+    } else globalSearch = true;
+  }
   const canCreateHere = $derived(current?.storage === 'github' || (current?.storage === 'local' ? supported : browserDocuments));
   const source = $derived(workspace.data.sources.find((item) => item.id === current?.sourceId));
   const connectedSources = $derived.by(() => { graphRevision; return [...workspace.data.sources]; });
@@ -247,15 +271,27 @@
     const modifierDown = (event: KeyboardEvent) => {
       if (event.isComposing || event.altKey) return;
       if (event.key === 'Meta' || event.key === 'Control') heldModifier = true;
+      const searchKey = event.key.toLowerCase();
+      if ((event.metaKey || event.ctrlKey) && (searchKey === 'p' || (searchKey === 'f' && !editing))) {
+        const mode: SearchMode = `${event.shiftKey ? 'all' : 'folder'}-${searchKey === 'f' ? 'text' : 'files'}`;
+        if (contentSearch || globalSearch) {
+          event.preventDefault(); event.stopImmediatePropagation(); heldModifier = false;
+          if (searchEverywhere === event.shiftKey && (searchKey === 'f' ? contentSearch : globalSearch))
+            document.querySelector<HTMLInputElement>('dialog[open] input[type=search]')?.focus();
+          else if (!event.repeat && !busy) beginSearch(mode);
+          return;
+        }
+        if (!loading && !busy && !creating && (!document.querySelector('dialog[open]') || searchMenu)) {
+          event.preventDefault(); event.stopImmediatePropagation(); heldModifier = false;
+          if (!event.repeat) beginSearch(mode);
+        }
+        return;
+      }
       if ((event.metaKey || event.ctrlKey) && !event.shiftKey && ['[', ']'].includes(event.key) &&
           !document.querySelector('dialog[open]') && (!editing || document.activeElement?.closest('.editor-controls'))) {
         event.preventDefault(); event.stopImmediatePropagation();
         if (!event.repeat) queueHistory(event.key === '[' ? -1 : 1);
         return;
-      }
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'p') {
-        event.preventDefault(); event.stopImmediatePropagation(); heldModifier = false;
-        if (!event.repeat && !loading && !document.querySelector('dialog[open]')) globalSearch = true;
       }
     };
     const modifierUp = (event: KeyboardEvent) => { if (event.key === 'Meta' || event.key === 'Control' || !(event.metaKey || event.ctrlKey)) heldModifier = false; };
@@ -264,7 +300,7 @@
     window.addEventListener('keyup', modifierUp, true);
     window.addEventListener('blur', resetModifier);
     window.addEventListener('keydown', cancelOnEscape, true);
-    return () => { appearance.removeEventListener('change', followSystem); sync.stop(); clearInterval(pruneInterval); window.removeEventListener('online', online); window.removeEventListener('keydown', modifierDown, true); window.removeEventListener('keyup', modifierUp, true); window.removeEventListener('blur', resetModifier); window.removeEventListener('keydown', cancelOnEscape, true); navigationVersion++; refreshVersion++; clearInterval(interval); window.removeEventListener('focus', poll); document.removeEventListener('visibilitychange', poll); };
+    return () => { appearance.removeEventListener('change', followSystem); sync.stop(); contentIndex?.destroy(); clearInterval(pruneInterval); window.removeEventListener('online', online); window.removeEventListener('keydown', modifierDown, true); window.removeEventListener('keyup', modifierUp, true); window.removeEventListener('blur', resetModifier); window.removeEventListener('keydown', cancelOnEscape, true); navigationVersion++; refreshVersion++; clearInterval(interval); window.removeEventListener('focus', poll); document.removeEventListener('visibilitychange', poll); };
   });
 
   $effect(() => {
@@ -792,7 +828,7 @@
         {/key}
       {:else}
       <nav aria-label="state navigation">
-        <Action label="search" onSelect={() => { globalSearch = true; }} disabled={loading || busy} />
+        <Action label="search" onSelect={() => { searchMenu = true; }} disabled={loading || busy} />
         {#if current}
           <Action label={`configure ${resourceType}`} onSelect={() => togglePanel('configure')} disabled={busy || loading} />
           {#if current.kind === 'directory'}
@@ -1034,8 +1070,20 @@
   </dialog>
   <AppKeyboard enabled={virtualKeyboard} choice={keyboardChoice} />
   <GitHubSyncProgress />
-  {#if heldModifier && !globalSearch}<aside class="modifier-hints" aria-label="Command and Control shortcuts">C · Copy &nbsp; V · Paste &nbsp; P · Search all files &nbsp; S · Save</aside>{/if}
-  {#if globalSearch}<GlobalSearch {workspace} from={currentId} {graphRevision} relocating={!!relocateTarget}
+  {#if heldModifier && !globalSearch && !contentSearch && !searchMenu}<aside class="modifier-hints" aria-label="Command and Control shortcuts">C · Copy &nbsp; V · Paste &nbsp; F · Search text in folder children &nbsp; P · Search file in folder children &nbsp; Shift+F · Search text in all files &nbsp; Shift+P · Search file in all files &nbsp; S · Save</aside>{/if}
+  {#if searchMenu}<SearchMenu onChoose={beginSearch} onClose={() => { searchMenu = false; }} />{/if}
+  {#if contentSearch && contentIndex}<ContentSearchDialog {workspace} index={contentIndex} from={searchFrom}
+    label={searchLabel} {graphRevision}
+    onOpen={async (node, position) => {
+      if (editing && !await activeEditor?.saveForNavigation()) throw new Error('Save could not finish. Exit search to resolve the editor’s save message.');
+      editing = false;
+      await navigate(node.id);
+      if (currentId === node.id) {
+        contentSearch = false;
+        if (!relocateTarget) await openFile({ kind: 'text', position });
+      }
+    }} onClose={() => { contentSearch = false; }} />{/if}
+  {#if globalSearch}<GlobalSearch {workspace} from={searchFrom} everywhere={searchEverywhere} scopeLabel={searchLabel} {graphRevision} relocating={!!relocateTarget}
     onChoose={chooseGlobalLocation} onSelect={selectGlobalResult} onClose={() => { globalSearch = false; }} />{/if}
   {#if picking}
     <LocalPicker onSelect={add} onCancel={() => { picking = false; }} />

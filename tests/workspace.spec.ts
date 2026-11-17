@@ -11,6 +11,11 @@ declare global {
 
 // Exact data attributes avoid including Keyflow's dynamically assigned shortcuts in locators.
 const button = (page: Page, name: string) => page.locator(`[data-action=${JSON.stringify(name)}] button`);
+async function openAllFileSearch(page: Page) {
+  await button(page, 'search').click();
+  await page.getByRole('dialog', { name: 'Search', exact: true })
+    .getByRole('button', { name: 'search file in all files', exact: true }).click();
+}
 const errors = new WeakMap<Page, string[]>();
 const toolbar = (page: Page, name: string) =>
   page.getByRole('group', { name: 'Editor toolbar' }).getByRole('button', { name: name === 'Brush' ? 'Draw…' : name, exact: true });
@@ -284,12 +289,12 @@ test('search spans connected sources from any file and respects hidden children'
   await chooseFile(page);
   await button(page, 'close app settings').click();
   await button(page, 'Documents/').click();
-  await button(page, 'search').click();
+  await openAllFileSearch(page);
   await page.getByRole('searchbox').fill('notes');
   await expect(page.locator('.search-status')).toContainText('1 result found');
   await button(page, 'notes.txt').click();
   await expect(button(page, 'open')).toBeVisible();
-  await button(page, 'search').click();
+  await openAllFileSearch(page);
   await page.getByRole('searchbox').fill('readme');
   await expect(page.locator('.search-status')).toContainText('1 result found');
   await expect(page.locator('.search-result-row [data-action="readme.txt"]')).toBeVisible();
@@ -297,14 +302,14 @@ test('search spans connected sources from any file and respects hidden children'
   await button(page, '..').click(); await button(page, '..').click();
   await seedLegacyGraph(page, { hideAdobe: true });
   await button(page, 'Documents/').click();
-  await button(page, 'search').click();
+  await openAllFileSearch(page);
   await page.getByRole('searchbox').fill('notes');
   await expect(page.locator('.search-status')).toContainText('0 results found');
   await page.getByRole('searchbox').fill('outside');
   await expect(page.locator('.search-status')).toContainText('1 result found');
 });
 
-for (const mode of ['navigation', 'Cmd/Ctrl+P'] as const) {
+for (const mode of ['navigation', 'Cmd/Ctrl+Shift+P'] as const) {
   test(`${mode} search ranks most recently edited files first`, async ({ page }) => {
     await connectDocuments(page);
     await page.evaluate(async () => {
@@ -317,8 +322,8 @@ for (const mode of ['navigation', 'Cmd/Ctrl+P'] as const) {
       }
     });
     await button(page, 'Documents/').click(); await button(page, 'Adobe/').click();
-    if (mode === 'navigation') await button(page, 'search').click();
-    else await page.keyboard.press('ControlOrMeta+p');
+    if (mode === 'navigation') await openAllFileSearch(page);
+    else await page.keyboard.press('ControlOrMeta+Shift+p');
     const dialog = page.getByRole('dialog', { name: 'Search all files', exact: true });
     await expect(dialog).toBeVisible();
     await expect(dialog.getByRole('searchbox')).toBeFocused();
@@ -338,12 +343,12 @@ test('system-wide search follows active links but excludes sources behind hidden
   await button(page, 'app settings').click(); await chooseFile(page);
   await seedLegacyGraph(page, { linkOnly: true });
   await expect(button(page, 'outside.txt')).toHaveCount(0);
-  await button(page, 'search').click();
+  await openAllFileSearch(page);
   await page.getByRole('searchbox').fill('outside');
   await expect(page.locator('.search-status')).toContainText('1 result found');
   await expect(page.locator('.search-result-row [data-action="outside.txt"]')).toBeVisible();
   await seedLegacyGraph(page, { linkOnly: true, hideLinkedParent: true });
-  await button(page, 'search').click();
+  await openAllFileSearch(page);
   await page.getByRole('searchbox').fill('outside');
   await expect(page.locator('.search-status')).toContainText('0 results found');
 });
@@ -353,13 +358,13 @@ test('sources removed from root by an earlier version stay outside system-wide s
   await button(page, 'app settings').click(); await chooseFile(page);
   await seedLegacyGraph(page, { removedFolder: true });
   const dialog = page.getByRole('dialog', { name: 'Search all files', exact: true });
-  await button(page, 'search').click(); await dialog.getByRole('searchbox').fill('notes');
+  await openAllFileSearch(page); await dialog.getByRole('searchbox').fill('notes');
   await expect(dialog.locator('.search-status')).toContainText('0 results found');
   await dialog.getByRole('searchbox').fill('outside');
   await expect(dialog.locator('.search-status')).toContainText('1 result found');
   await page.reload();
   await expect(button(page, 'app settings')).toBeEnabled();
-  await page.keyboard.press('ControlOrMeta+p'); await dialog.getByRole('searchbox').fill('Documents');
+  await page.keyboard.press('ControlOrMeta+Shift+p'); await dialog.getByRole('searchbox').fill('Documents');
   await expect(dialog.locator('.search-status')).toContainText('0 results found');
   expect((await storedGraph(page)).sources.map((source) => source.name)).not.toContain('Documents');
 });
@@ -368,15 +373,15 @@ test('removing a folder from root excludes cached files, old links, and link sug
   await connectDocuments(page); await button(page, 'app settings').click(); await chooseFile(page);
   await seedLegacyGraph(page, { cycle: true });
   const dialog = page.getByRole('dialog', { name: 'Search all files', exact: true });
-  await button(page, 'search').click(); await dialog.getByRole('searchbox').fill('notes');
+  await openAllFileSearch(page); await dialog.getByRole('searchbox').fill('notes');
   await expect(dialog.locator('.search-status')).toContainText('1 result found');
   await dialog.getByRole('button', { name: 'Exit search', exact: true }).click();
   await button(page, 'app settings').click();
   await page.getByRole('button', { name: 'Remove Documents from root', exact: true }).click();
   await button(page, 'close app settings').click();
   for (const entry of ['button', 'shortcut'] as const) {
-    if (entry === 'button') await button(page, 'search').click();
-    else await page.keyboard.press('ControlOrMeta+p');
+    if (entry === 'button') await openAllFileSearch(page);
+    else await page.keyboard.press('ControlOrMeta+Shift+p');
     await dialog.getByRole('searchbox').fill('notes');
     await expect(dialog.locator('.search-status')).toContainText('0 results found');
     await dialog.getByRole('searchbox').fill('Documents');
@@ -394,14 +399,14 @@ test('removing a folder from root excludes cached files, old links, and link sug
   await expect(page.getByRole('option', { name: 'notes.txt', exact: true })).toHaveCount(0);
   await editor.fill('Outside the Documents folder.'); await toolbar(page, 'Exit').click();
   await page.reload();
-  await button(page, 'search').click(); await dialog.getByRole('searchbox').fill('notes');
+  await openAllFileSearch(page); await dialog.getByRole('searchbox').fill('notes');
   await expect(dialog.locator('.search-status')).toContainText('0 results found');
   await dialog.getByRole('button', { name: 'Exit search', exact: true }).click();
   await button(page, 'app settings').click();
   await expect(page.getByRole('button', { name: 'add Documents to root', exact: true })).toHaveCount(0);
   await chooseItems(page, ['Documents/']);
   await button(page, 'close app settings').click();
-  await button(page, 'search').click(); await dialog.getByRole('searchbox').fill('notes');
+  await openAllFileSearch(page); await dialog.getByRole('searchbox').fill('notes');
   await expect(dialog.locator('.search-status')).toContainText('1 result found');
   expect(await page.evaluate(async () => {
     const documents = await (await navigator.storage.getDirectory()).getDirectoryHandle('Documents');
@@ -413,7 +418,7 @@ test('removing a folder from root excludes cached files, old links, and link sug
 test('search includes folders and gives every file result a quick-open action', async ({ page }) => {
   await connectDocuments(page);
   await button(page, 'Documents/').click();
-  await button(page, 'search').click();
+  await openAllFileSearch(page);
   const panel = page.locator('section[aria-labelledby="search-heading"]');
   const field = panel.getByRole('searchbox');
   await field.fill('Adobe');
@@ -421,7 +426,7 @@ test('search includes folders and gives every file result a quick-open action', 
   await panel.locator('[data-action="Adobe/"] button').click();
   await expect(page.getByRole('heading', { name: 'Adobe/', exact: true })).toBeVisible();
 
-  await button(page, 'search').click();
+  await openAllFileSearch(page);
   const nextPanel = page.locator('section[aria-labelledby="search-heading"]');
   await nextPanel.getByRole('searchbox').fill('notes');
   await expect(nextPanel.locator('.search-status')).toContainText('1 result found');
@@ -436,7 +441,7 @@ test('Cmd/Ctrl+P includes root folders and navigates to folder results', async (
   await connectDocuments(page);
   await button(page, 'Documents/').click();
   await button(page, 'Adobe/').click();
-  await page.keyboard.press('ControlOrMeta+p');
+  await page.keyboard.press('ControlOrMeta+Shift+p');
   const dialog = page.getByRole('dialog', { name: 'Search all files', exact: true });
   await dialog.getByRole('searchbox').fill('Documents');
   const row = dialog.locator('.search-result-row').filter({ has: button(page, 'Documents/') });
@@ -455,7 +460,7 @@ test.describe('search field modes', () => {
     test(`${exit} leaves the field, preserves results, and restores keyboard navigation`, async ({ page }) => {
       if (exit === 'button') await page.setViewportSize({ width: 390, height: 844 });
       await connectDocuments(page);
-      await button(page, 'search').click();
+      await openAllFileSearch(page);
       const field = page.getByRole('searchbox');
       const heading = page.getByRole('heading', { name: 'search all files and folders' });
       await expect(field).toBeFocused();
@@ -479,6 +484,7 @@ test.describe('search field modes', () => {
       const result = button(page, 'notes.txt');
       await expect(result.locator('.pending_route')).not.toHaveText('');
       await page.keyboard.press((await result.locator('.pending_route').textContent())!.trim());
+      await expect(page.getByRole('dialog', { name: 'Search all files', exact: true })).toHaveCount(0);
       await expect(button(page, 'open')).toBeVisible();
     });
   }
@@ -498,7 +504,7 @@ test('legacy directed links and cycles remain readable without Configure', async
   await button(page, 'outside.txt').click();
   await expect(button(page, 'configure')).toHaveCount(0);
   await expect(button(page, 'Documents/')).toBeVisible();
-  await button(page, 'search').click();
+  await openAllFileSearch(page);
   await page.getByRole('searchbox').fill('.txt');
   await expect(page.locator('.search-status')).toContainText('3 results found');
 });
@@ -722,7 +728,7 @@ test('mobile layout fits, scrolling remains native, and text entry does not trig
   await expect(page.locator('.viewport')).toHaveCSS('overflow-y', 'auto');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: '/private/tmp/notework-mobile.png' });
-  await button(page, 'search').click();
+  await openAllFileSearch(page);
   await page.getByRole('searchbox').fill('1234qwerasdf');
   await expect(page.getByRole('searchbox')).toHaveValue('1234qwerasdf');
   await expect(page.getByRole('heading', { name: 'search all files and folders' })).toBeVisible();
@@ -2722,7 +2728,7 @@ test('cross-storage wiki links do not change physical children or parent navigat
   await button(page, '..').click();
   await expect(button(page, 'browser-target.txt')).toHaveCount(0);
   await expect(page.getByText('3 direct children', { exact: false })).toBeVisible();
-  await button(page, 'search').click();
+  await openAllFileSearch(page);
   await page.getByRole('searchbox').fill('browser-target');
   await expect(page.locator('.search-status')).toContainText('1 result found');
   await button(page, 'browser-target.txt').click();
@@ -2840,7 +2846,7 @@ test('relocate mode chooses folders only, cancels with Escape, and creates a des
   await expect(button(page, 'open')).toHaveCount(0);
   await expect(button(page, 'choose')).toHaveCount(0);
   await button(page, '..').click();
-  await button(page, 'search').click();
+  await openAllFileSearch(page);
   await page.getByRole('searchbox').fill('travel');
   await expect(page.locator('.search-status')).toContainText('1 result found');
   await expect(button(page, 'open')).toHaveCount(0);
@@ -2936,7 +2942,7 @@ test('relocate folders through search preserves descendants and rewrites saved b
   await createNote(page, 'index.txt');
   await page.getByRole('textbox', { name: 'Edit index.txt' }).fill('[[Project/Nested/note.txt]]');
   await toolbar(page, 'Exit').click(); await button(page, 'home').click(); await button(page, 'Project/').click();
-  await startRelocate(page, 'folder'); await button(page, 'home').click(); await button(page, 'search').click();
+  await startRelocate(page, 'folder'); await button(page, 'home').click(); await openAllFileSearch(page);
   await page.getByRole('searchbox').fill('Archive');
   await expect(page.locator('.search-status')).toContainText('1 result found');
   await page.locator('.search-result-row [data-action="choose"] button').click();
@@ -3107,4 +3113,233 @@ test('Keyflow drawing buttons retain accessible toggle states and keyboard actio
   await expect(brush).toHaveAttribute('aria-pressed', 'false');
   await expect(eraser).toHaveAttribute('aria-pressed', 'true');
   await expect(toolbar.getByRole('button', { name: 'Undo', exact: true })).toBeDisabled();
+});
+
+test('Cmd/Ctrl+F finds literal contents recursively and opens at the matching line', async ({ page }) => {
+  await connectDocuments(page);
+  await page.evaluate(async () => {
+    const documents = await (await navigator.storage.getDirectory()).getDirectoryHandle('Documents');
+    const adobe = await documents.getDirectoryHandle('Adobe');
+    const writer = await (await adobe.getFileHandle('notes.txt')).createWritable();
+    await writer.write('First line\r\nconst value = foo.bar("Needle");\r\nLast line'); await writer.close();
+  });
+  await button(page, 'Documents/').click();
+  await page.keyboard.press('Control+f');
+  const dialog = page.getByRole('dialog', { name: 'Find in contents', exact: true });
+  await expect(dialog.getByRole('searchbox')).toBeFocused();
+  await dialog.getByRole('searchbox').fill('FOO.bar("needle")');
+  await expect(dialog.locator('.content-search-status')).toContainText('1 matching file');
+  await expect(dialog.locator('.content-match-line')).toHaveText('2:');
+  await expect(dialog.locator('mark')).toHaveText('foo.bar("Needle")');
+  await page.screenshot({ path: '/private/tmp/notework-content-search.png' });
+  await page.keyboard.press('Escape');
+  await expect(dialog.getByRole('heading')).toBeFocused();
+  await page.keyboard.press('Meta+f');
+  await expect(dialog.getByRole('searchbox')).toBeFocused();
+  await expect(dialog.getByRole('searchbox')).toHaveValue('FOO.bar("needle")');
+  await dialog.locator('.content-match button').click();
+  await expect(dialog).toHaveCount(0);
+  const editor = page.getByRole('textbox', { name: 'Edit notes.txt' });
+  await expect(editor).toContainText('const value');
+  expect(await editor.evaluate((element) => {
+    const selection = window.getSelection()!;
+    const range = document.createRange(); range.selectNodeContents(element);
+    range.setEnd(selection.anchorNode!, selection.anchorOffset);
+    return range.toString();
+  })).toBe('First lineconst value = ');
+  // The editor keeps its existing in-document find gesture.
+  await page.keyboard.press('ControlOrMeta+f');
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator('.cm-search')).toBeVisible();
+});
+
+test('content search stays scoped, reuses the index, and refreshes changed and deleted files', async ({ page }) => {
+  await connectDocuments(page);
+  await button(page, 'Documents/').click(); await button(page, 'Adobe/').click();
+  await page.evaluate(async () => {
+    const adobe = await (await (await navigator.storage.getDirectory()).getDirectoryHandle('Documents')).getDirectoryHandle('Adobe');
+    const invalid = await (await adobe.getFileHandle('opaque.bin', { create: true })).createWritable();
+    await invalid.write(new Uint8Array([255, 1, 2])); await invalid.close();
+  });
+  await page.keyboard.press('ControlOrMeta+f');
+  const dialog = page.getByRole('dialog', { name: 'Find in contents', exact: true });
+  const input = dialog.getByRole('searchbox');
+  await expect(dialog.locator('.content-search-status')).toContainText('index ready');
+  const worker = page.workers().find((worker) => worker.url().includes('content-search-worker'))!;
+  expect(worker).toBeTruthy();
+  await worker.evaluate(() => {
+    const state = self as typeof self & { searchReads: number };
+    state.searchReads = 0;
+    const read = File.prototype.arrayBuffer;
+    File.prototype.arrayBuffer = function() { state.searchReads++; return read.call(this); };
+  });
+  for (const text of ['semantic', 'roles.', 's', 'se']) {
+    await input.fill(text);
+    await expect(dialog.locator('.content-search-status')).toContainText('1 matching file');
+  }
+  await input.fill('Welcome');
+  await expect(dialog.locator('.content-search-status')).toContainText('0 matching files');
+  await dialog.getByRole('button', { name: 'Exit search', exact: true }).click();
+  await page.keyboard.press('ControlOrMeta+f');
+  await expect(dialog.locator('.content-search-status')).toContainText('index ready');
+  expect(await worker.evaluate(() => (self as typeof self & { searchReads: number }).searchReads)).toBe(0);
+  await page.evaluate(async () => {
+    const adobe = await (await (await navigator.storage.getDirectory()).getDirectoryHandle('Documents')).getDirectoryHandle('Adobe');
+    const writer = await (await adobe.getFileHandle('notes.txt')).createWritable();
+    await writer.write('Replacement needle'); await writer.close();
+    const newFile = await (await adobe.getFileHandle('new.txt', { create: true })).createWritable();
+    await newFile.write('Replacement needle too'); await newFile.close();
+  });
+  await button(page, 'refresh index').click();
+  await expect(dialog.locator('.content-search-status')).toContainText('index ready');
+  await input.fill('Replacement');
+  await expect(dialog.locator('.content-search-status')).toContainText('2 matching files');
+  await input.fill('semantic');
+  await expect(dialog.locator('.content-search-status')).toContainText('0 matching files');
+  await page.evaluate(async () => {
+    const adobe = await (await (await navigator.storage.getDirectory()).getDirectoryHandle('Documents')).getDirectoryHandle('Adobe');
+    await adobe.removeEntry('notes.txt');
+  });
+  await button(page, 'refresh index').click();
+  await expect(dialog.locator('.content-search-status')).toContainText('index ready');
+  await input.fill('Replacement');
+  await expect(dialog.locator('.content-search-status')).toContainText('1 matching file');
+});
+
+test('content search follows directed links and cycles without walking parents or removed roots', async ({ page }) => {
+  await connectDocuments(page);
+  await button(page, 'app settings').click(); await chooseItems(page, ['outside.txt']);
+  await button(page, 'close app settings').click();
+  await seedLegacyGraph(page, { linkOnly: true, cycle: true });
+  await button(page, 'Documents/').click(); await button(page, 'readme.txt').click();
+  await page.keyboard.press('ControlOrMeta+f');
+  let dialog = page.getByRole('dialog', { name: 'Find in contents', exact: true });
+  await dialog.getByRole('searchbox').fill('Outside the');
+  await expect(dialog.locator('.content-search-status')).toContainText('1 matching file');
+  await dialog.getByRole('button', { name: 'Exit search', exact: true }).click();
+  // A nested folder's scope does not climb into readme.txt or its links.
+  await button(page, '..').click(); await button(page, 'Adobe/').click();
+  await page.keyboard.press('ControlOrMeta+f');
+  await dialog.getByRole('searchbox').fill('Outside the');
+  await expect(dialog.locator('.content-search-status')).toContainText('0 matching files');
+  await dialog.getByRole('button', { name: 'Exit search', exact: true }).click();
+  await seedLegacyGraph(page, { removedFolder: true });
+  await page.keyboard.press('ControlOrMeta+f');
+  dialog = page.getByRole('dialog', { name: 'Find in contents', exact: true });
+  await dialog.getByRole('searchbox').fill('semantic');
+  await expect(dialog.locator('.content-search-status')).toContainText('index ready');
+  await expect(dialog.locator('.content-search-status')).toContainText('0 matching files');
+});
+
+test('content search excludes hidden branches and .git and handles UTF-16, drawings, and invalid bytes', async ({ page }) => {
+  await connectDocuments(page);
+  await button(page, 'app settings').click(); await chooseItems(page, ['utf16.txt']);
+  await button(page, 'close app settings').click();
+  await page.evaluate(async (drawing) => {
+    const documents = await (await navigator.storage.getDirectory()).getDirectoryHandle('Documents');
+    const git = await documents.getDirectoryHandle('.git', { create: true });
+    const head = await (await git.getFileHandle('HEAD', { create: true })).createWritable();
+    await head.write('ref: refs/heads/main'); await head.close();
+    const sketch = await (await documents.getFileHandle('sketch.svg', { create: true })).createWritable();
+    await sketch.write(drawing); await sketch.close();
+    const invalid = await (await documents.getFileHandle('invalid.txt', { create: true })).createWritable();
+    await invalid.write(new Uint8Array([255, 1, 2])); await invalid.close();
+  }, serializeDrawing([]));
+  await seedLegacyGraph(page, { hideAdobe: true });
+  await page.keyboard.press('ControlOrMeta+f');
+  const dialog = page.getByRole('dialog', { name: 'Find in contents', exact: true });
+  const input = dialog.getByRole('searchbox');
+  await input.fill('Hi');
+  await expect(dialog.locator('.content-search-status')).toContainText('1 matching file');
+  await expect(dialog.locator('.content-search-result')).toContainText('utf16.txt');
+  for (const text of ['semantic roles', 'refs/heads/main', 'data-notework-drawing', '\uFFFD']) {
+    await input.fill(text);
+    await expect(dialog.locator('.content-search-status')).toContainText('0 matching files');
+  }
+});
+
+test('search menu and all four shortcuts select folder or whole-graph scope case insensitively', async ({ page }) => {
+  await connectDocuments(page);
+  await button(page, 'Documents/').click(); await button(page, 'Adobe/').click();
+  await page.keyboard.down('Meta');
+  const hints = page.getByLabel('Command and Control shortcuts');
+  await expect(hints).toContainText('F · Search text in folder children');
+  await expect(hints).toContainText('P · Search file in folder children');
+  await expect(hints).toContainText('Shift+F · Search text in all files');
+  await expect(hints).toContainText('Shift+P · Search file in all files');
+  await page.keyboard.up('Meta');
+  for (const entry of ['menu', 'keyboard'] as const) {
+    for (const mode of [
+      { name: 'search text in folder children', key: 'Control+f', query: 'WELCOME', count: '0 matching files', content: true },
+      { name: 'search file in folder children', key: 'Meta+p', query: 'NOTES', count: '1 result found', content: false },
+      { name: 'search text in all files', key: 'Meta+Shift+f', query: 'WELCOME', count: '1 matching file', content: true },
+      { name: 'search file in all files', key: 'Control+Shift+p', query: 'README', count: '1 result found', content: false }
+    ]) {
+      if (entry === 'menu') {
+        await button(page, 'search').click();
+        const menu = page.getByRole('dialog', { name: 'Search', exact: true });
+        await expect(menu.getByRole('button')).toHaveCount(5);
+        await expect(button(page, 'configure folder').locator('.pending_route')).toHaveCount(0);
+        await menu.getByRole('button', { name: mode.name, exact: true }).click();
+        await expect(menu).toHaveCount(0);
+      } else await page.keyboard.press(mode.key);
+      const dialog = page.getByRole('dialog');
+      await expect(dialog.getByRole('searchbox')).toBeFocused();
+      await dialog.getByRole('searchbox').fill(mode.query);
+      await expect(dialog.locator(mode.content ? '.content-search-status' : '.search-status')).toContainText(mode.count);
+      await dialog.getByRole('button', { name: 'Exit search', exact: true }).click();
+    }
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  await button(page, 'search').click();
+  const menu = page.getByRole('dialog', { name: 'Search', exact: true });
+  expect(await menu.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await page.screenshot({ path: '/private/tmp/notework-search-menu.png' });
+  await page.keyboard.press('Escape'); await expect(menu).toHaveCount(0);
+});
+
+test('stopping indexing keeps partial results and refresh resumes discovery', async ({ page }) => {
+  await connectDocuments(page);
+  await button(page, 'Documents/').click(); await button(page, 'Adobe/').click();
+  await expect(page.getByRole('heading', { name: 'Adobe/', exact: true })).toBeVisible();
+  await page.evaluate(async () => {
+    const adobe = await (await (await navigator.storage.getDirectory()).getDirectoryHandle('Documents')).getDirectoryHandle('Adobe');
+    for (let i = 0; i < 24; i++) {
+      const writer = await (await adobe.getFileHandle(`slow-${i}.txt`, { create: true })).createWritable();
+      await writer.write('slowneedle'); await writer.close();
+    }
+    const getFile = FileSystemFileHandle.prototype.getFile;
+    FileSystemFileHandle.prototype.getFile = async function() {
+      if (this.name.startsWith('slow-')) await new Promise((resolve) => setTimeout(resolve, 120));
+      return getFile.call(this);
+    };
+  });
+  await page.keyboard.press('ControlOrMeta+f');
+  const dialog = page.getByRole('dialog', { name: 'Find in contents', exact: true });
+  await dialog.getByRole('searchbox').fill('slowneedle');
+  await expect(dialog.locator('.content-search-result').first()).toBeVisible();
+  await button(page, 'stop indexing').click();
+  await expect(dialog.locator('.content-search-status')).toContainText('index paused');
+  await expect(dialog.getByRole('alert')).toContainText('only files checked so far');
+  await button(page, 'refresh index').click();
+  await expect(dialog.locator('.content-search-status')).toContainText('index ready');
+  await expect(dialog.locator('.content-search-status')).toContainText('24 matching files');
+});
+
+test('a warm content index excludes removed roots until they are explicitly reconnected', async ({ page }) => {
+  await connectDocuments(page);
+  const dialog = page.getByRole('dialog', { name: 'Find in contents', exact: true });
+  async function find(expected: string) {
+    await page.keyboard.press('ControlOrMeta+Shift+f');
+    await dialog.getByRole('searchbox').fill('semantic roles');
+    await expect(dialog.locator('.content-search-status')).toContainText(expected);
+    await dialog.getByRole('button', { name: 'Exit search', exact: true }).click();
+  }
+  await find('1 matching file');
+  await button(page, 'app settings').click();
+  await page.getByRole('button', { name: 'Remove Documents from root', exact: true }).click();
+  await button(page, 'close app settings').click();
+  await find('0 matching files');
+  await connectDocuments(page);
+  await find('1 matching file');
 });

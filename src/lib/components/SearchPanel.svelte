@@ -3,9 +3,11 @@
   import { onMount } from 'svelte';
   import type { Workspace, StateNode, SearchProgress } from '../workspace';
   import Action from './Action.svelte';
-  let { workspace, from, onNavigate, onOpen, graphRevision = 0, relocating = false, onChoose, busy = false }: {
+  let { workspace, from, everywhere = true, scopeLabel = 'home', onNavigate, onOpen, graphRevision = 0, relocating = false, onChoose, busy = false }: {
     workspace: Workspace;
     from: string;
+    everywhere?: boolean;
+    scopeLabel?: string;
     onNavigate: (id: string) => void;
     onOpen: (node: StateNode) => void;
     graphRevision?: number;
@@ -29,6 +31,7 @@
     const term = query.trim();
     const currentWorkspace = workspace;
     const origin = from;
+    const all = everywhere;
     results = []; searched = false; failure = '';
     progress = { visited: 0, errors: 0, limited: false };
     searching = false;
@@ -37,9 +40,9 @@
     controller = abort;
     const timer = setTimeout(() => {
       searching = true;
-      void currentWorkspace.searchAll(origin, term, abort.signal, (found, status) => {
-        results = found; progress = status;
-      }).then(() => { if (!abort.signal.aborted) searched = true; })
+      const report = (found: StateNode[], status: SearchProgress) => { results = found; progress = status; };
+      void (all ? currentWorkspace.searchAll(origin, term, abort.signal, report)
+        : currentWorkspace.searchReachable(origin, term, abort.signal, report, 1000, true)).then(() => { if (!abort.signal.aborted) searched = true; })
         .catch((error) => { if (!abort.signal.aborted) failure = String(error); })
         .finally(() => { if (!abort.signal.aborted) searching = false; });
     }, 180);
@@ -65,8 +68,8 @@
 </script>
 
 <section class="panel" aria-labelledby="search-heading">
-  <h2 id="search-heading" tabindex="-1" bind:this={heading}>search all files and folders</h2>
-  <p class="muted">Search names and paths reachable from Home. Most recently edited files come first.</p>
+  <h2 id="search-heading" tabindex="-1" bind:this={heading}>{everywhere ? 'search all files and folders' : 'search files in folder children'}</h2>
+  <p class="muted">Search names and paths {everywhere ? 'reachable from home' : `in ${scopeLabel} and its reachable children`}. Case insensitive.{#if everywhere} Most recently edited files come first.{/if}</p>
   <label class="field">
     <span>file/folder name or path</span>
     <input bind:this={input} bind:value={query} placeholder="start typing…" type="search" autocomplete="off"

@@ -52,6 +52,7 @@ test('Enter preserves the search query and restores navigation shortcuts', async
   await button(page, 'create text file').click();
   await button(page, 'home').click();
   await button(page, 'search').click();
+  await page.getByRole('dialog', { name: 'Search', exact: true }).getByRole('button', { name: 'search file in all files', exact: true }).click();
   const field = page.getByRole('searchbox');
   await field.fill('find-me');
   await field.press('Enter');

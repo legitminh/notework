@@ -149,3 +149,10 @@ a { color: inherit; text-underline-offset: .15em; }
 .image-loading-icon { display: block; width: 28px; height: 28px; animation: image-loading-spin .8s linear infinite; }
 @keyframes image-loading-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .image-loading-icon { animation: none; } }
+
+.content-search-result { border-top: 1px solid var(--tertiary); padding-block: .4em; }
+.content-match { display: block; font-size: .55em; line-height: 1.6; }
+.content-match button { text-align: left; white-space: pre-wrap; overflow-wrap: anywhere; }
+.content-match-line { color: var(--secondary); margin-right: .5em; }
+.content-match mark { background: #ffdf7080; color: inherit; }
+.search-menu .control { display: block; }

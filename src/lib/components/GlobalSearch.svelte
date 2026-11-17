@@ -5,7 +5,7 @@
   import SearchPanel from './SearchPanel.svelte';
   import { dialogShortcuts } from '../shortcut-scope.svelte';
   import type { Workspace, StateNode } from '../workspace';
-  let { workspace, from, graphRevision, relocating = false, onChoose, onSelect, onClose }: { workspace: Workspace; from: string; graphRevision: number;
+  let { workspace, from, everywhere = true, scopeLabel = 'home', graphRevision, relocating = false, onChoose, onSelect, onClose }: { workspace: Workspace; from: string; everywhere?: boolean; scopeLabel?: string; graphRevision: number;
     relocating?: boolean; onChoose: (node: StateNode) => void;
     onSelect: (id: string, open: boolean) => Promise<boolean>; onClose: () => void } = $props();
   let dialog: HTMLDialogElement;
@@ -22,10 +22,10 @@
 </script>
 
 <InputFrame active name="Global search">
-  <dialog class="local-picker global-search" bind:this={dialog} use:dialogShortcuts aria-label="Search all files"
+  <dialog class="local-picker global-search" bind:this={dialog} use:dialogShortcuts aria-label={everywhere ? 'Search all files' : 'Search files in folder children'}
     oncancel={(event) => { event.preventDefault(); if (!busy) onClose(); }}>
     <Control onclick={onClose} disabled={busy}>Exit search</Control>
-    <SearchPanel {workspace} {from} {graphRevision} {busy} {relocating} {onChoose}
+    <SearchPanel {workspace} {from} {everywhere} {scopeLabel} {graphRevision} {busy} {relocating} {onChoose}
       onNavigate={(id) => { void choose(id); }} onOpen={(node) => { void choose(node.id, true); }} />
     {#if error}<p role="alert" class="notice">{error}</p>{/if}
   </dialog>

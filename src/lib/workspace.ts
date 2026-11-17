@@ -1,4 +1,4 @@
-import { isMissing, type LocalDirectory, type LocalHandle } from './filesystem';
+import { isMissing, type LocalDirectory, type LocalHandle, type LocalFile } from './filesystem';
 import { imageFormat } from './images';
 import { isDrawingFile } from './drawing';
 import { HiddenResource, inspectText, type TextFormat } from './text-resource';
@@ -352,6 +352,75 @@ export class Workspace {
     // Retained source handles are not search grants. Follow only the active root graph.
     return this.searchNodes([ROOT], query, signal,
       (results, progress) => onProgress([...results].sort(compare), progress), resultLimit, true);
+  }
+
+  /** Discover topology without decoding every file. Retained grants are never traversal roots. */
+  async contentScope(from: string, signal: AbortSignal) {
+    const resources = new Map<string, LocatedResource>();
+    const edges = new Map<string, string[]>();
+    const queue: { id: string; resource?: LocatedResource }[] = [{ id: ROOT }];
+    const seen = new Set([ROOT]);
+    const excluded = (this.data.hidden[ROOT] ?? []).map((id) => JSON.parse(id) as string[]);
+    let errors = 0;
+    const enqueue = (id: string, resource?: LocatedResource) => {
+      if (id === ROOT) return true;
+      const parts = JSON.parse(id) as string[];
+      if (excluded.some((prefix) => prefix.every((part, index) => parts[index] === part))) return false;
+      if (!seen.has(id)) { seen.add(id); queue.push({ id, resource }); }
+      return true;
+    };
+    for (let i = 0; i < queue.length; i++) {
+      signal.throwIfAborted();
+      const { id, resource } = queue[i];
+      const targets: string[] = [];
+      try {
+        if (id === ROOT) {
+          for (const target of this.data.rootIds) if (enqueue(target)) targets.push(target);
+        } else {
+          const located = resource ?? await this.locate(id);
+          const { source, path, handle } = located;
+          if (handle.name === '.git') continue;
+          if (handle.kind === 'directory') {
+            const hidden = new Set(this.data.hidden[id] ?? []);
+            for await (const child of handle.values()) {
+              signal.throwIfAborted();
+              if (child.name === '.git') continue;
+              const childPath = [...path, child.name], childId = nodeId(source.id, childPath);
+              if (!hidden.has(childId) && enqueue(childId, { source, path: childPath, handle: child })) targets.push(childId);
+            }
+          } else if (this.data.links[id]?.length) await this.validate(id, handle);
+          resources.set(id, located);
+          for (const target of this.data.links[id] ?? []) if (enqueue(target)) targets.push(target);
+        }
+        edges.set(id, targets);
+      } catch (error) {
+        signal.throwIfAborted();
+        if (isMissing(error)) { if (!this.moving.has(id)) this.forget(id); }
+        else if (!(error instanceof HiddenResource)) errors++;
+      }
+      if (i % 100 === 99) await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    // Only a reachable origin may start a scope; never walk parent navigation.
+    const selected = new Set<string>();
+    const pending = seen.has(from) && (from === ROOT || resources.has(from)) ? [from] : [];
+    const files: { node: StateNode; handle: LocalFile }[] = [];
+    while (pending.length) {
+      signal.throwIfAborted();
+      const id = pending.pop()!;
+      if (selected.has(id)) continue;
+      selected.add(id);
+      const resource = resources.get(id);
+      if (resource?.handle.kind === 'file' && !imageFormat(resource.handle.name)) {
+        const { source, path, handle } = resource;
+        // Unvalidated metadata stays out of the shared, validated node cache.
+        files.push({ node: { id, sourceId: source.id, path, name: handle.name, kind: 'file',
+          storage: source.storage ?? 'local', uri: source.uri! + (path.length ? '/' + path.map(encodeURIComponent).join('/') : '') }, handle });
+      }
+      for (const target of edges.get(id) ?? []) pending.push(target);
+    }
+    // Keep warm entries elsewhere in the active graph when switching search scopes.
+    const retainedIds = [...resources].filter(([, resource]) => resource.handle.kind === 'file').map(([id]) => id);
+    return { files, errors, retainedIds };
   }
 
   private async searchNodes(starts: string[], query: string, signal: AbortSignal,

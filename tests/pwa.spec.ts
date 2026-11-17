@@ -28,7 +28,12 @@ test('installed app shell and browser documents work offline', async ({ page, co
   await context.setOffline(true);
   await page.reload();
   await expect(action('offline.txt')).toBeVisible();
-  await action('offline.txt').click(); await action('open').click();
+  // The worker must load from the offline app shell before it has ever been started.
+  await page.keyboard.press('ControlOrMeta+Shift+f');
+  const search = page.getByRole('dialog', { name: 'Find in contents', exact: true });
+  await search.getByRole('searchbox').fill('SURVIVE OFFLINE');
+  await expect(search.locator('.content-search-status')).toContainText('1 matching file');
+  await search.locator('.content-match button').click();
   await expect(editor).toHaveText('Notes survive offline.');
   await editor.click(); await page.keyboard.press('ControlOrMeta+End'); await page.keyboard.insertText(' Still writing.');
   await page.keyboard.press('ControlOrMeta+s');

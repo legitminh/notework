@@ -76,7 +76,7 @@ test('virtual keyboard toggles immediately and stays responsive after modal sear
     await expect(page.locator('html')).toHaveClass(/virtual-keyboard-open/);
     await expect(action(page, 'virtual keyboard: on')).toBeVisible();
 
-    await page.keyboard.press('Control+p');
+    await page.keyboard.press('Control+Shift+p');
     const dialog = page.getByRole('dialog', { name: 'Search all files', exact: true });
     await expect(dialog.locator('.keyboard-dock')).toBeVisible();
     const field = dialog.getByRole('searchbox');
@@ -196,11 +196,11 @@ test('drawing format choice inserts the matching image directive and opens its e
   expect(Buffer.from((await bytes(page, 'images.txt'))!).toString()).toMatch(/\\pngpage\[drawing-.*\.png\]/);
 });
 
-test('Cmd/Ctrl+P searches from root with separate open and navigation actions', async ({ page }) => {
+test('Cmd/Ctrl+Shift+P searches from root with separate open and navigation actions', async ({ page }) => {
   await create(page, 'other.txt'); await home(page); await create(page, 'source.txt'); await action(page, 'open').click();
   const source = page.getByRole('textbox', { name: 'Edit source.txt' }); await source.fill('Keep this draft');
   await page.keyboard.down('Meta'); await expect(page.getByLabel('Command and Control shortcuts')).toBeVisible();
-  await page.keyboard.press('p'); await page.keyboard.up('Meta');
+  await page.keyboard.press('Shift+p'); await page.keyboard.up('Meta');
   const dialog = page.getByRole('dialog', { name: 'Search all files', exact: true });
   await expect(dialog).toBeVisible();
   await dialog.getByRole('searchbox').fill('other');
@@ -213,7 +213,7 @@ test('Cmd/Ctrl+P searches from root with separate open and navigation actions', 
   await expect(page.getByRole('textbox', { name: 'Edit other.txt' })).toBeVisible();
   expect(Buffer.from((await bytes(page, 'source.txt'))!).toString()).toBe('Keep this draft');
   await page.getByRole('textbox', { name: 'Edit other.txt' }).fill('Save before navigating');
-  await page.keyboard.press('Control+p'); await dialog.getByRole('searchbox').fill('source');
+  await page.keyboard.press('Control+Shift+p'); await dialog.getByRole('searchbox').fill('source');
   await dialog.locator('[data-action="source.txt"] button').click();
   await expect(dialog).toHaveCount(0);
   await expect(action(page, 'open')).toBeVisible();
@@ -221,12 +221,12 @@ test('Cmd/Ctrl+P searches from root with separate open and navigation actions', 
   expect(Buffer.from((await bytes(page, 'other.txt'))!).toString()).toBe('Save before navigating');
 
   // Quick-open also enters the editor when its result is already selected.
-  await page.keyboard.press('Control+p'); await dialog.getByRole('searchbox').fill('source');
+  await page.keyboard.press('Control+Shift+p'); await dialog.getByRole('searchbox').fill('source');
   await dialog.locator('[data-action="open"] button').click();
   await expect(dialog).toHaveCount(0);
   await expect(source).toBeVisible();
   await source.fill('Save this file too');
-  await page.keyboard.press('Control+p'); await dialog.getByRole('searchbox').fill('source');
+  await page.keyboard.press('Control+Shift+p'); await dialog.getByRole('searchbox').fill('source');
   await dialog.locator('[data-action="source.txt"] button').click();
   await expect(dialog).toHaveCount(0);
   await expect(source).toHaveCount(0);
@@ -275,7 +275,7 @@ test('imported image pixels survive drawing, and image links export and rename c
 test('virtual keyboard remains usable inside modal global search', async ({ page }) => {
   await create(page, 'apple.txt'); await home(page); await action(page, 'app settings').click();
   await action(page, 'virtual keyboard: off').click(); await action(page, 'close app settings').click();
-  await page.keyboard.press('Control+p');
+  await page.keyboard.press('Control+Shift+p');
   const dialog = page.getByRole('dialog', { name: 'Search all files', exact: true });
   await expect(dialog.getByRole('searchbox')).toBeFocused();
   for (const key of ['a', 'p', 'p']) await dialog.locator('.keyboard-dock').getByRole('button', { name: key, exact: true }).click();
@@ -315,7 +315,7 @@ test('updated flick keyboard enters uppercase and editing gestures in the editor
   await expect(editor).not.toBeFocused();
   await textTools(page).getByRole('button', { name: 'Exit', exact: true }).click();
 
-  await page.keyboard.press('Control+p');
+  await page.keyboard.press('Control+Shift+p');
   const dialog = page.getByRole('dialog', { name: 'Search all files', exact: true });
   await dialog.getByRole('searchbox').fill('gestures');
   await expect(dialog.locator('.search-status')).toContainText('1 result found');

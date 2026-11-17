@@ -61,6 +61,15 @@ test('WebKit persistent storage creates folders, text, and drawings without clon
     }
 
     await toolbar.getByRole('button', { name: 'Exit', exact: true }).click();
+    await expect(action('open')).toBeVisible();
+    await page.keyboard.press('Meta+f');
+    const contentSearch = page.getByRole('dialog', { name: 'Find in contents', exact: true });
+    await contentSearch.getByRole('searchbox').fill('ON IPAD');
+    await expect(contentSearch.locator('.content-search-status')).toContainText('1 matching file');
+    await expect(contentSearch.locator('mark')).toHaveText('on iPad');
+    await contentSearch.locator('.content-match button').click();
+    await expect(editor).toHaveText('Written on iPad');
+    await toolbar.getByRole('button', { name: 'Exit', exact: true }).click();
     await action('..').click();
     await action('create new file/folder').click();
     await page.getByLabel('name', { exact: true }).fill('sketch');

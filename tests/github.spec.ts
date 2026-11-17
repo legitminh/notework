@@ -352,6 +352,7 @@ test('name search across a GitHub tree reads only matching blobs and normalizes 
   await expect(action(page, 'app settings')).toBeVisible();
   repo.requests.length = 0;
   await action(page, 'search').click();
+  await page.getByRole('dialog', { name: 'Search', exact: true }).getByRole('button', { name: 'search file in all files', exact: true }).click();
   await page.getByRole('searchbox').fill('VIỆT'.normalize('NFD'));
   await expect(page.locator('.search-status')).toHaveText('2 results found');
   await expect(page.locator('.search-result-row').getByRole('button', { name: new RegExp(name) })).toBeVisible();
@@ -930,6 +931,7 @@ test('search orders GitHub files by actual edit dates instead of blob identities
   });
   await connect(page);
   await action(page, 'search').click();
+  await page.getByRole('dialog', { name: 'Search', exact: true }).getByRole('button', { name: 'search file in all files', exact: true }).click();
   await page.getByRole('searchbox').fill('.txt');
   await expect(page.locator('.search-status')).toHaveText('2 results found');
   await expect(page.locator('.search-result-row .resource-hint')).toHaveText(['notebook/z-new.txt', 'notebook/a-old.txt']);
