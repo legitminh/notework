@@ -1,5 +1,4 @@
 import { f } from '@legitminh/keyflow';
-import { getIndentUnit } from '@codemirror/language';
 import { countColumn, Facet, StateField, type EditorState, type Range, type Text } from '@codemirror/state';
 import { Decoration, EditorView } from '@codemirror/view';
 import { svgPagePattern } from './drawing';
@@ -9,6 +8,15 @@ const blockStart = /^[ \t]*\\(pretty1|unpretty1)\[/i;
 const hideLine = Decoration.replace({ block: true });
 const hideSyntax = Decoration.replace({});
 const headingText = Decoration.mark({ class: 'cm-pretty-text' });
+// HTML's default h1–h6 sizes (body-relative) and margins (heading-relative).
+const headingStyles = [
+  { size: 2, margin: .67 },
+  { size: 1.5, margin: .83 },
+  { size: 1.17, margin: 1 },
+  { size: 1, margin: 1.33 },
+  { size: .83, margin: 1.67 },
+  { size: .67, margin: 2.33 }
+];
 
 interface PrettyBlock { start: number; end: number; pretty: boolean }
 interface SourceLine { from: number; to: number; content?: { from: number; to: number } }
@@ -53,7 +61,6 @@ function findBlocks(doc: Text) {
 
 function layout(state: EditorState) {
   const { doc, tabSize } = state;
-  const indentWidth = getIndentUnit(state);
   const blocks = findBlocks(doc);
   const scopes: PrettyBlock[] = [];
   const source: SourceLine[] = [];
@@ -94,12 +101,13 @@ function layout(state: EditorState) {
       const indent = countColumn(line, tabSize, indentLength);
       // A line has positive degree as soon as the next line is more indented.
       if (previous && indent > previous.indent) {
-        const order = Math.floor(previous.indent / indentWidth);
-        const bucket = f(256, 32, inherited.depth + previous.depth);
+        const order = inherited.depth + previous.depth;
+        const { size, margin } = headingStyles[Math.min(order, headingStyles.length - 1)];
+        const bucket = f(256, 32, order);
         const hue = bucket === undefined ? undefined : bucket * 360 / 256;
         headings.push(Decoration.line({
           class: 'cm-pretty-heading',
-          attributes: { style: `--pretty-order: ${order};${hue === undefined ? '' : `--pretty-hue: ${hue};`}` }
+          attributes: { style: `--pretty-order: ${order};--pretty-size: ${size}em;--pretty-margin: ${margin};${hue === undefined ? '' : `--pretty-hue: ${hue};`}` }
         }).range(previous.from));
         // Keep leading spaces and tabs in the editor's normal font.
         headings.push(headingText.range(previous.textFrom, previous.textTo));
@@ -145,7 +153,7 @@ const prettyField = StateField.define({
   },
   update(value, transaction) {
     const { startState, state } = transaction;
-    const changed = transaction.docChanged || startState.tabSize !== state.tabSize || getIndentUnit(startState) !== getIndentUnit(state);
+    const changed = transaction.docChanged || startState.tabSize !== state.tabSize;
     if (!changed && !transaction.selection) return value;
     const display = changed ? layout(state) : value;
     return { ...display, hidden: hideInactiveSource(state, display.source) };
@@ -158,8 +166,9 @@ const prettyField = StateField.define({
 
 const prettyTheme = EditorView.baseTheme({
   '&.cm-pretty-margin .cm-line.cm-pretty-heading': {
-    // Padding adds space inside the block measured by CodeMirror.
-    paddingBlockStart: 'max(0px, calc(3em - var(--pretty-order) * .25em))'
+    // Padding keeps both heading margins inside the block measured by CodeMirror.
+    // The line stays body-sized so spacing is independent of the sizing toggle.
+    paddingBlock: 'calc(var(--pretty-size) * var(--pretty-margin))'
   },
   '.cm-pretty-line': { color: 'var(--primary)' },
   '.cm-pretty-line.cm-pretty-heading': { color: 'hsl(var(--pretty-hue, 0) 100% var(--pretty-lightness, 25%))' },
@@ -167,7 +176,7 @@ const prettyTheme = EditorView.baseTheme({
   '.cm-pretty-text': { fontWeight: 'bold' },
   '&.cm-pretty-size .cm-pretty-text': {
     // The heading inherits the regular editor size as its unit.
-    fontSize: 'max(1.25em, calc(4em - var(--pretty-order) * .25em))'
+    fontSize: 'var(--pretty-size)'
   }
 });
 

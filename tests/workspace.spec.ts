@@ -1488,7 +1488,7 @@ test('pretty completion lands at column one and hides the directive and its line
   await expect(numbers).toHaveText(['1', '3', '4']);
 });
 
-test('pretty headings use their indentation order for size and spacing, with minimums', async ({ page }) => {
+test('pretty headings use HTML styles by parent depth, including indented roots', async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 1200 });
   await createNote(page, 'pretty.txt');
   const editor = page.getByRole('textbox', { name: 'Edit pretty.txt' });
@@ -1523,11 +1523,13 @@ test('pretty headings use their indentation order for size and spacing, with min
   await expect(lines.filter({ hasText: /^  Plain \[block\] child$/ })).toBeVisible();
   const base = await line('Regular').evaluate((element) => parseFloat(getComputedStyle(element).fontSize));
   for (const [name, size, spacing] of [
-    ['Scoped title', 3.75, 2.75], ['Title', 4, 3], ['Subheading', 3.75, 2.75], ['After block', 4, 3], ['Deep heading', 1.25, 0]
+    ['Scoped title', 2, 1.34], ['Title', 2, 1.34], ['Subheading', 1.5, 1.245], ['After block', 2, 1.34], ['Deep heading', 1.17, 1.17]
   ] as const) {
     await expect(title(name)).toHaveCSS('font-size', `${base * size}px`);
     await expect(title(name)).toHaveCSS('font-weight', '700');
-    await expect(line(name)).toHaveCSS('padding-top', `${base * spacing}px`);
+    for (const edge of ['paddingTop', 'paddingBottom'] as const) {
+      expect(await line(name).evaluate((element, edge) => parseFloat(getComputedStyle(element)[edge]), edge)).toBeCloseTo(base * spacing, 2);
+    }
   }
   for (const name of ['Scoped body', 'Regular', 'Body', 'Peer', 'Not a heading', 'Plain block', 'Deep child', 'After switch']) {
     await expect(line(name)).toHaveCSS('font-size', `${base}px`);
@@ -1545,9 +1547,44 @@ test('pretty headings use their indentation order for size and spacing, with min
   await line('Body').click();
   await page.keyboard.press('Shift+Tab');
   await expect(line('Body')).toHaveText(/^  Body$/);
-  await expect(title('Title')).toHaveCSS('font-size', `${base * 4}px`);
+  await expect(title('Title')).toHaveCSS('font-size', `${base * 2}px`);
   await expect(title('Subheading')).toHaveCount(0);
   await expect(line('Subheading')).toHaveCSS('font-size', `${base}px`);
+});
+
+test('pretty follows all six HTML heading levels and clamps deeper parents to h6', async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 1600 });
+  await createNote(page, 'heading-levels.txt');
+  const editor = page.getByRole('textbox', { name: 'Edit heading-levels.txt' });
+  // Skipping indentation columns still adds only one actual parent level.
+  const indents = [0, 8, 10, 18, 20, 22, 30, 32];
+  await editor.fill(['\\pretty', ...indents.map((indent, index) => `${' '.repeat(indent)}Level ${index}`)].join('\n'));
+  const base = await editor.evaluate(element => parseFloat(getComputedStyle(element).fontSize));
+  const expected = [[2, .67], [1.5, .83], [1.17, 1], [1, 1.33], [.83, 1.67], [.67, 2.33], [.67, 2.33]];
+  await expect(editor.locator('.cm-pretty-heading')).toHaveCount(7);
+  for (const [index, [size, margin]] of expected.entries()) {
+    const line = editor.locator('.cm-line').filter({ hasText: new RegExp(`^\\s*Level ${index}$`) });
+    const text = line.locator('.cm-pretty-text');
+    expect(await text.evaluate(element => parseFloat(getComputedStyle(element).fontSize))).toBeCloseTo(base * size, 2);
+    await expect(text).toHaveCSS('font-weight', '700');
+    for (const edge of ['paddingTop', 'paddingBottom'] as const) {
+      expect(await line.evaluate((element, edge) => parseFloat(getComputedStyle(element)[edge]), edge)).toBeCloseTo(base * size * margin, 2);
+    }
+  }
+
+  await toolbar(page, 'Exit').click();
+  await button(page, '..').click();
+  await button(page, 'heading-levels.txt').click();
+  const preview = page.locator('.file-preview');
+  await expect(preview.locator('.cm-pretty-heading')).toHaveCount(7);
+  const previewBase = await preview.locator('.cm-editor').evaluate(element => parseFloat(getComputedStyle(element).fontSize));
+  for (const [index, [size, margin]] of expected.entries()) {
+    const line = preview.locator('.cm-line').filter({ hasText: new RegExp(`^\\s*Level ${index}$`) });
+    expect(await line.locator('.cm-pretty-text').evaluate(element => parseFloat(getComputedStyle(element).fontSize))).toBeCloseTo(previewBase * size, 2);
+    for (const edge of ['paddingTop', 'paddingBottom'] as const) {
+      expect(await line.evaluate((element, edge) => parseFloat(getComputedStyle(element)[edge]), edge)).toBeCloseTo(previewBase * size * margin, 2);
+    }
+  }
 });
 
 test('pretty font sizing can be turned off without losing bold headings or spacing', async ({ page }) => {
@@ -1557,7 +1594,7 @@ test('pretty font sizing can be turned off without losing bold headings or spaci
   const title = heading.locator('.cm-pretty-text');
   await page.keyboard.insertText('\\pretty\n  Heading\n    Child');
   const base = await editor.evaluate((element) => parseFloat(getComputedStyle(element).fontSize));
-  await expect(title).toHaveCSS('font-size', `${base * 3.75}px`);
+  await expect(title).toHaveCSS('font-size', `${base * 2}px`);
 
   await toolbar(page, 'Exit').click();
   await button(page, '..').click();
@@ -1569,7 +1606,8 @@ test('pretty font sizing can be turned off without losing bold headings or spaci
   await openEditor(page);
   await expect(title).toHaveCSS('font-size', `${base}px`);
   await expect(title).toHaveCSS('font-weight', '700');
-  await expect(heading).toHaveCSS('padding-top', `${base * 2.75}px`);
+  await expect(heading).toHaveCSS('padding-top', `${base * 1.34}px`);
+  await expect(heading).toHaveCSS('padding-bottom', `${base * 1.34}px`);
 });
 
 test('pretty margin can be disabled, persists, and stays independent of font sizing', async ({ page }) => {
@@ -1581,7 +1619,7 @@ test('pretty margin can be disabled, persists, and stays independent of font siz
   const base = await editor.evaluate((element) => parseFloat(getComputedStyle(element).fontSize));
   await expect(headings).toHaveCount(2);
   for (const heading of await headings.all()) {
-    await expect(heading).toHaveCSS('padding-top', `${base * 2.75}px`);
+    await expect(heading).toHaveCSS('padding-top', `${base * 1.34}px`);
   }
 
   const settings = async () => {
@@ -1602,22 +1640,31 @@ test('pretty margin can be disabled, persists, and stays independent of font siz
   await button(page, 'app settings').click();
   await expect(button(page, 'pretty margin: off')).toBeVisible();
   await reopen();
-  for (const heading of await headings.all()) await expect(heading).toHaveCSS('padding-top', '0px');
+  for (const heading of await headings.all()) {
+    await expect(heading).toHaveCSS('padding-top', '0px');
+    await expect(heading).toHaveCSS('padding-bottom', '0px');
+  }
   for (const title of await titles.all()) {
-    await expect(title).toHaveCSS('font-size', `${base * 3.75}px`);
+    await expect(title).toHaveCSS('font-size', `${base * 2}px`);
     await expect(title).toHaveCSS('font-weight', '700');
   }
 
   await settings();
   await button(page, 'pretty font sizing: on').click();
   await reopen();
-  for (const heading of await headings.all()) await expect(heading).toHaveCSS('padding-top', '0px');
+  for (const heading of await headings.all()) {
+    await expect(heading).toHaveCSS('padding-top', '0px');
+    await expect(heading).toHaveCSS('padding-bottom', '0px');
+  }
   for (const title of await titles.all()) await expect(title).toHaveCSS('font-size', `${base}px`);
 
   await settings();
   await button(page, 'pretty margin: off').click();
   await reopen();
-  for (const heading of await headings.all()) await expect(heading).toHaveCSS('padding-top', `${base * 2.75}px`);
+  for (const heading of await headings.all()) {
+    await expect(heading).toHaveCSS('padding-top', `${base * 1.34}px`);
+    await expect(heading).toHaveCSS('padding-bottom', `${base * 1.34}px`);
+  }
   for (const title of await titles.all()) {
     await expect(title).toHaveCSS('font-size', `${base}px`);
     await expect(title).toHaveCSS('font-weight', '700');

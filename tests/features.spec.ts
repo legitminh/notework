@@ -524,6 +524,11 @@ test('page embeds are indented, inherit pretty, save graph links, and open with 
   await expect(embedded.locator('.cm-line').first()).toHaveText('  Child');
   await expect(embedded.locator('.cm-line').nth(1)).toHaveText('    Leaf');
   await expect(embedded.locator('.cm-pretty-heading')).toHaveCSS('color', 'rgb(128, 96, 0)');
+  const embeddedBase = await embedded.locator('.cm-editor').evaluate(element => parseFloat(getComputedStyle(element).fontSize));
+  await expect(embedded.locator('.cm-pretty-text')).toHaveCSS('font-size', `${embeddedBase * 1.5}px`);
+  for (const edge of ['paddingTop', 'paddingBottom'] as const) {
+    expect(await embedded.locator('.cm-pretty-heading').evaluate((element, edge) => parseFloat(getComputedStyle(element)[edge]), edge)).toBeCloseTo(embeddedBase * 1.5 * .83, 2);
+  }
   await embedded.getByRole('button', { name: 'Open child.txt from preview', exact: true }).click();
   await expect(page.getByRole('textbox', { name: 'Edit child.txt', exact: true })).toHaveText('Child  LeafTail');
   await page.keyboard.press('Escape'); await page.keyboard.press('ControlOrMeta+[');
