@@ -576,7 +576,6 @@
     panel = panel === next ? null : next;
     if (panel === 'settings') await refresh();
     await tick();
-    if (panel) panelElement?.scrollIntoView({ block: 'start' });
   }
 
   async function add(selections: LocalSelection[]) {
@@ -842,7 +841,7 @@
       {#snippet panelContents()}
       <div bind:this={panelElement}>
         {#if panel}
-          <div class="panel-controls"><Action label={`close ${panel === 'settings' ? 'app settings' : panel === 'configure' ? `configure ${resourceType}` : panel}`} onSelect={() => { panel = null; state_viewport.viewport?.scrollTo({ top: 0 }); }} /></div>
+          <div class="panel-controls"><Action label={`close ${panel === 'settings' ? 'app settings' : panel === 'configure' ? `configure ${resourceType}` : panel}`} onSelect={() => { panel = null; }} /></div>
         {/if}
         {#if panel === 'configure' && current}
           <section class="panel" aria-labelledby="configure-heading">

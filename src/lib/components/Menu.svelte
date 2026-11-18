@@ -61,16 +61,12 @@
     return () => { observer.disconnect(); dialog?.removeEventListener('cancel', cancel, true); };
   });
 
-  function reveal(event: FocusEvent) {
-    if (event.target instanceof HTMLElement && event.target.closest('.subkeyframe-panel'))
-      event.target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-  }
 </script>
 
-<div class="menu" bind:this={host} onfocusin={reveal}>
+<div class="menu" bind:this={host}>
   <SubKeyframe {label} {items} {showTrigger} {backLabel} {children} {itemDisplay} bind:open disabled={disabled || !available}
     enterTrigger={showTrigger ? undefined : null}
-    onopen={() => { onopen?.(); void tick().then(() => host?.querySelector('.subkeyframe-panel')?.scrollIntoView({ block: 'nearest' })); }}
+    {onopen}
     {onclose} />
 </div>
 

@@ -128,7 +128,7 @@ a { color: inherit; text-underline-offset: .15em; }
 
 :root { --keyboard-height: min(38dvh, 320px); }
 .virtual-keyboard-open .editing-view { height: calc(100dvh - var(--keyboard-height)); }
-.virtual-keyboard-open main:not(.editing-view) { padding-bottom: calc(var(--keyboard-height) + 80px); }
+.virtual-keyboard-open main:not(.editing-view) { padding-bottom: 80px; }
 .virtual-keyboard-open dialog { max-height: calc(100dvh - var(--keyboard-height) - 24px); margin-top: 12px; }
 .line-index { position: relative; --line-left: #888; --line-right: #888; }
 .line-mod-1 { --line-left: transparent; }
@@ -156,3 +156,8 @@ a { color: inherit; text-underline-offset: .15em; }
 .content-match-line { color: var(--secondary); margin-right: .5em; }
 .content-match mark { background: #ffdf7080; color: inherit; }
 .search-menu .control { display: block; }
+
+/* Raster editing uses the available workspace rather than the text page's scroll position. */
+.document-editor:has(.raster-inline-host) > .editor-scroll { display:flex;flex-direction:column;overflow:hidden; }
+.document-editor:has(.raster-inline-host) .editor-container { display:none; }
+.raster-inline-slot:not([hidden]) { flex:1 1 auto;min-height:0;display:flex;flex-direction:column; }

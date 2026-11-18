@@ -1,3 +1,4 @@
+import { sizeCanvas } from './raster-helpers';
 import { test, expect } from '@playwright/test';
 
 test('installed app shell and browser documents work offline', async ({ page, context }) => {
@@ -61,6 +62,7 @@ test('bundled HEIC codec creates and edits images offline', async ({ page, conte
   await context.setOffline(true);
   await action('app settings').click(); await action('create new file/folder').click();
   await page.getByLabel('name', { exact: true }).fill('offline.heic'); await action('create heic image').click();
+  await sizeCanvas(page);
   await action('open').click();
   const canvas = page.getByRole('img', { name: 'Drawing canvas for offline.heic' });
   await expect(canvas).toBeVisible();

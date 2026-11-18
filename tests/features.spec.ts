@@ -1,3 +1,4 @@
+import { sizeCanvas, rasterPoint, alpha } from './raster-helpers';
 import { choiceMenu, chooseMenu, expectChoiceCount } from './menu-helpers';
 import { test, expect, type Page } from '@playwright/test';
 // Image codecs share the browser's raster resources; run these cases sequentially.
@@ -10,6 +11,7 @@ async function create(page: Page, name: string, type = 'text file') {
   await action(page, 'create new file/folder').click();
   await page.getByLabel('name', { exact: true }).fill(name);
   await action(page, `create ${type}`).click();
+  if (type.endsWith(' image')) await sizeCanvas(page);
 }
 async function home(page: Page) { await action(page, 'home').click(); }
 async function bytes(page: Page, name: string) {
@@ -182,8 +184,7 @@ for (const format of ['png', 'jpeg', 'heic', 'ora']) {
     await page.reload(); await action(page, `picture.${format}`).click(); await action(page, 'open').click();
     await expect(page.getByRole('img', { name: `Drawing canvas for picture.${format}` })).toBeVisible();
     if (format === 'ora') await expectChoiceCount(page, 'active layer', 2);
-    const image = page.locator('.drawing-canvas image').first();
-    await expect(image).toHaveAttribute('href', /^blob:/);
+    await expect(page.locator('[data-image-layer="active"] canvas')).toBeVisible();
   });
 }
 
@@ -192,6 +193,7 @@ test('drawing format choice inserts the matching image directive and opens its e
   await textTools(page).getByRole('button', { name: 'Draw…', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Choose drawing format' });
   await dialog.getByRole('button', { name: 'PNG', exact: true }).click();
+  await sizeCanvas(page);
   await stroke(page); await drawTools(page).getByRole('button', { name: 'Exit', exact: true }).click();
   const text = page.getByRole('textbox', { name: 'Edit images.txt' });
   await expect(page.getByRole('button', { name: /^Edit drawing drawing-.*\.png$/ })).toBeVisible();
@@ -442,12 +444,12 @@ test('raster eraser removes saved pixels locally, supports undo, and keeps surro
   await page.keyboard.down('ArrowUp'); await page.waitForTimeout(100); await page.keyboard.up('ArrowUp');
   await page.keyboard.press('Escape');
   const box = (await canvas.boundingBox())!;
-  const center = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  const center = await rasterPoint(canvas,200,100);
   await page.mouse.move(center.x - 12, center.y); await page.mouse.down();
   await page.mouse.move(center.x + 12, center.y, { steps: 8 }); await page.mouse.up();
-  await expect(canvas.locator('mask polyline')).not.toHaveCount(0);
+  await expect.poll(() => alpha(canvas,200,100)).toBe(0);
   await drawTools(page).getByRole('button', { name: 'Undo', exact: true }).click();
-  await expect(canvas.locator('mask polyline')).toHaveCount(0);
+  await expect.poll(() => alpha(canvas,200,100)).toBe(255);
   await drawTools(page).getByRole('button', { name: 'Redo', exact: true }).click();
   await drawTools(page).getByRole('button', { name: 'Exit', exact: true }).click();
   await expect(textTools(page)).toBeVisible();
@@ -616,7 +618,7 @@ for (const format of ['svg', 'png']) {
     const canvas = page.getByRole('img', { name: `Drawing canvas for continuous.${format}` });
     await expect(canvas).toBeVisible();
     const protocol = await context.newCDPSession(page);
-    const position = async (y: number) => canvas.evaluate((svg, y) => {
+    const position = async (y: number) => format === 'png' ? { ...await rasterPoint(canvas,80,y),end:(await rasterPoint(canvas,200,y)).x } : canvas.evaluate((svg, y) => {
       const matrix = (svg as SVGSVGElement).getScreenCTM()!;
       const a = new DOMPoint(80, y).matrixTransform(matrix), b = new DOMPoint(200, y).matrixTransform(matrix);
       return { x: a.x, y: a.y, end: b.x };
@@ -643,7 +645,7 @@ for (const format of ['svg', 'png']) {
     await expect.poll(() => page.evaluate(() => Reflect.get(window, 'drawingSaveStarted'))).toBe(true);
     await expect(page.getByText('saving drawing…', { exact: true })).toBeVisible();
     await draw(120);
-    await expect(canvas.locator(':scope > polyline')).toHaveCount(2);
+    if (format === 'svg') await expect(canvas.locator(':scope > polyline')).toHaveCount(2); else expect(await alpha(canvas,140,120)).toBe(255);
     await page.evaluate(() => Reflect.get(window, 'releaseDrawingSave')());
     await expect(page.getByText('saving drawing…', { exact: true })).toHaveCount(0);
     const p = await position(180);
@@ -661,7 +663,7 @@ for (const format of ['svg', 'png']) {
       svg.dispatchEvent(new TouchEvent('touchstart', { bubbles: true, cancelable: true, touches: contacts, changedTouches: contacts }));
       svg.dispatchEvent(new TouchEvent('touchend', { bubbles: true, cancelable: true, touches: [], changedTouches: contacts }));
     });
-    await expect(canvas.locator(':scope > polyline')).toHaveCount(3);
+    if (format === 'svg') await expect(canvas.locator(':scope > polyline')).toHaveCount(3); else expect(await alpha(canvas,140,180)).toBe(255);
     await drawTools(page).getByRole('button', { name: 'Exit', exact: true }).click();
     await expect(action(page, 'open')).toBeVisible();
     const data = (await bytes(page, `continuous.${format}`))!;

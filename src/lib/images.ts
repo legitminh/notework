@@ -1,3 +1,4 @@
+import { canvasSize, type CanvasSize } from './canvas-size';
 import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate';
 
 export type ImageFormat = 'png' | 'jpeg' | 'heic' | 'ora';
@@ -115,7 +116,7 @@ export async function encodeImage(document: ImageDocument, format: ImageFormat):
   }
   return canvasBlob(canvas, format === 'jpeg' ? 'image/jpeg' : 'image/png');
 }
-export async function blankImage(format: ImageFormat) {
-  const canvas = imageCanvas(1024, 512);
-  return encodeImage({ width: 1024, height: 512, layers: [{ name: 'Layer 1', png: await canvasBlob(canvas), visible: true, opacity: 1 }] }, format);
+export async function blankImage(format: ImageFormat, size: CanvasSize = canvasSize()) {
+  const canvas = imageCanvas(size.width, size.height);
+  return encodeImage({ ...size, layers: [{ name: 'Layer 1', png: await canvasBlob(canvas), visible: true, opacity: 1 }] }, format);
 }

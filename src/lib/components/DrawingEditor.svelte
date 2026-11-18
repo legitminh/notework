@@ -617,7 +617,7 @@
 <style>
   .drawing-controls { position: relative; }
   .drawing-controls :global(.drawing-size-menu) { position: absolute; top: 100%; left: 0; z-index: 5; }
-  .drawing-controls :global(.subkeyframe-panel) { max-height: min(28rem, 65dvh); overflow-y: auto; min-width: 12rem; }
+  .drawing-controls :global(.subkeyframe-panel) { min-width: 12rem; }
   .drawing-canvas-layer { position: relative; width: 100%; max-width: var(--page-max-width); }
   .drawing-canvas { max-width: 100%; }
   .drawing-canvas.image-canvas { background-image: conic-gradient(#ddd 25%, #fff 0 50%, #ddd 0 75%, #fff 0); background-size: 16px 16px; color: #202733; }

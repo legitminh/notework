@@ -1,3 +1,4 @@
+import type { CanvasSize } from './canvas-size';
 import { imageFormat, readImage, composite, canvasBlob, encodeImage, blankImage, type ImageDocument } from './images';
 import type { LocalFile } from './filesystem';
 import { isMissing } from './filesystem';
@@ -84,9 +85,9 @@ export async function loadDrawingReference(
   return (await resolveDrawing(workspace, source, file, reference, catalog))?.resource;
 }
 
-async function writeDrawing(handle: LocalFile, strokes: Drawing, storage: Storage) {
+async function writeDrawing(handle: LocalFile, strokes: Drawing, storage: Storage, size?: CanvasSize) {
   const format = imageFormat(handle.name);
-  await writeResourceContent(handle, storage, [format ? new Uint8Array(await (await blankImage(format)).arrayBuffer()) : serializeDrawing(strokes)]);
+  await writeResourceContent(handle, storage, [format ? new Uint8Array(await (await blankImage(format, size)).arrayBuffer()) : serializeDrawing(strokes)]);
 }
 
 export async function saveDrawing(resource: DrawingResource, strokes: Drawing, requestWrite = true) {
@@ -108,7 +109,7 @@ export async function saveDrawing(resource: DrawingResource, strokes: Drawing, r
 }
 
 async function stageSibling(
-  workspace: Workspace, source: StateNode, file: LocalFile, name: string, strokes: Drawing, requestWrite = true
+  workspace: Workspace, source: StateNode, file: LocalFile, name: string, strokes: Drawing, requestWrite = true, size?: CanvasSize
 ) {
   if (!canCreateSiblingDrawing(name)) throw new Error('Choose a supported drawing filename without a folder path.');
   const folder = await containingFolder(workspace, source, file);
@@ -121,14 +122,14 @@ async function stageSibling(
     if (id) workspace.forget(id);
   }
   try {
-    await writeDrawing(handle, strokes, source.storage);
+    await writeDrawing(handle, strokes, source.storage, size);
     id = (await connectSibling(workspace, source, handle)).id;
     return { id, resource: await loadDrawing(handle, source.storage), rollback };
   } catch (error) { await rollback(); throw error; }
 }
 
 export async function saveSiblingDrawing(
-  workspace: Workspace, source: StateNode, file: LocalFile, name: string, strokes: Drawing, requestWrite = true
+  workspace: Workspace, source: StateNode, file: LocalFile, name: string, strokes: Drawing, requestWrite = true, size?: CanvasSize
 ) {
   if (file instanceof GitHubFile) {
     if (!canCreateSiblingDrawing(name)) throw new Error('Choose a supported drawing filename without a folder path.');
@@ -137,10 +138,10 @@ export async function saveSiblingDrawing(
     await assertAvailable(folder, name);
     const path = [...source.path.slice(0, -1), name].join('/');
     const handle = new GitHubFile(repository, path);
-    await repository.saveDraft(path, { base: null, content: imageFormat(name) ? await blankImage(imageFormat(name)!) : new Blob([serializeDrawing(strokes)]), modified: Date.now() });
+    await repository.saveDraft(path, { base: null, content: imageFormat(name) ? await blankImage(imageFormat(name)!, size) : new Blob([serializeDrawing(strokes)]), modified: Date.now() });
     return loadDrawing(handle, 'github');
   }
-  const staged = await stageSibling(workspace, source, file, name, strokes, requestWrite);
+  const staged = await stageSibling(workspace, source, file, name, strokes, requestWrite, size);
   try { await saveWorkspace(workspace.data); return staged.resource; }
   catch (error) { await staged.rollback(); throw error; }
 }

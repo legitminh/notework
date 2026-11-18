@@ -1,3 +1,4 @@
+import { sizeCanvas, rasterPoint, alpha } from './raster-helpers';
 import { test, expect, type Page } from '@playwright/test';
 import { choiceMenu } from './menu-helpers';
 
@@ -9,6 +10,7 @@ async function create(page: Page, name: string, kind = 'text file') {
   await button(page, 'create new file/folder').click();
   await page.getByLabel('name', { exact: true }).fill(name);
   await button(page, `create ${kind}`).click();
+  if (kind.endsWith(' image')) await sizeCanvas(page);
 }
 
 test.beforeEach(async ({ page }) => {
@@ -153,4 +155,18 @@ test('image-layer menu owns Escape and keyboard selection while the drawing edit
   await expect(layer).toHaveAttribute('data-value', '1');
   await expect(button(page, 'Add layer')).toBeEnabled();
   await expect(trigger).toBeFocused();
+});
+
+test('settings menu scrolls independently above the virtual keyboard and restores its parent position', async ({ page }) => {
+  await page.setViewportSize({width:600,height:760});
+  await button(page,'app settings').click();
+  await button(page,'virtual keyboard: off').click();
+  const panel=region(page,'app settings').and(page.locator('.subkeyframe-panel')), viewport=panel.locator(':scope > .subkeyframe-viewport');
+  await expect(page.locator('.keyboard-dock')).toBeVisible();
+  await expect.poll(async()=>panel.evaluate(node=>node.getBoundingClientRect().bottom)).toBeLessThanOrEqual(await page.locator('.keyboard-dock').evaluate(node=>node.getBoundingClientRect().top)+1);
+  const root=page.locator('.viewport'), before=await root.evaluate(node=>node.scrollTop);
+  await viewport.hover();await page.mouse.wheel(0,400);
+  await expect.poll(()=>viewport.evaluate(node=>node.scrollTop)).toBeGreaterThan(0);
+  expect(await root.evaluate(node=>node.scrollTop)).toBe(before);
+  await page.keyboard.press('Escape');await expect(button(page,'app settings')).toBeFocused();
 });

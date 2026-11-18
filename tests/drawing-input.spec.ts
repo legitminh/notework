@@ -1,3 +1,4 @@
+import { sizeCanvas, rasterPoint, alpha, expectInk } from './raster-helpers';
 import { test, expect, type Page } from '@playwright/test';
 
 const action = (page: Page, name: string) => page.getByRole('button', { name, exact: true });
@@ -8,6 +9,7 @@ async function create(page: Page, name: string, format: 'svg' | 'png') {
   await action(page, 'create new file/folder').click();
   await page.getByLabel('name', { exact: true }).fill(name);
   await action(page, format === 'svg' ? 'create svg file' : 'create png image').click();
+  if (format === 'png') await sizeCanvas(page);
   await action(page, `open: ${name}`).click();
   const canvas = page.getByRole('img', { name: `Drawing canvas for ${name}`, exact: true });
   await expect(canvas).toBeVisible();
@@ -28,9 +30,10 @@ for (const format of ['svg', 'png'] as const) for (const pointerType of ['pen', 
     const canvas = await create(page, name, format);
     const protocol = await context.newCDPSession(page);
     const strokes = canvas.locator(':scope > polyline');
+    const ink = async (count:number) => { if(format === 'svg') await expect(strokes).toHaveCount(count); else await expectInk(canvas,[50,110,170,230,290,350],count); };
     const tools = page.getByRole('group', { name: 'Drawing toolbar', exact: true });
     const undo = tools.getByRole('button', { name: 'Undo', exact: true });
-    const coords = (x: number, y: number) => canvas.evaluate((svg, [x, y]) => {
+    const coords = (x: number, y: number) => format === 'png' ? rasterPoint(canvas,x,y) : canvas.evaluate((svg, [x, y]) => {
       const p = new DOMPoint(x, y).matrixTransform((svg as SVGSVGElement).getScreenCTM()!);
       return { x: p.x, y: p.y };
     }, [x, y]);
@@ -61,12 +64,12 @@ for (const format of ['svg', 'png'] as const) for (const pointerType of ['pen', 
       }));
     }, { pointerType, p: await coords(260, 50) });
     await release(50);
-    await expect(strokes).toHaveCount(1);
+    await ink(1);
     await expect(undo).toBeEnabled();
-    expect((await strokes.last().getAttribute('points'))!.split(' ').at(-1)).toBe('260,50');
-    await undo.click(); await expect(strokes).toHaveCount(0);
+    if(format === 'svg') expect((await strokes.last().getAttribute('points'))!.split(' ').at(-1)).toBe('260,50'); else expect(await alpha(canvas,258,50)).toBeGreaterThan(0);
+    await undo.click(); await ink(0);
     await tools.getByRole('button', { name: 'Redo', exact: true }).click();
-    await expect(strokes).toHaveCount(1);
+    await ink(1);
 
     for (const [index, type] of ['pointercancel', 'lostpointercapture', 'pointermove'].entries()) {
       const y = 110 + index * 60;
@@ -74,18 +77,18 @@ for (const format of ['svg', 'png'] as const) for (const pointerType of ['pen', 
       await terminal(type);
       // A terminal cancellation/capture event or a no-buttons hover commits the
       // last contact sample. It must not add a segment to (0, 0).
-      await expect(strokes).toHaveCount(index + 2);
-      await undo.click(); await expect(strokes).toHaveCount(index + 1);
+      await ink(index + 2);
+      await undo.click(); await ink(index + 1);
       await tools.getByRole('button', { name: 'Redo', exact: true }).click();
-      await expect(strokes).toHaveCount(index + 2);
-      expect((await strokes.last().getAttribute('points'))!.split(' ').at(-1)).toBe(`200,${y}`);
+      await ink(index + 2);
+      if(format === 'svg') expect((await strokes.last().getAttribute('points'))!.split(' ').at(-1)).toBe(`200,${y}`); else expect(await alpha(canvas,199,y)).toBeGreaterThan(0);
       await release(y);
-      await expect(strokes).toHaveCount(index + 2);
+      await ink(index + 2);
     }
 
     await down(290);
     await page.evaluate(() => window.dispatchEvent(new Event('blur')));
-    await expect(strokes).toHaveCount(5);
+    await ink(5);
     if (pointerType === 'pen') {
       // Once the intentional 500 ms palm guard expires, interrupted pen input
       // must not leave the recognizer thinking that the Pencil is still down.
@@ -95,32 +98,27 @@ for (const format of ['svg', 'png'] as const) for (const pointerType of ['pen', 
         svg.dispatchEvent(new TouchEvent('touchstart', { bubbles: true, cancelable: true, touches: contacts, changedTouches: contacts }));
         svg.dispatchEvent(new TouchEvent('touchend', { bubbles: true, cancelable: true, touches: [], changedTouches: contacts }));
       });
-      await expect(strokes).toHaveCount(4);
+      await ink(4);
       await tools.getByRole('button', { name: 'Redo', exact: true }).click();
     }
     await release(290);
-    await undo.click(); await expect(strokes).toHaveCount(4);
+    await undo.click(); await ink(4);
     await tools.getByRole('button', { name: 'Redo', exact: true }).click();
 
     // Explicit cancellation remains different from an interrupted input stream.
     await down(350);
     await page.keyboard.press('Escape');
     await release(350);
-    await expect(strokes).toHaveCount(5);
+    await ink(5);
     await tools.getByRole('button', { name: 'Exit', exact: true }).click();
     await expect(action(page, `open: ${name}`)).toBeVisible();
     await page.reload();
     await action(page, name).click();
     await action(page, `open: ${name}`).click();
-    if (format === 'svg') await expect(strokes).toHaveCount(5);
+    if (format === 'svg') await ink(5);
     else {
       await expect(canvas.locator('[data-image-layer="active"]')).toBeVisible();
-      const pixels = await canvas.locator('[data-image-layer="active"]').evaluate(async (element) => {
-        const image = new Image(); image.src = element.getAttribute('href')!; await image.decode();
-        const buffer = document.createElement('canvas'); buffer.width = image.naturalWidth; buffer.height = image.naturalHeight;
-        const context = buffer.getContext('2d')!; context.drawImage(image, 0, 0);
-        return [50, 110, 170, 230, 290, 350].map((y) => context.getImageData(140, y, 1, 1).data[3]);
-      });
+      const pixels = await Promise.all([50,110,170,230,290,350].map(y=>alpha(canvas,140,y)));
       expect(pixels).toEqual([255, 255, 255, 255, 255, 0]);
     }
   });

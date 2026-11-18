@@ -1,3 +1,4 @@
+import { rasterPoint } from './raster-helpers';
 import { expectChoiceCount } from './menu-helpers';
 import { createHash } from 'node:crypto';
 import { expect, test, type Locator, type Page } from '@playwright/test';
@@ -386,6 +387,10 @@ test('same-file branch race opens two editable versions and publishes the select
 
 async function drawVersion(page: Page, canvas: Locator) {
   await expect(canvas).toBeVisible();
+  if (await canvas.locator('[data-image-layer="active"] canvas').count()) {
+    const a=await rasterPoint(canvas,80,80),b=await rasterPoint(canvas,200,120);
+    await page.mouse.move(a.x,a.y);await page.mouse.down();await page.mouse.move(b.x,b.y,{steps:4});await page.mouse.up();return;
+  }
   const box = (await canvas.boundingBox())!;
   await page.mouse.move(box.x + 25, box.y + 30); await page.mouse.down();
   await page.mouse.move(box.x + 90, box.y + 75, { steps: 4 }); await page.mouse.up();
@@ -428,13 +433,7 @@ for (const format of ['png', 'jpeg', 'ora']) {
     await expect(localCanvas).toBeVisible(); await expect(remoteCanvas).toBeVisible();
     await expect(dialog.getByRole('textbox')).toHaveCount(0);
     for (const [side, color] of [[localCanvas, [255, 0, 0, 255]], [remoteCanvas, [0, 0, 255, 255]]] as const) {
-      const pixel = await side.locator('image[data-image-layer=active]').evaluate(async (image) => {
-        const blob = await (await fetch(image.getAttribute('href')!)).blob();
-        const bitmap = await createImageBitmap(blob);
-        const canvas = document.createElement('canvas'); canvas.width = bitmap.width; canvas.height = bitmap.height;
-        const context = canvas.getContext('2d')!; context.drawImage(bitmap, 0, 0); bitmap.close();
-        return Array.from(context.getImageData(790, 590, 1, 1).data);
-      });
+      const pixel = await side.locator('[data-image-layer=active] canvas').evaluate((canvas) => Array.from((canvas as HTMLCanvasElement).getContext('2d')!.getImageData(790,590,1,1).data));
       // JPEG encoding may round the color channel by one.
       pixel.forEach((channel, index) => expect(Math.abs(channel - color[index])).toBeLessThanOrEqual(1));
     }
@@ -452,12 +451,14 @@ for (const format of ['png', 'jpeg', 'ora']) {
     await page.keyboard.press('Escape');
     await expect(size).toHaveCount(0);
     await expect(dialog).toBeVisible();
+    const pixel = () => remoteCanvas.locator('[data-image-layer=active] canvas').evaluate(canvas => Array.from((canvas as HTMLCanvasElement).getContext('2d')!.getImageData(140,100,1,1).data));
+    const before = await pixel();
     await drawVersion(page, remoteCanvas);
-    await expect(remoteCanvas.locator('polyline')).toHaveAttribute('stroke-width', '4');
+    await expect.poll(pixel).toEqual([32,39,51,255]);
     await remoteCanvas.press('ControlOrMeta+z');
-    await expect(remoteCanvas.locator('polyline')).toHaveCount(0);
+    await expect.poll(pixel).toEqual(before);
     await remoteCanvas.press('ControlOrMeta+Shift+z');
-    await expect(remoteCanvas.locator('polyline')).toHaveCount(1);
+    await expect.poll(pixel).toEqual([32,39,51,255]);
     // Keeping a version must flush the unsaved strokes without an extra Save action.
     await remote.getByRole('button', { name: 'Keep GitHub version', exact: true }).click();
     await expect(dialog).toHaveCount(0);

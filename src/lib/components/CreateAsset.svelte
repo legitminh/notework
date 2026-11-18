@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import CanvasSizeForm from './CanvasSizeForm.svelte';
+  import { blankImage, imageFormat } from '../images';
   import Action from './Action.svelte';
   import StorageNotice from './StorageNotice.svelte';
   import { assetTypes, assetName, validAssetName, validAssetInput, type AssetType } from '../asset-types';
@@ -16,6 +18,7 @@
     onCancel: () => void;
   } = $props();
   let name = $state('');
+  let rasterType = $state<AssetType>();
   let input: HTMLInputElement;
   onMount(() => input.focus());
 </script>
@@ -27,15 +30,22 @@
   <p class="muted">{githubFolder ? 'New assets are saved in this folder on GitHub.' : machineFolder ? 'New assets are saved in this folder on your computer. Creating an item may ask for write access.' : 'New assets are saved inside this folder in browser storage.'}</p>
   {#if !supported}<p class="notice" role="alert">{machineFolder ? 'Local creation needs browser filesystem support.' : 'Browser storage is unavailable. Use HTTPS and allow site storage.'}</p>{/if}
   {#if error}<StorageNotice {error} />{/if}
+  {#if rasterType}
+    <CanvasSizeForm {busy} onCancel={() => rasterType = undefined} onCreate={(size) => {
+      const type = rasterType!;
+      onCreate(name, { ...type, initialContent: async () => new Uint8Array(await (await blankImage(imageFormat(type.extension!)!, size)).arrayBuffer()) });
+    }} />
+  {:else}
   {#each assetTypes as type (type.id)}
     <div class="creation-option">
       <Action label={`create ${type.label}`} disabled={busy || !supported || !validAssetInput(name, type)}
-        onSelect={() => onCreate(name, type)} />
+        onSelect={() => { if (imageFormat(type.extension ?? '')) rasterType = type; else onCreate(name, type); }} />
       <p class="path" aria-label={`Path for ${type.label}`}>{path}/{assetName(name, type) || '…'}{type.kind === 'directory' ? '/' : ''}</p>
       {#if type.initialFileName}
         <p class="path" aria-label="Path for page text file">{path}/{name.trim() || '…'}/{name.trim() ? type.initialFileName(name.trim()) : '….main'}</p>
       {/if}
     </div>
   {/each}
+  {/if}
   {#if name && !validAssetName(name.trim())}<p class="notice">Choose a name without slashes or control characters. “.”, “..”, and “.git” are reserved.</p>{/if}
 </section>

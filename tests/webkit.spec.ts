@@ -125,7 +125,7 @@ test('WebKit persistent storage creates folders, text, and drawings without clon
     await dialog.getByRole('textbox').fill('iPad archive');
     await dialog.getByRole('button', { name: 'Rename and update links' }).click();
     await expect(page.getByRole('heading', { name: 'iPad archive/', exact: true })).toBeVisible();
-    await expect(action('rename')).toBeEnabled();
+    await expect(action('configure folder')).toBeEnabled();
     await page.reload();
     await action('iPad archive/').click();
     await action('renamed.txt').click();
@@ -136,4 +136,31 @@ test('WebKit persistent storage creates folders, text, and drawings without clon
     await context.close();
     await rm(profile, { recursive: true, force: true });
   }
+});
+
+test('WebKit raster canvas paints pixels, clears a lasso region, and saves undo/redo results', async ({ browserName, baseURL }, testInfo) => {
+  test.skip(browserName !== 'webkit', 'Uses isolated persistent WebKit storage.');
+  const profile = await mkdtemp(join(tmpdir(), 'notework-raster-webkit-'));
+  const context = await webkit.launchPersistentContext(profile, { viewport: {width:820,height:1180},isMobile:true,hasTouch:true });
+  try {
+    const page = await context.newPage();
+    await page.goto(baseURL!);
+    const button = (name:string) => page.getByRole('button',{name,exact:true});
+    await button('app settings').click();await button('create new file/folder').click();
+    await page.getByLabel('name',{exact:true}).fill('pixels.png');await button('create png image').click();
+    await page.getByLabel('Width in pixels').fill('400');await page.getByLabel('Height in pixels').fill('200');await button('Create canvas').click();
+    await page.locator('[data-action="open"] button').click();
+    const canvas=page.getByRole('img',{name:'Drawing canvas for pixels.png'}), pixels=canvas.locator('[data-image-layer="active"] canvas');
+    await expect(pixels).toBeVisible();
+    const at=async(x:number,y:number)=>pixels.evaluate((node,[x,y])=>{const c=node as HTMLCanvasElement,r=c.getBoundingClientRect();return {x:r.x+x*r.width/c.width,y:r.y+y*r.height/c.height};},[x,y]);
+    const draw=async(points:number[][])=>{for(const[i,p]of points.entries()){const q=await at(p[0],p[1]);await page.mouse.move(q.x,q.y,{steps:i?5:1});if(!i)await page.mouse.down();}await page.mouse.up();};
+    const alpha=(x:number,y:number)=>pixels.evaluate((node,[x,y])=>(node as HTMLCanvasElement).getContext('2d')!.getImageData(x,y,1,1).data[3],[x,y]);
+    await draw([[50,100],[300,100]]);const inside=await alpha(150,100),outside=await alpha(250,100);expect(inside).toBeGreaterThan(200);expect(outside).toBeGreaterThan(200);
+    await button('Lasso').click();await draw([[100,50],[200,50],[200,150],[100,150],[100,50]]);
+    await button('Clear selected pixels').click();expect(await alpha(150,100)).toBe(0);expect(await alpha(250,100)).toBe(outside);
+    await page.screenshot({path:testInfo.outputPath('raster-workspace.png')});
+    await button('Undo').click();expect(await alpha(150,100)).toBe(inside);await button('Redo').click();expect(await alpha(150,100)).toBe(0);
+    await button('Exit').click();await expect(page.locator('[data-action="open"] button')).toBeVisible();await page.reload();await button('pixels.png').click();await page.locator('[data-action="open"] button').click();
+    await expect(pixels).toBeVisible();expect(await alpha(150,100)).toBe(0);expect(await alpha(250,100)).toBe(outside);
+  } finally {await context.close();await rm(profile,{recursive:true,force:true});}
 });

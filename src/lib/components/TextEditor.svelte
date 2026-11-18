@@ -23,6 +23,10 @@
 <script lang="ts">
   import Control from './Control.svelte';
   import ImageEditor from './ImageEditor.svelte';
+  import CanvasSizeForm from './CanvasSizeForm.svelte';
+  import type { CanvasSize } from '../canvas-size';
+  let rasterHost = $state<HTMLDivElement>();
+  let rasterFormat = $state<ImageFormat>();
   import { imageFormat, readImage, imageFormats, composite, canvasBlob, type ImageFormat } from '../images';
   import { saveImage } from '../drawing-files';
   import { dialogShortcuts } from '../shortcut-scope.svelte';
@@ -199,7 +203,7 @@
     return options.length ? { from: match.from + 2, options, filter: false } : null;
   }
 
-  async function insertDrawing(kind: 'svg' | ImageFormat = 'svg', imported?: File) {
+  async function insertDrawing(kind: 'svg' | ImageFormat = 'svg', imported?: File, size?: CanvasSize) {
     if (!view || saving || githubPublishing || inlineDrawing) return;
     error = '';
     try {
@@ -214,7 +218,7 @@
       const name = imported ? `${imported.name.replace(/\.[^.]+$/, '')}-${crypto.randomUUID().slice(0, 8)}.${kind}` : `drawing-${crypto.randomUUID().slice(0, 8)}.${kind}`;
       if (kind !== 'svg') {
         const image = imported ? await readImage(imported) : undefined;
-        let resource = await saveSiblingDrawing(workspace, node, handle, name, []);
+        let resource = await saveSiblingDrawing(workspace, node, handle, name, [], true, size);
         if (image) resource = await saveImage(resource, image, true);
         previews.set(name, Promise.resolve(resource));
         catalogRequest = undefined;
@@ -788,7 +792,7 @@
       use:preserveContentFocus={() => !usingTools && !!view?.hasFocus}>
       <Control aria-keyshortcuts="Control+Escape" onclick={requestExit} disabled={saving || githubPublishing}>Exit<span class="shortcut-hint" aria-hidden="true">Ctrl+Esc</span></Control>
       <Control aria-keyshortcuts={vimMode ? undefined : 'Control+F'} onclick={find} disabled={loading || githubPublishing}><span class="visually-hidden">Find and replace</span><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="10" cy="10" r="6" /><path d="m14.5 14.5 5 5" /></svg>{#if !vimMode}<span class="shortcut-hint" aria-hidden="true">Ctrl+F</span>{/if}</Control>
-      <Control onclick={() => { choseDrawingFormat = false; choosingDrawing = true; formatDialog.showModal(); }} disabled={loading || saving || githubPublishing}>Draw…<span class="shortcut-hint" aria-hidden="true">Command+B · SVG</span></Control>
+      <Control onclick={() => { choseDrawingFormat = false; rasterFormat = undefined; choosingDrawing = true; formatDialog.showModal(); }} disabled={loading || saving || githubPublishing}>Draw…<span class="shortcut-hint" aria-hidden="true">Command+B · SVG</span></Control>
       <Control onclick={() => imagePicker.click()} disabled={loading || saving || githubPublishing}>Insert image</Control>
       <Control onclick={() => { if (view) foldLine(view); }} disabled={loading || githubPublishing}>Fold</Control>
       <Control onclick={() => openExport()} disabled={loading || githubPublishing}>Export</Control>
@@ -798,7 +802,7 @@
       <div class="inline-drawing-controller">
         {#if inlineDrawing.resource?.image}
           <ImageEditor initialPoint={initialDrawingPoint} bind:this={drawingEditor} bind:usingTools resource={inlineDrawing.resource} {node} {stylusOnly} {autosaveMs} {pdfMargins}
-            surfaceTarget={inlineDrawing.host} onExit={closeInlineDrawing} onDelete={deleteInlineDrawing}
+            surfaceTarget={rasterHost} onExit={closeInlineDrawing} onDelete={deleteInlineDrawing}
             onSaved={(resource) => { if (inlineDrawing) {
               inlineDrawing.resource = resource; previews.set(inlineDrawing.page.name, Promise.resolve(resource));
               view?.dispatch({ effects: pageWidgets.setPreview.of({ name: inlineDrawing.page.name, strokes: [], image: resource.preview && resource.image ? { src: resource.preview, height: resource.image.height / resource.image.width * 1024 } : undefined }) });
@@ -824,6 +828,7 @@
       {:else if !error}saved {node.storage === 'browser' ? 'in browser storage' : 'on your computer'}{/if}
     </p>
     {#if error}<StorageNotice {error} />{/if}
+    <div class="raster-inline-slot" hidden={!inlineDrawing?.resource?.image} bind:this={rasterHost}></div>
     <div class="editor-container" class:line-index-editor={showLineIndex} bind:this={container}></div>
   </div>
 </div>
@@ -849,13 +854,17 @@
     });
   }}>
     {#snippet children()}
+  {#if rasterFormat}
+    <CanvasSizeForm onCancel={() => rasterFormat = undefined} onCreate={(size) => { choseDrawingFormat = true; formatDialog.close(); void insertDrawing(rasterFormat!, undefined, size); }} />
+  {:else}
   <h2>Choose drawing format</h2>
   <p class="muted">SVG stores vector strokes. PNG, JPEG and HEIC store one image; ORA preserves layers.</p>
   <div class="editor-controls">
     {#each ['svg', ...imageFormats] as kind}
-      <Control onclick={() => { choseDrawingFormat = true; formatDialog.close(); void insertDrawing(kind as 'svg' | ImageFormat); }}>{kind.toUpperCase()}</Control>
+      <Control onclick={() => { if (kind === 'svg') { choseDrawingFormat = true; formatDialog.close(); void insertDrawing('svg'); } else rasterFormat = kind as ImageFormat; }}>{kind.toUpperCase()}</Control>
     {/each}
   </div>
+  {/if}
     {/snippet}
   </Menu>
 </dialog>
