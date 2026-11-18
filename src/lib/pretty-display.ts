@@ -7,7 +7,9 @@ const modeSwitch = /^[ \t]*\\(pretty|unpretty|prettify|unprettify)(?:\[\])?[ \t]
 const blockStart = /^[ \t]*\\(pretty1|unpretty1)\[/i;
 const hideLine = Decoration.replace({ block: true });
 const hideSyntax = Decoration.replace({});
-const headingText = Decoration.mark({ class: 'cm-pretty-text' });
+// Include replacement widgets at either boundary so a heading's symbols inherit
+// the same font size and weight as its ordinary text.
+const headingText = Decoration.mark({ class: 'cm-pretty-text', inclusive: true });
 // HTML's default h1–h6 sizes (body-relative) and margins (heading-relative).
 const headingStyles = [
   { size: 2, margin: .67 },
@@ -159,7 +161,9 @@ const prettyField = StateField.define({
     return { ...display, hidden: hideInactiveSource(state, display.source) };
   },
   provide: (field) => [
-    EditorView.decorations.from(field, (value) => value.headings),
+    // Heading typography must wrap inline replacements regardless of the order
+    // in which an editor or preview installs its display extensions.
+    EditorView.outerDecorations.from(field, (value) => value.headings),
     EditorView.decorations.from(field, (value) => value.hidden)
   ]
 });

@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Locator, type Page } from '@playwright/test';
 import { renderSymbolShorthands } from '../src/lib/symbol-shorthand';
 
 const names = 'alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau upsilon phi chi psi omega'.split(' ');
@@ -70,6 +70,38 @@ test('inline autocomplete offers both cases and keeps the shorthand editable', a
   await editor.press('ControlOrMeta+a');
   await expect(editor).toHaveText('value: \\Sigma + \\sigma ');
 });
+
+for (const resize of [true, false]) {
+  test(`symbols follow heading fonts and text resizing with pretty sizing ${resize ? 'on' : 'off'}`, async ({ page }) => {
+    await page.setViewportSize({ width: 1400, height: 1400 });
+    await page.addInitScript((resize) => localStorage.setItem('notework:pretty-font-size', String(resize)), resize);
+    await page.goto('/');
+    const editor = await create(page, 'scaled-symbols.txt');
+    // Cover widgets at both mark boundaries, inside a mark, and replacing an entire heading.
+    await editor.fill('\\pretty\n\\sigma*\n  *\\Sigma*\n    *\\pi\n      \\Lambda\n        child\n\\unpretty\n\\sqr*\nend');
+    await editor.press('ControlOrMeta+End');
+    const verify = async (host: Locator) => {
+      const base = await host.locator('.cm-content').evaluate((element) => parseFloat(getComputedStyle(element).fontSize));
+      const headings = host.locator('.cm-pretty-heading');
+      await expect(headings).toHaveCount(4);
+      for (const [index, scale] of [2, 1.5, 1.17, 1].entries()) {
+        const symbol = headings.nth(index).locator('.cm-symbol');
+        await expect(symbol).toHaveCSS('font-size', `${base * (resize ? scale : 1)}px`);
+        await expect(symbol).toHaveCSS('font-weight', '700');
+      }
+      const plain = host.locator('.cm-line').filter({ hasText: '√*' }).locator('.cm-symbol');
+      await expect(plain).toHaveCSS('font-size', `${base}px`);
+      await expect(plain).toHaveCSS('font-weight', '400');
+    };
+    await verify(page.locator('.editor-container'));
+    await page.locator('html').evaluate((element) => element.style.setProperty('--min-box', '60px'));
+    await verify(page.locator('.editor-container'));
+    await toolbar(page).getByRole('button', { name: 'Exit', exact: true }).click();
+    await verify(page.locator('.file-preview'));
+    await page.locator('html').evaluate((element) => element.style.removeProperty('--min-box'));
+    await verify(page.locator('.file-preview'));
+  });
+}
 
 test('PDF and raster exports draw the rendered symbols', async ({ page }) => {
   await page.goto('/');
