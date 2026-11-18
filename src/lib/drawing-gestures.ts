@@ -36,6 +36,10 @@ export function drawingGestures(canvas: SVGSVGElement, layer: HTMLElement, viewp
     penUntil = performance.now() + 500;
     if (fingers) usedPen = true;
   }
+  function releasePen() {
+    penDown = false;
+    penUntil = performance.now() + 500;
+  }
   function start(event: TouchEvent) {
     // iPad also exposes Pencil contacts through Touch Events. Prevent its native
     // pan behavior without treating the Pencil as one of the gesture fingers.
@@ -91,13 +95,18 @@ export function drawingGestures(canvas: SVGSVGElement, layer: HTMLElement, viewp
   function cancel() {
     fingers = 0; previous = undefined; origins.clear(); actions.cancelGesture(); actions.endTouches();
   }
-  for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) canvas.addEventListener(type, pen as EventListener, true);
+  canvas.addEventListener('pointerdown', pen, true);
+  // A desktop input bridge may send the pen's hover/release outside the canvas.
+  for (const type of ['pointermove', 'pointerup', 'pointercancel']) window.addEventListener(type, pen as EventListener, true);
+  window.addEventListener('blur', releasePen);
   canvas.addEventListener('touchstart', start, { passive: false });
   canvas.addEventListener('touchmove', move, { passive: false });
   canvas.addEventListener('touchend', end);
   canvas.addEventListener('touchcancel', cancel);
   return () => {
-    for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) canvas.removeEventListener(type, pen as EventListener, true);
+    canvas.removeEventListener('pointerdown', pen, true);
+    for (const type of ['pointermove', 'pointerup', 'pointercancel']) window.removeEventListener(type, pen as EventListener, true);
+    window.removeEventListener('blur', releasePen);
     canvas.removeEventListener('touchstart', start);
     canvas.removeEventListener('touchmove', move);
     canvas.removeEventListener('touchend', end);

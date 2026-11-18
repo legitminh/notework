@@ -79,6 +79,8 @@ Drawings are sibling SVG files in the note’s own storage: a local note creates
 
 In a drawing, tap with **two fingers** to undo and **three fingers** to redo. Drag with two fingers to scroll, or pinch to zoom. Adding a second finger cancels the tentative drawing stroke. **App settings → draw with only physical stylus** is disabled by default and persists across reloads. When enabled, fingers use native scrolling/zooming and only pen input draws or erases; toolbar buttons still work with any input device.
 
+Desktop pen and mouse input retains sampled ink if capture is lost or the input stream is interrupted, including during a focus or size change. Missing release events recover without joining the next stroke to the previous one. Finger cancellation still yields to touch gestures, and Escape explicitly discards the tentative stroke.
+
 Press **Esc** in an inline or standalone drawing to cancel any stroke in progress and switch to tool mode. Press **Esc** again, choose **Edit {page name}**, or start another stroke on the canvas to resume drawing.
 
 ## Create files and folders

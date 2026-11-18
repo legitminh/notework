@@ -228,7 +228,13 @@
     }
     if (penOnly && event.pointerType !== 'pen') return;
     if (event.pointerType === 'pen' && gesture?.pointerType === 'touch') cancelGesture();
-    if (event.button !== 0 || gesture || publishing) return;
+    if (event.button !== 0 || publishing) return;
+    // A new primary down after capture was lost also ends a stream whose up
+    // never arrived. Keep the old ink separate from the next stroke.
+    if (event.pointerType !== 'touch' && gesture?.pointerType !== 'touch' &&
+        (gesture?.kind === 'brush' || gesture?.kind === 'eraser') && typeof gesture.input === 'number' &&
+        (gesture.input === event.pointerId || !canvas.hasPointerCapture(gesture.input))) finishGesture();
+    if (gesture) return;
     const origin = point(event);
     if (!origin) return;
     event.preventDefault();
@@ -246,6 +252,12 @@
 
   function move(event: PointerEvent) {
     if (!gesture || event.pointerId !== gesture.input) return;
+    // Desktop pen bridges may resume with hover instead of delivering pointerup.
+    // Finish at the last contact sample rather than drawing toward the hover.
+    if (gesture.pointerType !== 'touch' && !(event.buttons & 1) && event.pressure === 0) {
+      finishGesture();
+      return;
+    }
     if (gesture.kind !== 'transform') {
       for (const item of event.getCoalescedEvents?.() ?? []) sample(item);
     }
@@ -255,19 +267,35 @@
   function finish(event: PointerEvent, cancel = false) {
     if (event.pointerType === 'touch') touches.delete(event.pointerId);
     if (!gesture || event.pointerId !== gesture.input) return;
-    if (cancel) { cancelGesture(); return; }
+    if (cancel) { interruptGesture(); return; }
     sample(event, true);
     finishGesture();
   }
 
   function finishGesture() {
     if (!gesture) return;
-    const { before, kind, limit } = gesture;
+    const { input, before, kind, limit } = gesture;
     gesture = undefined;
     if (kind === 'lasso') selection = growSelection(strokes, points, frameMinimum, limit, selection);
     else commit(before, (kind === 'brush' || (editableHref && kind === 'eraser')) && points.length ? [...strokes, sizedStroke(points, kind === 'eraser' ? eraserSize : penSize, kind === 'eraser')] : strokes);
     points = [];
+    if (typeof input === 'number' && canvas.hasPointerCapture(input)) canvas.releasePointerCapture(input);
     if (dirty) scheduleAutosave();
+  }
+
+  function interruptGesture() {
+    // Capture/stream interruptions are not an explicit undo. Retain already
+    // sampled pen/mouse ink, without sampling unreliable terminal coordinates.
+    // Fingers may be yielding to scrolling, and lasso/transform drafts can roll back.
+    if (gesture?.pointerType !== 'touch' && (gesture?.kind === 'brush' || gesture?.kind === 'eraser')) finishGesture();
+    else cancelGesture();
+  }
+
+  function lostCapture(event: PointerEvent) {
+    if (!gesture || event.pointerId !== gesture.input) return;
+    if (gesture.pointerType !== 'touch' && (gesture.kind === 'brush' || gesture.kind === 'eraser') &&
+        ((event.buttons & 1) || event.pressure > 0)) return;
+    interruptGesture();
   }
 
   function clearAutosave() {
@@ -426,7 +454,7 @@
     canvasWidth = canvas.getBoundingClientRect().width;
     const resize = new ResizeObserver(() => {
       const nextWidth = canvas.getBoundingClientRect().width;
-      if (Math.abs(nextWidth - canvasWidth) > .5) cancelGesture();
+      if (Math.abs(nextWidth - canvasWidth) > .5) interruptGesture();
       canvasWidth = nextWidth;
     });
     resize.observe(canvas);
@@ -445,11 +473,17 @@
     };
     const loseFocus = () => {
       mouse = undefined;
-      if (typeof gesture?.input === 'string') cancelGesture();
+      interruptGesture();
     };
+    const cancelPointer = (event: PointerEvent) => finish(event, true);
     window.addEventListener('keydown', shortcuts, true);
     window.addEventListener('keyup', releaseKey, true);
     window.addEventListener('pointermove', trackMouse, { passive: true });
+    // Keep following the active pointer if a remote input bridge releases capture
+    // and subsequent movement/release events target another element.
+    window.addEventListener('pointermove', move, { capture: true, passive: true });
+    window.addEventListener('pointerup', finish, true);
+    window.addEventListener('pointercancel', cancelPointer, true);
     window.addEventListener('blur', loseFocus);
     window.addEventListener('beforeunload', beforeUnload);
     return () => {
@@ -461,6 +495,9 @@
       window.removeEventListener('keydown', shortcuts, true);
       window.removeEventListener('keyup', releaseKey, true);
       window.removeEventListener('pointermove', trackMouse);
+      window.removeEventListener('pointermove', move, true);
+      window.removeEventListener('pointerup', finish, true);
+      window.removeEventListener('pointercancel', cancelPointer, true);
       window.removeEventListener('blur', loseFocus);
       window.removeEventListener('beforeunload', beforeUnload);
     };
@@ -500,9 +537,8 @@
       <svg bind:this={canvas} class:image-canvas={!!backgroundHref} class:eraser={tool === 'eraser'} class:moving class="drawing-canvas" role="img" aria-label={`Drawing canvas for ${name}`} tabindex="-1"
         viewBox={`0 0 ${DRAWING_WIDTH} ${canvasHeight}`} preserveAspectRatio="xMinYMin meet"
         width={DRAWING_WIDTH} height={canvasHeight}
-        style:touch-action={penOnly ? 'pan-x pan-y pinch-zoom' : 'none'} onpointerdown={begin} onpointermove={move}
-        onpointerup={(event) => finish(event)} onpointercancel={(event) => finish(event, true)}
-        onlostpointercapture={(event) => finish(event, true)}>
+        style:touch-action={penOnly ? 'pan-x pan-y pinch-zoom' : 'none'} onpointerdown={begin}
+        onlostpointercapture={lostCapture}>
         {#if backgroundHref}<image href={backgroundHref} width={DRAWING_WIDTH} height={imageHeight} pointer-events="none" />{/if}
         {#if editableHref && erasing}
           <defs>
