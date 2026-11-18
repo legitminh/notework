@@ -1,7 +1,8 @@
+import { choiceMenu, chooseMenu, expectChoiceCount } from './menu-helpers';
 import { test, expect, type Page } from '@playwright/test';
 // Image codecs share the browser's raster resources; run these cases sequentially.
 test.describe.configure({ mode: 'default', timeout: 90_000 });
-const action = (page: Page, name: string) => page.locator(`[data-action=${JSON.stringify(name)}] button`);
+const action = (page: Page, name: string) => page.locator(`[data-action=${JSON.stringify(name)}] button, button[data-action=${JSON.stringify(name)}]`);
 const textTools = (page: Page) => page.getByRole('group', { name: 'Editor toolbar' });
 const drawTools = (page: Page) => page.getByRole('group', { name: 'Drawing toolbar' });
 async function create(page: Page, name: string, type = 'text file') {
@@ -36,8 +37,8 @@ test.beforeEach(async ({ page }) => { await page.goto('/'); await expect(action(
 test('keyboard defaults, persisted settings, virtual ASCII text and real flick input', async ({ page }) => {
   await expect(page.locator('.keyboard-dock')).toHaveCount(0);
   await action(page, 'app settings').click();
-  await expect(page.getByLabel('shortcut input space', { exact: true })).toHaveValue('alphanumeric');
-  await expect(page.getByLabel('virtual keyboard layout', { exact: true })).toHaveValue('ascii');
+  await expect(choiceMenu(page, 'shortcut input space')).toHaveAttribute('data-value', 'alphanumeric');
+  await expect(choiceMenu(page, 'virtual keyboard layout')).toHaveAttribute('data-value', 'ascii');
   await action(page, 'virtual keyboard: off').click();
   await expect(page.getByRole('region', { name: 'ASCII keyboard', exact: true })).toBeVisible();
   await action(page, 'create new file/folder').click();
@@ -52,7 +53,7 @@ test('keyboard defaults, persisted settings, virtual ASCII text and real flick i
   await expect(text.locator('.cm-line')).toHaveCount(2);
   await textTools(page).getByRole('button', { name: 'Exit', exact: true }).click();
   await home(page); await action(page, 'app settings').click();
-  await page.getByLabel('virtual keyboard layout', { exact: true }).selectOption('flick-alpha');
+  await chooseMenu(page, 'virtual keyboard layout', 'flick-alpha');
   await page.reload();
   await action(page, 'keys.txt').click(); await action(page, 'open').click();
   await expect(page.locator('.keyflow-keyboard')).toHaveAttribute('data-layout', 'flick-alpha');
@@ -87,6 +88,7 @@ test('virtual keyboard toggles immediately and stays responsive after modal sear
     await expect(dialog).toHaveCount(0);
     await expect(dock).toBeVisible();
 
+    await action(page, 'app settings').click();
     await action(page, 'virtual keyboard: on').click();
     await expect(dock).toHaveCount(0);
     await expect(page.locator('html')).not.toHaveClass(/virtual-keyboard-open/);
@@ -121,6 +123,7 @@ test('mod-4 uses spare space without narrowing editors and alternates gray with 
   await textTools(page).getByRole('button', { name: 'Exit', exact: true }).click();
   await home(page); await action(page, 'app settings').click();
   await action(page, 'line index mod 4: off').click();
+  await action(page, 'close app settings').click();
   await action(page, 'lines.txt').click(); await action(page, 'open').click();
   await expect(page.locator('.line-mod-0')).toHaveCount(2);
   expect(await geometry()).toEqual(narrow);
@@ -165,8 +168,8 @@ for (const format of ['png', 'jpeg', 'heic', 'ora']) {
     await action(page, 'open').click(); await stroke(page);
     if (format === 'ora') {
       await page.getByRole('button', { name: 'Add layer', exact: true }).click();
-      await expect(page.getByLabel('active layer')).toHaveValue('0');
-      await expect(page.getByLabel('active layer').locator('option')).toHaveCount(2);
+      await expect(choiceMenu(page, 'active layer')).toHaveAttribute('data-value', '0');
+      await expectChoiceCount(page, 'active layer', 2);
       await stroke(page);
     }
     await drawTools(page).getByRole('button', { name: 'Exit', exact: true }).click();
@@ -178,7 +181,7 @@ for (const format of ['png', 'jpeg', 'heic', 'ora']) {
     if (format === 'ora') expect(data.slice(0, 2)).toEqual([80, 75]);
     await page.reload(); await action(page, `picture.${format}`).click(); await action(page, 'open').click();
     await expect(page.getByRole('img', { name: `Drawing canvas for picture.${format}` })).toBeVisible();
-    if (format === 'ora') await expect(page.getByLabel('active layer').locator('option')).toHaveCount(2);
+    if (format === 'ora') await expectChoiceCount(page, 'active layer', 2);
     const image = page.locator('.drawing-canvas image').first();
     await expect(image).toHaveAttribute('href', /^blob:/);
   });
@@ -288,7 +291,7 @@ test('virtual keyboard remains usable inside modal global search', async ({ page
 
 test('updated flick keyboard enters uppercase and editing gestures in the editor and search', async ({ page }) => {
   await create(page, 'gestures.txt'); await home(page); await action(page, 'app settings').click();
-  await page.getByLabel('virtual keyboard layout', { exact: true }).selectOption('flick-alpha');
+  await chooseMenu(page, 'virtual keyboard layout', 'flick-alpha');
   await action(page, 'virtual keyboard: off').click(); await action(page, 'close app settings').click();
   await action(page, 'gestures.txt').click(); await action(page, 'open').click();
   const editor = page.getByRole('textbox', { name: 'Edit gestures.txt', exact: true });

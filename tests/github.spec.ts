@@ -1,10 +1,11 @@
+import { expectChoiceCount } from './menu-helpers';
 import { createHash } from 'node:crypto';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { serializeDrawing } from '../src/lib/drawing';
 import { zipSync, strToU8 } from 'fflate';
 
 const api = 'https://api.github.com/repos/example/notebook';
-const action = (page: Page, name: string) => page.locator(`[data-action=${JSON.stringify(name)}] button`);
+const action = (page: Page, name: string) => page.locator(`[data-action=${JSON.stringify(name)}] button, button[data-action=${JSON.stringify(name)}]`);
 const editor = (page: Page, file: string) => page.getByRole('textbox', { name: `Edit ${file}`, exact: true });
 const exit = (page: Page, group = 'Editor toolbar') => page.getByRole('group', { name: group }).getByRole('button', { name: 'Exit', exact: true });
 const syncProgress = (page: Page) => page.getByRole('progressbar', { name: 'Syncing to GitHub' });
@@ -439,8 +440,8 @@ for (const format of ['png', 'jpeg', 'ora']) {
     }
     if (format === 'ora') {
       await remote.getByRole('button', { name: 'Add layer', exact: true }).click();
-      await expect(remote.getByLabel('active layer').locator('option')).toHaveCount(2);
-      await expect(local.getByLabel('active layer').locator('option')).toHaveCount(1);
+      await expectChoiceCount(remote, 'active layer', 2);
+      await expectChoiceCount(local, 'active layer', 1);
     }
     await remote.getByRole('button', { name: 'Brush', exact: true }).click();
     const size = remote.getByRole('slider', { name: 'Pen size', exact: true });
@@ -464,7 +465,7 @@ for (const format of ['png', 'jpeg', 'ora']) {
     expect(repo.bytes(name)).not.toEqual(upstream);
     await action(page, 'open').click();
     await expect(page.getByRole('img', { name: `Drawing canvas for ${name}` })).toBeVisible();
-    if (format === 'ora') await expect(page.getByLabel('active layer').locator('option')).toHaveCount(2);
+    if (format === 'ora') await expectChoiceCount(page, 'active layer', 2);
   });
 }
 
@@ -761,6 +762,7 @@ test('normal folder actions and drawing editing publish to GitHub', async ({ pag
   await expect(page.getByRole('heading', { name: 'renamed.txt', exact: true })).toBeVisible();
   await expect.poll(() => repo.content('Sketches/idea.txt')).toBeUndefined();
   await expect.poll(() => repo.content('Sketches/renamed.txt')).toBe('');
+  await action(page, 'configure file').click();
   await action(page, 'delete this file').click();
   await page.getByRole('dialog', { name: 'Delete renamed.txt?' }).getByRole('button', { name: 'Delete file' }).click();
   await expect(page.getByRole('heading', { name: 'Sketches/', exact: true })).toBeVisible();

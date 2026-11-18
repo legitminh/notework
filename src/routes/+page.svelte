@@ -2,7 +2,7 @@
   import { onMount, tick, untrack } from 'svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
-  import { Keyflow, Document, SubKeyframe, set_theme_id, min_box, state_viewport, lockstep_scrolling, key_presets, set_available_keys } from '@legitminh/keyflow';
+  import { Keyflow, Document, set_theme_id, min_box, state_viewport, lockstep_scrolling, key_presets, set_available_keys } from '@legitminh/keyflow';
   import { NavigationHistory } from '../lib/navigation-history';
   import FilePreview from '../lib/components/FilePreview.svelte';
   import type { PreviewLocation } from '../lib/preview-location';
@@ -16,6 +16,8 @@
   import { BackgroundSync, setBackgroundSync } from '../lib/github/background.svelte';
   import { keyboardChoices, isKeyboardChoice, type KeyboardChoice } from '../lib/keyboard';
   import Control from '../lib/components/Control.svelte';
+  import Menu from '../lib/components/Menu.svelte';
+  import ChoiceMenu from '../lib/components/ChoiceMenu.svelte';
   import { dialogShortcuts, shortcutScope } from '../lib/shortcut-scope.svelte';
   import Action from '../lib/components/Action.svelte';
   import CreateAsset from '../lib/components/CreateAsset.svelte';
@@ -78,7 +80,6 @@
   let wrapLines = $state(true);
   type ThemeChoice = 'dark' | 'light' | 'system';
   let themeChoice = $state<ThemeChoice>('system');
-  let themeMenuHost = $state<HTMLDivElement>();
   let systemDark = $state(false);
   let githubPollSeconds = $state(DEFAULT_GITHUB_POLL_SECONDS);
   let githubPullRevision = $state(0);
@@ -172,12 +173,22 @@
   let contentSearch = $state(false);
   let contentIndex = $state.raw<ContentSearch>();
   let searchMenu = $state(false);
+  function closeSearchMenu() {
+    if (!searchMenu) return;
+    searchMenu = false;
+    // Native dialog closure precedes shortcut re-enabling. Restore the opener
+    // once the parent frame's controls can receive focus again.
+    void tick().then(() => document.querySelector<HTMLButtonElement>('nav [data-action="search"] button')?.focus({ preventScroll: true }));
+  }
   let searchFrom = $state(ROOT);
   let searchLabel = $state('home');
   let searchEverywhere = $state(true);
   async function beginSearch(mode: SearchMode) {
     searchMenu = false;
     contentSearch = false; globalSearch = false;
+    panel = null;
+    // Unwind the menu frame before activating the search dialog's own frame.
+    await tick();
     // A shortcut immediately after selecting a folder belongs to that destination.
     if (pendingNavigation) await pendingNavigation;
     searchEverywhere = mode.startsWith('all-');
@@ -739,6 +750,7 @@
       try { await saveWorkspace(workspace.data); }
       catch (error) { workspace.forget(node); throw error; }
       await refresh();
+      panel = null;
       return true;
     } catch (error) {
       await clearRepository(id).catch(() => {});
@@ -827,49 +839,7 @@
           {/if}
         {/key}
       {:else}
-      <nav aria-label="state navigation">
-        <Action label="search" onSelect={() => { searchMenu = true; }} disabled={loading || busy} />
-        {#if current}
-          <Action label={`configure ${resourceType}`} onSelect={() => togglePanel('configure')} disabled={busy || loading} />
-          {#if current.kind === 'directory'}
-            <Action label="create new file/folder" onSelect={startCreating} disabled={loading || busy || !canCreateHere} />
-          {/if}
-        {:else}
-          <Action label="app settings" onSelect={() => togglePanel('settings')} disabled={loading || busy} />
-        {/if}
-        <hr />
-        {#if current}
-          <Action label="home" iconOnly onSelect={() => navigate(ROOT)} disabled={busy || loading}>
-            <svg class="action-icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-              <path d="m3 11 9-8 9 8" /><path d="M5 10v11h14V10" /><path d="M9 21v-7h6v7" />
-            </svg>
-          </Action>
-          <Action label=".." onSelect={() => navigate(parentId(current!))} disabled={busy || loading} />
-        {/if}
-        {#each edges as node (node.id)}
-          {#if relocateTarget && node.kind === 'directory'}
-            <div class="file-navigation-row">
-              <Action label="choose" onSelect={() => chooseLocation(node)} disabled={busy || loading} />
-              <Action label={node.name + '/'} onSelect={() => navigate(node.id)} disabled={busy || loading} />
-            </div>
-          {:else if !relocateTarget && node.kind === 'file' && directChildIds.has(node.id) && (!current || current.kind === 'directory')}
-            <div class="file-navigation-row">
-              <Action label="open" onSelect={() => { void openNode(node); }} disabled={busy || loading} />
-              <Action label={node.name} onSelect={() => navigate(node.id)} disabled={busy || loading} />
-            </div>
-          {:else}
-            <Action label={node.name + (node.kind === 'directory' ? '/' : '')} onSelect={() => navigate(node.id)} disabled={busy || loading} />
-          {/if}
-        {/each}
-      </nav>
-
-      {#if loading}<p class="muted" role="status">opening workspace…</p>{/if}
-      {#if !supported}
-        <p class="notice" role="status">Local filesystem access needs Chrome or Edge on HTTPS or localhost. Open Notework there to select files and folders from your computer.</p>
-      {/if}
-      {#if storageMessage}<p class="notice" role="status">{storageMessage}</p>{/if}
-      {#if githubError && panel !== 'github'}<StorageNotice error={githubError} role="status" />{/if}
-      {#if message}<StorageNotice error={message} />{/if}
+      {#snippet panelContents()}
       <div bind:this={panelElement}>
         {#if panel}
           <div class="panel-controls"><Action label={`close ${panel === 'settings' ? 'app settings' : panel === 'configure' ? `configure ${resourceType}` : panel}`} onSelect={() => { panel = null; state_viewport.viewport?.scrollTo({ top: 0 }); }} /></div>
@@ -931,10 +901,8 @@
             {/if}
 
             <h3>appearance</h3>
-            <div class="action" bind:this={themeMenuHost}>{#if !shortcutScope.dialog}
-              <SubKeyframe label={`color theme: ${themeChoice}`} items={themeChoices.map((choice) => ({ label: choice, on_select: () => chooseTheme(choice) }))}
-                onopen={async () => { await tick(); themeMenuHost?.querySelector('.subkeyframe-panel')?.scrollIntoView({ block: 'nearest' }); }} />
-            {/if}</div>
+            <ChoiceMenu label="color theme" value={themeChoice} choices={themeChoices.map((id) => ({ id, label: id }))}
+              onchange={(value) => chooseTheme(value as ThemeChoice)} />
             <Action label={`line numbers: ${showLineNumbers ? 'on' : 'off'}`} onSelect={() => {
               showLineNumbers = !showLineNumbers; saveAppearancePreference('notework:line-numbers', showLineNumbers);
             }} />
@@ -943,20 +911,22 @@
             }} />
             <p class="muted">Zero-based line index in spare margins: gray/gray = 0, transparent/gray = 1, gray/transparent = 2, transparent/transparent = 3.</p>
             <h3>keyboard</h3>
-            <label class="field">shortcut input space
-              <select aria-label="shortcut input space" bind:value={shortcutAlphabet} onchange={() => {
-                set_available_keys(shortcutAlphabet === 'letters' ? key_presets.letters : key_presets.alphanumeric);
-                try { localStorage.setItem('notework:shortcut-alphabet', shortcutAlphabet); } catch { /* Session only. */ }
-              }}><option value="alphanumeric">Alphanumeric (A–Z, 0–9)</option><option value="letters">Letters (A–Z)</option></select>
-            </label>
+            <ChoiceMenu label="shortcut input space" value={shortcutAlphabet}
+              choices={[{ id: 'alphanumeric', label: 'Alphanumeric (A–Z, 0–9)' }, { id: 'letters', label: 'Letters (A–Z)' }]}
+              onchange={(value) => {
+                shortcutAlphabet = value;
+                set_available_keys(value === 'letters' ? key_presets.letters : key_presets.alphanumeric);
+                try { localStorage.setItem('notework:shortcut-alphabet', value); } catch { /* Session only. */ }
+              }} />
             <Action label={`virtual keyboard: ${virtualKeyboard ? 'on' : 'off'}`} onSelect={() => {
               virtualKeyboard = !virtualKeyboard; saveAppearancePreference('notework:virtual-keyboard', virtualKeyboard);
             }} />
-            <label class="field">virtual keyboard layout
-              <select aria-label="virtual keyboard layout" bind:value={keyboardChoice} onchange={() => {
-                try { localStorage.setItem('notework:keyboard-layout', keyboardChoice); } catch { /* Session only. */ }
-              }}>{#each keyboardChoices as choice}<option value={choice.id}>{choice.label}</option>{/each}</select>
-            </label>
+            <ChoiceMenu label="virtual keyboard layout" value={keyboardChoice} choices={keyboardChoices}
+              onchange={(value) => {
+                if (!isKeyboardChoice(value)) return;
+                keyboardChoice = value;
+                try { localStorage.setItem('notework:keyboard-layout', value); } catch { /* Session only. */ }
+              }} />
             <p class="muted">Off by default. When enabled, use the selected Keyflow keyboard instead of the system text keyboard. Flick alpha supports directional gestures during text editing.</p>
             <Action label={`Vim mode: ${vimMode ? 'on' : 'off'}`} onSelect={() => {
               vimMode = !vimMode;
@@ -1007,6 +977,56 @@
             onConnect={connectGitHub} onUpdate={reconnectGitHub} onDisconnect={disconnectGitHub} />
         {/if}
       </div>
+      {/snippet}
+      <nav aria-label="state navigation">
+        <Action label="search" onSelect={() => { searchMenu = true; }} disabled={loading || busy} />
+        {#if current}
+          <Menu label={`configure ${resourceType}`} open={panel !== null} disabled={(busy || loading) && panel === null}
+            onopen={() => { void togglePanel('configure'); }} onclose={() => { panel = null; }}>
+            {#snippet children()}{@render panelContents()}{/snippet}
+          </Menu>
+          {#if current.kind === 'directory'}
+            <Action label="create new file/folder" onSelect={startCreating} disabled={loading || busy || !canCreateHere} />
+          {/if}
+        {:else}
+          <Menu label="app settings" open={panel !== null} disabled={(busy || loading) && panel === null}
+            onopen={() => { void togglePanel('settings'); }} onclose={() => { panel = null; }}>
+            {#snippet children()}{@render panelContents()}{/snippet}
+          </Menu>
+        {/if}
+        <hr />
+        {#if current}
+          <Action label="home" iconOnly onSelect={() => navigate(ROOT)} disabled={busy || loading}>
+            <svg class="action-icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path d="m3 11 9-8 9 8" /><path d="M5 10v11h14V10" /><path d="M9 21v-7h6v7" />
+            </svg>
+          </Action>
+          <Action label=".." onSelect={() => navigate(parentId(current!))} disabled={busy || loading} />
+        {/if}
+        {#each edges as node (node.id)}
+          {#if relocateTarget && node.kind === 'directory'}
+            <div class="file-navigation-row">
+              <Action label="choose" onSelect={() => chooseLocation(node)} disabled={busy || loading} />
+              <Action label={node.name + '/'} onSelect={() => navigate(node.id)} disabled={busy || loading} />
+            </div>
+          {:else if !relocateTarget && node.kind === 'file' && directChildIds.has(node.id) && (!current || current.kind === 'directory')}
+            <div class="file-navigation-row">
+              <Action label="open" onSelect={() => { void openNode(node); }} disabled={busy || loading} />
+              <Action label={node.name} onSelect={() => navigate(node.id)} disabled={busy || loading} />
+            </div>
+          {:else}
+            <Action label={node.name + (node.kind === 'directory' ? '/' : '')} onSelect={() => navigate(node.id)} disabled={busy || loading} />
+          {/if}
+        {/each}
+      </nav>
+
+      {#if loading}<p class="muted" role="status">opening workspace…</p>{/if}
+      {#if !supported}
+        <p class="notice" role="status">Local filesystem access needs Chrome or Edge on HTTPS or localhost. Open Notework there to select files and folders from your computer.</p>
+      {/if}
+      {#if storageMessage}<p class="notice" role="status">{storageMessage}</p>{/if}
+      {#if githubError && panel !== 'github'}<StorageNotice error={githubError} role="status" />{/if}
+      {#if message}<StorageNotice error={message} />{/if}
 
       <section class="state-display" aria-label="current state" tabindex="-1" bind:this={displayElement}>
         {#if current}
@@ -1071,7 +1091,7 @@
   <AppKeyboard enabled={virtualKeyboard} choice={keyboardChoice} />
   <GitHubSyncProgress />
   {#if heldModifier && !globalSearch && !contentSearch && !searchMenu}<aside class="modifier-hints" aria-label="Command and Control shortcuts">C · Copy &nbsp; V · Paste &nbsp; F · Search text in folder children &nbsp; P · Search file in folder children &nbsp; Shift+F · Search text in all files &nbsp; Shift+P · Search file in all files &nbsp; S · Save</aside>{/if}
-  {#if searchMenu}<SearchMenu onChoose={beginSearch} onClose={() => { searchMenu = false; }} />{/if}
+  {#if searchMenu}<SearchMenu onChoose={beginSearch} onClose={closeSearchMenu} />{/if}
   {#if contentSearch && contentIndex}<ContentSearchDialog {workspace} index={contentIndex} from={searchFrom}
     label={searchLabel} {graphRevision}
     onOpen={async (node, position) => {

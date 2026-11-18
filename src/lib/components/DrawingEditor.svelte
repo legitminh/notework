@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { SubKeyframe, VerticalHoverSlider, type SubKeyframeController } from '@legitminh/keyflow';
+  import { SubKeyframe, VerticalHoverSlider, active_input_frame, get_input_frame, type SubKeyframeController } from '@legitminh/keyflow';
   import Control from './Control.svelte';
   import StorageNotice from './StorageNotice.svelte';
   import EditorTitle from './EditorTitle.svelte';
@@ -33,6 +33,7 @@
     surfaceTarget?: HTMLElement;
     usingTools?: boolean;
   } = $props();
+  const inputFrame = get_input_frame();
 
   let strokes = $state.raw<Drawing>([]);
   let saved: Drawing = [];
@@ -377,6 +378,8 @@
       });
     }) : undefined;
     const shortcuts = (event: KeyboardEvent) => {
+      // A layer/size menu owns keys until it returns to this editor's frame.
+      if ($active_input_frame !== inputFrame) return;
       const modal = shortcutScope.dialog;
       const target = event.target;
       if (event.altKey || event.isComposing) return;

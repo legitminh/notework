@@ -1,3 +1,4 @@
+import { chooseMenu } from './menu-helpers';
 import { test, expect, webkit } from '@playwright/test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -21,7 +22,7 @@ test('WebKit persistent storage creates folders, text, and drawings without clon
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
     await page.goto(baseURL!);
-    const action = (name: string) => page.locator(`[data-action=${JSON.stringify(name)}] button`);
+    const action = (name: string) => page.locator(`[data-action=${JSON.stringify(name)}] button, button[data-action=${JSON.stringify(name)}]`);
     await action('app settings').click();
     await action('create new file/folder').click();
     await page.getByLabel('name', { exact: true }).fill('iPad notes');
@@ -53,7 +54,7 @@ test('WebKit persistent storage creates folders, text, and drawings without clon
 
     for (const [format, label] of [['png', 'PNG'], ['jpeg', 'JPEG']] as const) {
       await toolbar.getByRole('button', { name: 'Export', exact: true }).click();
-      await exportDialog.getByLabel('Export format').selectOption(format);
+      await chooseMenu(exportDialog, 'Export format', format);
       await expect(exportDialog.getByRole('button', { name: `Share ${label}`, exact: true })).toBeEnabled();
       const downloaded = page.waitForEvent('download');
       await exportDialog.getByRole('button', { name: `Download ${label}`, exact: true }).click();

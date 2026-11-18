@@ -61,6 +61,7 @@
   import { pageReferences } from '../page-references';
   import { prettyDisplay } from '../pretty-display';
   import { symbolDisplay } from '../symbol-display';
+  import Menu from './Menu.svelte';
   import { GitHubFile, gitBlobSha } from '../github/repository';
   import { draftQueue } from '../github/storage';
 
@@ -100,6 +101,8 @@
   let openingDrawing = false;
   let initialDrawingPoint = $state.raw<Point>();
   let formatDialog: HTMLDialogElement;
+  let choosingDrawing = $state(false);
+  let choseDrawingFormat = false;
   let imagePicker: HTMLInputElement;
   const textLock = new Compartment();
   const pageWidgets = svgPages((page) => { void openDrawing(page); }, () => vimMode);
@@ -785,7 +788,7 @@
       use:preserveContentFocus={() => !usingTools && !!view?.hasFocus}>
       <Control aria-keyshortcuts="Control+Escape" onclick={requestExit} disabled={saving || githubPublishing}>Exit<span class="shortcut-hint" aria-hidden="true">Ctrl+Esc</span></Control>
       <Control aria-keyshortcuts={vimMode ? undefined : 'Control+F'} onclick={find} disabled={loading || githubPublishing}><span class="visually-hidden">Find and replace</span><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="10" cy="10" r="6" /><path d="m14.5 14.5 5 5" /></svg>{#if !vimMode}<span class="shortcut-hint" aria-hidden="true">Ctrl+F</span>{/if}</Control>
-      <Control onclick={() => formatDialog.showModal()} disabled={loading || saving || githubPublishing}>Draw…<span class="shortcut-hint" aria-hidden="true">Command+B · SVG</span></Control>
+      <Control onclick={() => { choseDrawingFormat = false; choosingDrawing = true; formatDialog.showModal(); }} disabled={loading || saving || githubPublishing}>Draw…<span class="shortcut-hint" aria-hidden="true">Command+B · SVG</span></Control>
       <Control onclick={() => imagePicker.click()} disabled={loading || saving || githubPublishing}>Insert image</Control>
       <Control onclick={() => { if (view) foldLine(view); }} disabled={loading || githubPublishing}>Fold</Control>
       <Control onclick={() => openExport()} disabled={loading || githubPublishing}>Export</Control>
@@ -835,15 +838,26 @@
     const kind = imageFormat(file.name);
     if (kind) void insertDrawing(kind, file); else error = 'Choose PNG, JPEG, HEIC, or ORA.';
   }} />
-<dialog use:dialogShortcuts class="local-picker drawing-format" bind:this={formatDialog} aria-label="Choose drawing format">
+<dialog use:dialogShortcuts class="local-picker drawing-format" bind:this={formatDialog} aria-label="Choose drawing format"
+  onclose={() => { choosingDrawing = false; }}>
+  <Menu label="Choose drawing format" showTrigger={false} open={choosingDrawing} backLabel="Cancel" onclose={() => {
+    formatDialog.close();
+    if (!choseDrawingFormat) void tick().then(() => {
+      if (!active || inlineDrawing) return;
+      usingTools = true;
+      toolbar?.querySelector<HTMLButtonElement>('[aria-label="Draw…"]')?.focus({ preventScroll: true });
+    });
+  }}>
+    {#snippet children()}
   <h2>Choose drawing format</h2>
   <p class="muted">SVG stores vector strokes. PNG, JPEG and HEIC store one image; ORA preserves layers.</p>
   <div class="editor-controls">
     {#each ['svg', ...imageFormats] as kind}
-      <Control onclick={() => { formatDialog.close(); void insertDrawing(kind as 'svg' | ImageFormat); }}>{kind.toUpperCase()}</Control>
+      <Control onclick={() => { choseDrawingFormat = true; formatDialog.close(); void insertDrawing(kind as 'svg' | ImageFormat); }}>{kind.toUpperCase()}</Control>
     {/each}
-    <Control onclick={() => formatDialog.close()}>Cancel</Control>
   </div>
+    {/snippet}
+  </Menu>
 </dialog>
 
 {#if exportSource}

@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import DrawingEditor from './DrawingEditor.svelte';
   import Control from './Control.svelte';
+  import ChoiceMenu from './ChoiceMenu.svelte';
   import StorageNotice from './StorageNotice.svelte';
   import ImageLoading from './ImageLoading.svelte';
   import { imageFormat, imageCanvas, canvasBlob, composite, paintBlob, type ImageDocument, type ImageLayer } from '../images';
@@ -113,9 +114,9 @@
 <div class="image-editor" class:standalone-drawing-editor={!surfaceTarget}>
   {#if layered && document}
     <div class="image-layers" aria-label="Image layers">
-      <label class="field">active layer <select aria-label="active layer" value={selected} disabled={busy} onchange={(event) => { void changeLayer(Number(event.currentTarget.value)); }}>
-        {#each document.layers as layer, index}<option value={index}>{layer.name}{layer.visible ? '' : ' (hidden)'}</option>{/each}
-      </select></label>
+      <ChoiceMenu label="active layer" value={String(selected)} disabled={busy}
+        choices={document.layers.map((layer, index) => ({ id: String(index), label: layer.name + (layer.visible ? '' : ' (hidden)') }))}
+        onchange={(value) => changeLayer(Number(value))} />
       <Control disabled={busy || document.layers.length >= 100} onclick={() => { void modifyLayers(async (layers) => {
         const canvas = imageCanvas(document!.width, document!.height);
         layers.unshift({ name: `Layer ${layers.length + 1}`, png: await canvasBlob(canvas), visible: true, opacity: 1 });
@@ -154,6 +155,5 @@
   .image-preparing { flex: 1 1 auto; display: flex; }
   .image-editor { min-height: 0; }
   .image-layers { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 14px; }
-  .image-layers .field { margin: 0; font-size: inherit; }
   .image-layers :global(button) { min-height: 36px; }
 </style>

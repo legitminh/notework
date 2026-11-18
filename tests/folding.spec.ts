@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 
-const action = (page: Page, name: string) => page.locator(`[data-action=${JSON.stringify(name)}] button`);
+const action = (page: Page, name: string) => page.locator(`[data-action=${JSON.stringify(name)}] button, button[data-action=${JSON.stringify(name)}]`);
 const tools = (page: Page) => page.getByRole('group', { name: 'Editor toolbar' });
 
 async function create(page: Page, name = 'folds.txt') {

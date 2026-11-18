@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 
-const button = (page: Page, name: string) => page.locator(`[data-action=${JSON.stringify(name)}] button`);
+const button = (page: Page, name: string) => page.locator(`[data-action=${JSON.stringify(name)}] button, button[data-action=${JSON.stringify(name)}]`);
 
 async function shortcut(page: Page, name: string) {
   const target = button(page, name).last();

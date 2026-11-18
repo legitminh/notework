@@ -3,7 +3,7 @@ import { test, expect } from '@playwright/test';
 test('installed app shell and browser documents work offline', async ({ page, context }) => {
   test.skip(process.env.PLAYWRIGHT_PRODUCTION !== '1', 'Service workers are built only for production.');
   await page.goto('/');
-  const action = (name: string) => page.locator(`[data-action=${JSON.stringify(name)}] button`);
+  const action = (name: string) => page.locator(`[data-action=${JSON.stringify(name)}] button, button[data-action=${JSON.stringify(name)}]`);
   await expect(action('app settings')).toBeEnabled();
   await page.evaluate(async () => {
     await navigator.serviceWorker.ready;
@@ -52,7 +52,7 @@ test('installed app shell and browser documents work offline', async ({ page, co
 test('bundled HEIC codec creates and edits images offline', async ({ page, context }) => {
   test.skip(process.env.PLAYWRIGHT_PRODUCTION !== '1', 'Service workers are built only for production.');
   await page.goto('/');
-  const action = (name: string) => page.locator(`[data-action=${JSON.stringify(name)}] button`);
+  const action = (name: string) => page.locator(`[data-action=${JSON.stringify(name)}] button, button[data-action=${JSON.stringify(name)}]`);
   await expect(action('app settings')).toBeEnabled();
   await page.evaluate(async () => {
     await navigator.serviceWorker.ready;

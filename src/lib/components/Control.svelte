@@ -20,20 +20,8 @@
     const dialog = host.closest('dialog');
     return (!dialog || dialog === modal) && (!modal || modal.contains(host));
   });
-  // Opening a dialog can replace its initially focused native fallback.
-  $effect.pre(() => {
-    const enabled = available && !disabled;
-    void keys;
-    const previous = host?.querySelector('button');
-    const focused = previous === document.activeElement;
-    if (enabled && focused) void tick().then(() => {
-      // Restore a replaced button only if another control has not taken focus.
-      if (document.activeElement === previous || document.activeElement === document.body)
-        host?.querySelector('button')?.focus({ preventScroll: true });
-    });
-  });
-  // Keyflow 0.2 does not forward native attributes. Keep Notework's names,
-  // existing editor shortcuts and toggle semantics on the actual button.
+  // Keep Notework's names, existing editor shortcuts and toggle semantics on
+  // the actual button while Keyflow handles disabled state and registration.
   $effect(() => {
     const element = host;
     const attributes = { 'aria-label': ariaLabel, 'aria-keyshortcuts': ariaKeys, 'aria-pressed': ariaPressed };
@@ -65,13 +53,11 @@
 </script>
 
 <span class={`control ${className}`} bind:this={host}>
-  {#if disabled || !available}
-    <button type="button" {disabled} {onclick}>{@render children?.()}</button>
-  {:else if keys}
-    <StaticButton {keys} on_close={onclick}>{@render children?.()}</StaticButton>
+  {#if keys}
+    <StaticButton {keys} disabled={disabled || !available} on_close={onclick}>{@render children?.()}</StaticButton>
   {:else if host?.closest('dialog')}
-    <Button on_close={onclick}>{@render children?.()}</Button>
+    <Button disabled={disabled || !available} on_close={onclick}>{@render children?.()}</Button>
   {:else}
-    <ButtonPositional on_close={onclick}>{@render children?.()}</ButtonPositional>
+    <ButtonPositional disabled={disabled || !available} on_close={onclick}>{@render children?.()}</ButtonPositional>
   {/if}
 </span>

@@ -1,5 +1,6 @@
 <script lang="ts">
   import Control from './Control.svelte';
+  import ChoiceMenu from './ChoiceMenu.svelte';
   import { onMount } from 'svelte';
   import { dialogShortcuts } from '../shortcut-scope.svelte';
   import type { ExportFormat, PdfSource } from '../pdf-export';
@@ -60,8 +61,8 @@
     } finally { sharing = false; }
   }
 
-  function selectFormat(event: Event) {
-    format = (event.currentTarget as HTMLSelectElement).value as ExportFormat;
+  function selectFormat(value: string) {
+    format = value as ExportFormat;
     void prepare(format);
   }
 </script>
@@ -69,9 +70,8 @@
 <dialog use:dialogShortcuts class="local-picker editor-exit" bind:this={dialog} aria-labelledby="export-heading"
   oncancel={(event) => { event.preventDefault(); if (!sharing) close(); }}>
   <h2 id="export-heading">Export</h2>
-  <label class="field">format <select aria-label="Export format" value={format} onchange={selectFormat} disabled={sharing}>
-    <option value="pdf">PDF</option><option value="png">PNG</option><option value="jpeg">JPEG</option>
-  </select></label>
+  <ChoiceMenu label="Export format" value={format} choices={[{ id: 'pdf', label: 'PDF' }, { id: 'png', label: 'PNG' }, { id: 'jpeg', label: 'JPEG' }]}
+    onchange={selectFormat} disabled={sharing} />
   <p class="muted">One page. Exports the current draft.</p>
   <p class="muted">Margins (min-box): left {source.style.margins.left}, right {source.style.margins.right}, top {source.style.margins.top}, bottom {source.style.margins.bottom}.</p>
   {#if preparing}<p class="muted" role="status">Preparing {label()}…</p>{/if}

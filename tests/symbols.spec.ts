@@ -1,3 +1,4 @@
+import { chooseMenu } from './menu-helpers';
 import { test, expect, type Locator, type Page } from '@playwright/test';
 import { renderSymbolShorthands } from '../src/lib/symbol-shorthand';
 
@@ -6,7 +7,7 @@ const lower = Array.from('αβγδεζηθικλμνξοπρστυφχψω');
 const upper = Array.from('ΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩ');
 const commands = names.flatMap((name) => [`\\${name}`, `\\${name[0].toUpperCase()}${name.slice(1)}`]);
 const symbols = lower.flatMap((letter, index) => [letter, upper[index]]);
-const action = (page: Page, name: string) => page.locator(`[data-action=${JSON.stringify(name)}] button`);
+const action = (page: Page, name: string) => page.locator(`[data-action=${JSON.stringify(name)}] button, button[data-action=${JSON.stringify(name)}]`);
 const toolbar = (page: Page) => page.getByRole('group', { name: 'Editor toolbar' });
 
 async function create(page: Page, name: string) {
@@ -118,7 +119,7 @@ test('PDF and raster exports draw the rendered symbols', async ({ page }) => {
     await page.evaluate(() => sessionStorage.removeItem('drawn-symbols'));
     await toolbar(page).getByRole('button', { name: 'Export', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: 'Export', exact: true });
-    await dialog.getByLabel('Export format').selectOption(format);
+    await chooseMenu(dialog, 'Export format', format);
     await expect(dialog.getByRole('button', { name: `Download ${format.toUpperCase()}`, exact: true })).toBeEnabled();
     await expect.poll(() => page.evaluate(() => sessionStorage.getItem('drawn-symbols'))).toContain('σ Σ λ Λ π Π ℵ ∫ √');
     await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();

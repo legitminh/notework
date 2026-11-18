@@ -133,14 +133,16 @@ pnpm test
 
 The update command resolves upstream HEAD and pins that commit in `package.json` and `pnpm-lock.yaml`. Commit both files along with the matching `pnpm-workspace.yaml` approval. To target a revision manually: `pnpm add -w '@legitminh/keyflow@github:legitminh/keyflow#COMMIT'`.
 
-The current dependency is **Keyflow 0.4.0**, pinned to release commit `a2271a8d0ddcb171e9e80dec9b0eb761e59a9020`. It provides input frames and virtual keyboards, including directional flick keys. Notework defaults to the alphanumeric shortcut alphabet.
+The current dependency is **Keyflow 0.9.0**, pinned to commit `1ffd6fa5354719920132b87b75437b1c99f54846`. It provides input frames, menus, and virtual keyboards, including directional flick keys. Notework defaults to the alphanumeric shortcut alphabet.
 
-Navigation, configuration, picker, dialog, export and editor toolbar buttons use the library through `Control.svelte`. Ordinary buttons retain visibility-based automatic shortcuts, while modal dialog controls use stable persistent shortcuts. Relocate cancellation uses `StaticButton` with Escape; within the search popup, Escape first leaves the field and then closes the popup. The app adapter forwards accessible names, pressed states and existing editor shortcut annotations to the underlying button. Dialog scoping unregisters background controls and closed-dialog controls, then restores them after closing. Disabled controls render native disabled buttons without shortcut registration because Keyflow buttons have no native disabled prop.
+Navigation, configuration, picker, dialog, export and editor toolbar buttons use the library through `Control.svelte`. Ordinary buttons retain visibility-based automatic shortcuts, while modal dialog controls use stable persistent shortcuts. Relocate cancellation uses `StaticButton` with Escape; within the search popup, Escape first leaves the field and then closes the popup. The app adapter forwards accessible names, pressed states and existing editor shortcut annotations to the underlying button. Dialog scoping disables background controls and closed-dialog controls through Keyflow's native `disabled` prop, suspending their shortcuts while retaining their button elements.
+
+App settings, file/folder configuration, search choices, and drawing-format choices use Keyflow's `SubKeyframe` through `Menu.svelte`. Theme, shortcut alphabet, keyboard layout, export format, and image-layer choices use the same library menu through `ChoiceMenu.svelte`. Menus support automatic shortcut labels, Up/Down, Home/End, Enter, Back/Escape, outside-click dismissal, and return focus. Nested menus own their shortcuts; Escape dismisses an open dropdown before its enclosing dialog. Focused items scroll into view using native scrolling.
 
 The following remain native or app-owned because Keyflow does not provide equivalent controls or behavior:
 
-- Rename's submit button retains HTML form validation and Enter submission; library buttons have a fixed `type="button"`.
-- Name/search/number inputs, picker checkboxes, and the export-format select retain native editing and selection.
+- Rename and connection forms retain HTML validation and Enter submission; their Keyflow actions call `requestSubmit()` because library buttons have a fixed `type="button"`.
+- Name/search/number inputs and picker checkboxes retain native editing and selection.
 - CodeMirror owns its text area, find/replace controls, completions, wiki-link interactions, and SVG preview widgets. Editor modifier shortcuts and field-specific Enter/Escape handlers remain in Notework because Keyflow ignores events from editable fields.
 - Drawing pointer/touch gestures, drag-and-drop, native modal dialogs, OS filesystem pickers, permission prompts, downloads and share sheets remain browser/app features. Their ordinary app action buttons use Keyflow.
 

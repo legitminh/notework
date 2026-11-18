@@ -1,9 +1,14 @@
+import { choiceMenu, chooseMenu, expectChoiceCount } from './menu-helpers';
 import { test, expect, type Page, type Download } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { PDFDocument, PDFArray, PDFRawStream, PDFName, decodePDFRawStream } from 'pdf-lib';
 
-const action = (page: Page, name: string) => page.locator(`[data-action=${JSON.stringify(name)}] button`);
+const action = (page: Page, name: string) => page.locator(`[data-action=${JSON.stringify(name)}] button, button[data-action=${JSON.stringify(name)}]`);
 const tools = (page: Page) => page.getByRole('group', { name: 'Editor toolbar' });
+test.beforeEach(async ({ page }) => {
+  // Keep export drafts unsaved regardless of how long browser rendering takes.
+  await page.addInitScript(() => localStorage.setItem('notework:autosave-seconds', '3600'));
+});
 async function startCreate(page: Page) {
   await action(page, 'app settings').click();
   await action(page, 'create new file/folder').click();
@@ -59,7 +64,7 @@ async function inspectRaster(page: Page, download: Download, type: 'image/png' |
 
 async function downloadRaster(page: Page, format: 'png' | 'jpeg') {
   const dialog = page.getByRole('dialog', { name: 'Export', exact: true });
-  await dialog.getByLabel('Export format').selectOption(format);
+  await chooseMenu(dialog, 'Export format', format);
   const label = format === 'png' ? 'PNG' : 'JPEG';
   const button = dialog.getByRole('button', { name: `Download ${label}`, exact: true });
   await expect(button).toBeEnabled();
@@ -94,7 +99,7 @@ test('PDF export includes the whole unsaved draft, styled links, and vector SVG 
   await page.keyboard.insertText(`PDF layout: Tiếng Việt αβ 🙂\n[[linked-note.txt]]\n\\svgpage[${name}]\nAfter drawing\n${Array.from({ length: 80 }, (_, i) => `off-screen line ${i + 1}`).join('\n')}\nDEEP END`);
   await tools(page).getByRole('button', { name: 'Export', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Export', exact: true });
-  await expect(dialog.getByLabel('Export format')).toHaveValue('pdf');
+  await expect(choiceMenu(dialog, 'Export format')).toHaveAttribute('data-value', 'pdf');
   await expect(dialog.getByRole('button', { name: 'Download PDF', exact: true })).toBeEnabled();
   const downloaded = page.waitForEvent('download');
   await dialog.getByRole('button', { name: 'Download PDF', exact: true }).click();
@@ -129,8 +134,8 @@ test('text PNG and JPEG exports share the PDF page layout, margins, colors, and 
   const images = [];
   for (const format of ['png', 'jpeg'] as const) {
     await tools(page).getByRole('button', { name: 'Export', exact: true }).click();
-    const select = page.getByRole('dialog', { name: 'Export', exact: true }).getByLabel('Export format');
-    await expect(select.locator('option')).toHaveText(['PDF', 'PNG', 'JPEG']);
+    const dialog = page.getByRole('dialog', { name: 'Export', exact: true });
+    await expectChoiceCount(dialog, 'Export format', 3);
     const download = await downloadRaster(page, format);
     expect(download.suggestedFilename()).toBe(`raster-note.${format}`);
     images.push(await inspectRaster(page, download, format === 'png' ? 'image/png' : 'image/jpeg'));
@@ -177,7 +182,7 @@ test('installed PWA shares a prepared PNG from the final user tap', async ({ pag
   const editor = await note(page, 'share-image.txt'); await editor.fill('Share this image');
   await tools(page).getByRole('button', { name: 'Export', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Export', exact: true });
-  await dialog.getByLabel('Export format').selectOption('png');
+  await chooseMenu(dialog, 'Export format', 'png');
   const share = dialog.getByRole('button', { name: 'Share PNG', exact: true });
   await expect(share).toBeEnabled(); await share.click();
   expect(await page.evaluate(() => JSON.parse(sessionStorage.getItem('image-share')!))).toEqual({

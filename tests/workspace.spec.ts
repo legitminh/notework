@@ -10,7 +10,7 @@ declare global {
 }
 
 // Exact data attributes avoid including Keyflow's dynamically assigned shortcuts in locators.
-const button = (page: Page, name: string) => page.locator(`[data-action=${JSON.stringify(name)}] button`);
+const button = (page: Page, name: string) => page.locator(`[data-action=${JSON.stringify(name)}] button, button[data-action=${JSON.stringify(name)}]`);
 async function openAllFileSearch(page: Page) {
   await button(page, 'search').click();
   await page.getByRole('dialog', { name: 'Search', exact: true })
@@ -107,7 +107,7 @@ async function connectDocuments(page: Page) {
   await button(page, 'app settings').click();
   await chooseItems(page, ['Documents/']);
   await expect(button(page, 'Documents/')).toBeVisible();
-  await button(page, 'close app settings').click();
+  await expect(button(page, 'app settings')).toHaveAttribute('aria-expanded', 'false');
 }
 
 async function chooseItems(page: Page, names: string[]) {
@@ -287,7 +287,6 @@ test('search spans connected sources from any file and respects hidden children'
   await connectDocuments(page);
   await button(page, 'app settings').click();
   await chooseFile(page);
-  await button(page, 'close app settings').click();
   await button(page, 'Documents/').click();
   await openAllFileSearch(page);
   await page.getByRole('searchbox').fill('notes');
@@ -405,7 +404,6 @@ test('removing a folder from root excludes cached files, old links, and link sug
   await button(page, 'app settings').click();
   await expect(page.getByRole('button', { name: 'add Documents to root', exact: true })).toHaveCount(0);
   await chooseItems(page, ['Documents/']);
-  await button(page, 'close app settings').click();
   await openAllFileSearch(page); await dialog.getByRole('searchbox').fill('notes');
   await expect(dialog.locator('.search-status')).toContainText('1 result found');
   expect(await page.evaluate(async () => {
@@ -535,6 +533,7 @@ test('picker cancellation and denial keep home empty', async ({ page }) => {
   await picker.getByRole('button', { name: 'browse location…', exact: true }).click();
   await expect(picker.getByRole('alert')).toContainText('Access is not available');
   await picker.getByRole('button', { name: 'cancel', exact: true }).click();
+  await button(page, 'app settings').click();
   await expect(page.getByText('Home has no items. Connect a source here or create an item from home.')).toBeVisible();
 });
 
@@ -612,7 +611,7 @@ test('dropped handles identify mixed selections automatically and cancel remembe
   // Background actions are unregistered while this modal owns Keyflow shortcuts.
   await expect(button(page, 'close app settings').locator('.pending_route')).toHaveCount(0);
   await expect(picker).toBeVisible();
-  await expect(page.locator('#settings-heading')).toBeVisible();
+  await expect(page.locator('#settings-heading')).not.toBeVisible();
   await expect(page.getByRole('searchbox')).toHaveCount(0);
   await page.keyboard.press('Escape');
   await expect(picker).not.toBeVisible();
@@ -1865,6 +1864,7 @@ test('configure deletes local files and folders through their physical parent ha
   let dialog = page.getByRole('dialog', { name: 'Delete readme.txt?' });
   await dialog.getByRole('button', { name: 'Cancel' }).click();
   await expect(button(page, 'open')).toBeVisible();
+  await button(page, 'configure file').click();
   await button(page, 'delete this file').click();
   await dialog.getByRole('button', { name: 'Delete file' }).click();
   await expect(page.getByRole('heading', { name: 'Documents/', exact: true })).toBeVisible();
@@ -1902,6 +1902,7 @@ test('a directly connected local file retains its parent across reload and can b
   await expect(button(page, 'open')).toBeVisible();
   expect((await storedGraph(page)).sources.map((source) => source.name)).toEqual(['outside.txt']);
   await page.evaluate(() => localStorage.removeItem('test-deny-write'));
+  await button(page, 'configure file').click();
   await button(page, 'delete this file').click();
   dialog = page.getByRole('dialog', { name: 'Delete outside.txt?' });
   await dialog.getByRole('button', { name: 'Delete file' }).click();
@@ -1938,6 +1939,7 @@ test('configure deletes browser files after confirmation', async ({ page }) => {
   const dialog = page.getByRole('dialog', { name: 'Delete delete-me.txt?' });
   await dialog.getByRole('button', { name: 'Cancel' }).click();
   await expect(button(page, 'open')).toBeVisible();
+  await button(page, 'configure file').click();
   await button(page, 'delete this file').click();
   await dialog.getByRole('button', { name: 'Delete file' }).click();
   await expect(button(page, 'app settings')).toBeVisible();
@@ -3140,7 +3142,7 @@ test('Keyflow picker shortcuts are scoped, disabled actions stay unregistered, a
   await expect(cancel.locator('.pending_route')).not.toHaveText('');
   for (const key of (await cancel.locator('.pending_route').innerText()).trim()) await page.keyboard.press(key);
   await expect(picker).not.toBeVisible();
-  await expect(button(page, 'close app settings').locator('.pending_route')).not.toHaveText('');
+  await expect(button(page, 'app settings').locator('.pending_route')).not.toHaveText('');
   expect(errors).toEqual([]);
 });
 
@@ -3256,7 +3258,6 @@ test('content search stays scoped, reuses the index, and refreshes changed and d
 test('content search follows directed links and cycles without walking parents or removed roots', async ({ page }) => {
   await connectDocuments(page);
   await button(page, 'app settings').click(); await chooseItems(page, ['outside.txt']);
-  await button(page, 'close app settings').click();
   await seedLegacyGraph(page, { linkOnly: true, cycle: true });
   await button(page, 'Documents/').click(); await button(page, 'readme.txt').click();
   await page.keyboard.press('ControlOrMeta+f');
@@ -3281,7 +3282,6 @@ test('content search follows directed links and cycles without walking parents o
 test('content search excludes hidden branches and .git and handles UTF-16, drawings, and invalid bytes', async ({ page }) => {
   await connectDocuments(page);
   await button(page, 'app settings').click(); await chooseItems(page, ['utf16.txt']);
-  await button(page, 'close app settings').click();
   await page.evaluate(async (drawing) => {
     const documents = await (await navigator.storage.getDirectory()).getDirectoryHandle('Documents');
     const git = await documents.getDirectoryHandle('.git', { create: true });
