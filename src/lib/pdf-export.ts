@@ -5,6 +5,7 @@ import {
 } from 'pdf-lib';
 import { DRAWING_WIDTH, DRAWING_PAGE_HEIGHT, strokeWidth, drawingBottom, svgPagePattern, type Drawing } from './drawing';
 import { wikiPattern } from './wiki';
+import { renderSymbolShorthands } from './symbol-shorthand';
 
 import type { ExportStyle } from './export-style';
 
@@ -67,7 +68,7 @@ async function layout(source: PdfSource, signal: AbortSignal) {
         for (const part of text.split(/(\t)/)) {
           if (!part) continue;
           const span = document.createElement('span');
-          span.textContent = part;
+          span.textContent = renderSymbolShorthands(part);
           paragraph.append(span);
           if (part !== '\t') runs.push({ node: span.firstChild as Text, color });
         }

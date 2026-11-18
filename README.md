@@ -47,6 +47,8 @@ On its own line, `\prettify` (also `\pretty`) formats the text below it as an ou
 
 Leading spaces and tabs keep their normal width. **App settings → Appearance → Pretty font sizing** is on by default. Turn it off to keep a consistent font size while retaining bold headings and their spacing. **Pretty margin** independently toggles the extra space above and below headings.
 
+Inline symbol shorthands display all 24 Greek letters: `\alpha` → α through `\omega` → ω, with an initial capital for uppercase (`\Alpha` → Α, `\Sigma` → Σ, `\Lambda` → Λ, `\Pi` → Π). Variants include `\varsigma` → ς, `\varepsilon` → ϵ, `\vartheta` → ϑ, `\varpi` → ϖ, `\varrho` → ϱ, and `\varphi` → ϕ. Use `\aleph` → ℵ, `\itg` → ∫, and `\sqr` → √ for the other symbols. Autocomplete offers these commands inline with their symbols. Moving the caret into a shorthand reveals its editable source; saved text retains the commands, while previews, embedded pages, and PDF/PNG/JPEG exports show the symbols. Names are case-sensitive; unknown commands and doubled backslashes stay literal.
+
 Use `\pretty1[LINES]` to format a block and then return to regular text, or `\unpretty1[LINES]` to show a block as regular text and turn formatting on afterward. The brackets can enclose multiple lines.
 
 Type `\` on its own line and choose a command from autocomplete. Accepting `\pretty` moves the caret to the start of a new, unindented line. The editor hides the switch lines when the caret leaves them, while keeping their original line numbers in the document.

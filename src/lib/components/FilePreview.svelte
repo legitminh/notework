@@ -18,6 +18,7 @@
   import type { PreviewLocation } from '../preview-location';
   import { svgPages } from '../svg-pages';
   import { wikiDisplay } from '../wiki-display';
+  import { symbolDisplay } from '../symbol-display';
   import { prettyDisplay, type PrettyContext } from '../pretty-display';
   import { wikiCatalog } from '../wiki';
   import { pageReferences } from '../page-references';
@@ -120,7 +121,7 @@
               indentUnit.of('  '), EditorState.tabSize.of(2),
               prettyDisplay(prettyFontSize, prettyMargin, inheritedPretty),
               pageReferences({ workspace, source: node, wrapLines, prettyFontSize, prettyMargin, readOnly: true, catalog, ancestors: ancestors ?? [node.id], context, onOpen: (id, location) => onOpenReference?.(id, location) }),
-              wikiDisplay(() => {}, true), pages.field,
+              wikiDisplay(() => {}, true), symbolDisplay(), pages.field,
               showLineNumbers ? lineNumbers() : [], wrapLines ? EditorView.lineWrapping : [],
               EditorView.theme({
                 '&': { color: 'var(--primary)', backgroundColor: 'var(--background)', fontSize: 'clamp(12px, calc(var(--min-box) * .4), 28px)' },

@@ -60,6 +60,7 @@
   import { commandCompletion, opensCommandArguments } from '../command-completion';
   import { pageReferences } from '../page-references';
   import { prettyDisplay } from '../pretty-display';
+  import { symbolDisplay } from '../symbol-display';
   import { GitHubFile, gitBlobSha } from '../github/repository';
   import { draftQueue } from '../github/storage';
 
@@ -698,7 +699,7 @@
               }
             })))),
             vimMode ? vim() : [],
-            indentFolding, wikiDisplay(leaveEditor), pageWidgets.field, prettyDisplay(prettyFontSize, prettyMargin),
+            indentFolding, wikiDisplay(leaveEditor), symbolDisplay(), pageWidgets.field, prettyDisplay(prettyFontSize, prettyMargin),
             pageReferences({ workspace, source: node, wrapLines, prettyFontSize, prettyMargin, catalog, ancestors: [node.id], context: pageContext,
               onOpen: (id, location) => { void followPage(id, location); } }), textLock.of([]),
             wrapLines ? EditorView.lineWrapping : [],

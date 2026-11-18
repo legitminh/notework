@@ -1,4 +1,5 @@
 import { imageFormat } from './images';
+import { symbolShorthands } from './symbol-shorthand';
 import { pickedCompletion, type Completion, type CompletionContext, type CompletionResult } from '@codemirror/autocomplete';
 import { Transaction } from '@codemirror/state';
 import { resourceProximity } from './resource-proximity';
@@ -59,7 +60,8 @@ const commands: readonly EditorCommand[] = [
   { name: 'pretty', detail: 'Format the following lines', placement: 'next-line' },
   { name: 'unpretty', detail: 'Return to regular text', placement: 'next-line' },
   { name: 'pretty1', detail: 'Format a block, then return to regular text', placement: 'brackets' },
-  { name: 'unpretty1', detail: 'Use regular text in a block, then resume formatting', placement: 'brackets' }
+  { name: 'unpretty1', detail: 'Use regular text in a block, then resume formatting', placement: 'brackets' },
+  ...Array.from(symbolShorthands, ([name, symbol]) => ({ name, detail: symbol }))
 ];
 
 const commandOptions = commands.map(({ name, detail, targets, placement }): Completion => ({
