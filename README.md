@@ -188,6 +188,50 @@ Holding Command or Ctrl shows shortcut hints for Copy, Paste, Save, and all four
 
 **App settings → appearance** can hide line numbers or show zero-based line indices modulo four as viewport edge tabs. The left side is the low bit: gray/gray = 0, white/gray = 1, gray/white = 2, white/white = 3.
 
+## Visual documents
+
+A **visual document** is a layered canvas, separate from the endless SVG page. Raster and vector layers sit in one picture, and it's backed by the [visual.editor](https://github.com/legitminh/visual.editor) engine. Create one with **create new file/folder → create visual document** and enter a canvas size, or with **Draw… → Visual document** in a note, which inserts `\visualpage[name/name.visual]`. A visual document is a page folder:
+
+```
+sketch/
+  sketch.visual          ← plaintext organizer (open the folder's preview, or "Raw text" in the editor)
+  sketch.layer-1.png     ← raster layer (cropped PNG + offset)
+  sketch.ink-2.svg       ← vector layer (SVG with editable stroke samples)
+```
+
+The organizer lists one layer per line. Lines lower in the file are drawn on top, and each line gives the layer file and its top-left position:
+
+```
+\image_editor_config[width=1920, height=1080, history=100, history_mb=256, palette=#202733 #ffffff …]
+\image_editor_state[tool=brush, color=#202733, brush=app.asset/editor.visual/brushes/basic-6-details.vbrush, brush_size=5, …]
+\image_editor_brushes[app.asset/editor.visual/brushes/basic-1.vbrush, …]
+\image_editor_raster[sketch.layer-1.png, 0, 0, name=Layer 1]
+\image_editor_vector[sketch.ink-2.svg, 0, 0, name=Ink 2, opacity=0.8, hidden]
+```
+
+`\image_editor[\r[…]\v[…]\c[…]\s[…]\b[…]]` is an equivalent compact form. Every layer is a normal asset, so it shows up in the file tree and you can open, move, version or replace it on its own. If a layer file is missing, the editor names it in a notice and keeps its reference, so restoring the file restores the layer. The editor saves your tool, colour, brush, sizes, palette and active layer in the organizer, so the document reopens the way you left it.
+
+* **Raster layers** paint with a Krita-style brush engine: opacity, flow, hardness, spacing, and pressure for size, opacity and flow. The eraser removes pixels.
+* **Vector layers** store strokes. The eraser removes whole strokes, and the lasso moves, resizes or deletes the selected strokes.
+* **Brush and eraser:** select the active Brush or Eraser again to open its panel. The panel has size, opacity, a colour wheel (hue ring with a saturation/value square, plus HSV and RGB sliders and hex), the document palette, recent colours, the brush type, and per-brush settings. **Save brush file** writes changed settings back to the brush file.
+* **Brush library:** `app.asset/editor.visual/brushes` is created in browser storage at Home the first time you open a visual document, and it's filled with the Krita basic pack. **Import brush…** converts Krita `.kpp`, GIMP `.vbr`, MyPaint `.myb` and `.vbrush` files into the library. Brush references are ordinary file references, so you can move brushes into a cloud folder or a GitHub folder and point documents at them.
+* **Layers** panel: add raster or vector layers, delete, show/hide, raise/lower, opacity and rename. Layer changes are undoable along with painting. Undo stores only the 128 px tiles each operation touched, capped by `history` frames and `history_mb`.
+* **Raw text** saves your work, then opens `sketch.visual` in the text editor. Exit and open the file again to return to the canvas.
+
+PNG, JPEG, HEIC and ORA images open in the same engine and save in their own format.
+
+### Developing with visual.editor
+
+Notework depends on `visual.editor` through `link:../visual.editor`, so clone both repositories side by side:
+
+```sh
+git clone https://github.com/legitminh/visual.editor ../visual.editor
+pnpm install        # links ../visual.editor; Vite compiles its TypeScript sources directly
+pnpm dev
+```
+
+Changes to `../visual.editor/src` hot-reload in Notework. CI and the Pages deployment check out both repositories the same way.
+
 ## Images and layered drawings
 
 **Draw…** asks for SVG, PNG, JPEG, HEIC, or ORA before creating an inline drawing. **Command+B** remains the direct SVG shortcut; there is no separate +svg toolbar button. **Insert image** copies a user-selected PNG/JPEG/HEIC/ORA image beside the current note, using the note's own storage. The directives are `\svgpage[...]`, `\pngpage[...]`, `\jpegpage[...]`, `\heicpage[...]`, and `\orapage[...]`; autocomplete, outgoing links, global search, and backlink updates support each format. Existing image files can also be connected through the local picker and opened independently. Raster erasers remove pixels from the active layer, including imported or previously saved pixels, rather than deleting whole strokes. Undo/redo restores these edits, and ORA erasing preserves the other layers.

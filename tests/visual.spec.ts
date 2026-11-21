@@ -40,10 +40,10 @@ test('visual documents are page folders whose layers are separate assets, and re
   await expect(button(page, 'Basic-1')).toHaveAttribute('aria-pressed', 'true');
   await page.keyboard.press('Escape');
   await button(page, 'Exit').click();
+  await button(page, '..').click();
   // Every layer is its own file in the folder, next to the plaintext main file.
   for (const file of ['sketch.visual', 'sketch.layer-1.png', 'sketch.ink-2.svg']) await expect(button(page, file)).toBeVisible();
-  await page.reload();
-  await button(page, 'home').click().catch(() => {});
+  await page.goto('/');
   await button(page, 'sketch/').click();
   canvas = await openMain(page);
   await expect.poll(() => alpha(canvas, 100, 50)).toBe(255);
@@ -66,6 +66,7 @@ test('a missing layer file is reported and its reference kept', async ({ page })
   await text.press('ControlOrMeta+End'); await page.keyboard.type('\\image_editor_raster[lost-layer.png, 0, 0]');
   await page.keyboard.press('ControlOrMeta+s');
   await button(page, 'Exit').click();
+  await button(page, '..').click();
   canvas = await openMain(page, 'gaps');
   await expect(page.getByRole('alert')).toContainText('lost-layer.png');
   expect(await canvas.evaluate((node) => (node as Hooked).visualEditor.layers.map((layer) => [layer.entry.file, layer.missing]))).toEqual([['gaps.layer-1.png', false], ['lost-layer.png', true]]);
@@ -75,7 +76,7 @@ test('the brush library is created under app.asset with the Krita basic pack', a
   await createVisual(page, 'brushes');
   await openMain(page, 'brushes');
   await button(page, 'Exit').click();
-  await button(page, 'home').click();
+  await page.goto('/');
   await button(page, 'app.asset/').click(); await button(page, 'editor.visual/').click(); await button(page, 'brushes/').click();
   await expect(button(page, 'basic-1.vbrush')).toBeVisible();
   await expect(button(page, 'eraser-soft.vbrush')).toBeVisible();

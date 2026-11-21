@@ -161,3 +161,6 @@ a { color: inherit; text-underline-offset: .15em; }
 .document-editor:has(.raster-inline-host) > .editor-scroll { display:flex;flex-direction:column;overflow:hidden; }
 .document-editor:has(.raster-inline-host) .editor-container { display:none; }
 .raster-inline-slot:not([hidden]) { flex:1 1 auto;min-height:0;display:flex;flex-direction:column; }
+
+/* Native text selection follows the active theme (readable in dark mode). */
+::selection { background: color-mix(in srgb, var(--primary) 30%, var(--background)); color: var(--primary); }

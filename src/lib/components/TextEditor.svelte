@@ -762,7 +762,9 @@
               '.cm-scroller': { fontFamily: 'var(--font-mono)', lineHeight: '1.6', overflow: 'auto', minHeight: '320px' },
               '.cm-gutters': { backgroundColor: 'var(--background)', color: 'var(--tertiary)', borderColor: 'var(--tertiary)' },
               '.cm-activeLine': { backgroundColor: 'rgba(128,128,128,.08)' },
-              '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': { backgroundColor: 'rgba(128,128,128,.3)' },
+              // Mix the selection from the theme colours so text stays readable in dark mode;
+              // CodeMirror's base theme otherwise paints its light-theme lavender with a more specific selector.
+              '.cm-selectionBackground, &.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground': { backgroundColor: 'color-mix(in srgb, var(--primary) 30%, var(--background)) !important' },
               '.cm-cursor': { borderLeftColor: 'var(--primary)' }
             })
           ] })

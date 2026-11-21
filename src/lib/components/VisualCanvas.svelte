@@ -94,7 +94,8 @@
 
   const input = new InputController({
     strokeBegin(point) {
-      if (saving || publishing) return;
+      // Drawing continues while a save is in flight; only publishing locks the canvas.
+      if (publishing) return;
       resumeEditing();
       const p = docPoint(point.x, point.y), current = editor.state.tool;
       if (current === 'lasso') {
@@ -141,7 +142,8 @@
       else pinchStart = undefined;
     },
     undo, redo
-  });
+  }, { taps: false });
+  let lastPenAt = 0;
 
   function transform(p: [number, number]) {
     const g = gesture!, box = g.box!, dx = Math.round(p[0] - g.origin[0]), dy = Math.round(p[1] - g.origin[1]);
@@ -158,6 +160,7 @@
   }
   function pointer(event: PointerEvent, phase: 'down' | 'move' | 'up' | 'cancel') {
     if (!viewport) return;
+    if (event.pointerType === 'pen') lastPenAt = Date.now();
     if (phase === 'down') {
       if (event.button > 1 || publishing) return;
       event.preventDefault();
@@ -313,6 +316,28 @@
       else view.panBy(-event.deltaX, -event.deltaY);
       redraw();
     };
+    // Two/three-finger taps undo/redo. Read from touch events (as on iPad), ignoring palms near pen input.
+    let touchTap: { count: number; start: number; points: Map<number, [number, number]>; moved: boolean } | undefined;
+    const touchStart = (event: TouchEvent) => {
+      if (Date.now() - lastPenAt < 500) { touchTap = undefined; return; }
+      const fingers = [...event.touches].filter((touch) => (touch as Touch & { touchType?: string }).touchType !== 'stylus');
+      if (fingers.length >= 2) touchTap = { count: Math.max(touchTap?.count ?? 0, fingers.length), start: touchTap?.start ?? performance.now(),
+        points: new Map(fingers.map((touch) => [touch.identifier, [touch.clientX, touch.clientY]])), moved: touchTap?.moved ?? false };
+    };
+    const touchMove = (event: TouchEvent) => {
+      if (!touchTap) return;
+      for (const touch of event.touches) { const origin = touchTap.points.get(touch.identifier); if (origin && Math.hypot(touch.clientX - origin[0], touch.clientY - origin[1]) > 8) touchTap.moved = true; }
+    };
+    const touchEnd = (event: TouchEvent) => {
+      if (event.touches.length) return;
+      const tap = touchTap; touchTap = undefined;
+      if (!tap || tap.moved || performance.now() - tap.start >= 300 || Date.now() - lastPenAt < 500) return;
+      input.interrupt(false);
+      if (tap.count === 2) undo(); else if (tap.count === 3) redo();
+    };
+    const touchCancel = () => { touchTap = undefined; };
+    viewport?.addEventListener('touchstart', touchStart, { passive: true }); viewport?.addEventListener('touchmove', touchMove, { passive: true });
+    viewport?.addEventListener('touchend', touchEnd, { passive: true }); viewport?.addEventListener('touchcancel', touchCancel, { passive: true });
     window.addEventListener('keydown', keys, true); window.addEventListener('keyup', release, true);
     window.addEventListener('pointermove', move, { capture: true, passive: true }); window.addEventListener('pointerup', up, true); window.addEventListener('pointercancel', cancel, true);
     window.addEventListener('blur', blur); window.addEventListener('beforeunload', unload);
@@ -326,6 +351,8 @@
       window.removeEventListener('pointermove', move, true); window.removeEventListener('pointerup', up, true); window.removeEventListener('pointercancel', cancel, true);
       window.removeEventListener('blur', blur); window.removeEventListener('beforeunload', unload);
       viewport?.removeEventListener('wheel', wheel);
+      viewport?.removeEventListener('touchstart', touchStart); viewport?.removeEventListener('touchmove', touchMove);
+      viewport?.removeEventListener('touchend', touchEnd); viewport?.removeEventListener('touchcancel', touchCancel);
     };
   });
   $effect(() => { void autosaveMs; void revision; if (active) schedule(); });
