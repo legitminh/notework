@@ -119,7 +119,7 @@
       if (!gesture) return;
       if (gesture.kind === 'paint') editor.strokeTo(p[0], p[1], point.pressure);
       else if (gesture.kind === 'lasso') { const last = trace.at(-1)!; if (Math.hypot(p[0] - last[0], p[1] - last[1]) * view.zoom >= 1) trace = [...trace, p]; }
-      else transform(p);
+      else transform(gesture, p);
     },
     strokeEnd(point) {
       const current = gesture; gesture = undefined;
@@ -127,7 +127,7 @@
       const p = docPoint(point.x, point.y);
       if (current.kind === 'paint') { editor.strokeTo(p[0], p[1], point.pressure); editor.endStroke(); gestureCount++; }
       else if (current.kind === 'lasso') { editor.lasso(trace); trace = []; }
-      else { transform(p); editor.commitTransform(); gestureCount++; }
+      else { transform(current, p); editor.commitTransform(); gestureCount++; }
       refreshDirty(); schedule();
     },
     strokeCancel() {
@@ -145,8 +145,8 @@
   }, { taps: false });
   let lastPenAt = 0;
 
-  function transform(p: [number, number]) {
-    const g = gesture!, box = g.box!, dx = Math.round(p[0] - g.origin[0]), dy = Math.round(p[1] - g.origin[1]);
+  function transform(g: Gesture, p: [number, number]) {
+    const box = g.box!, dx = Math.round(p[0] - g.origin[0]), dy = Math.round(p[1] - g.origin[1]);
     if (g.kind === 'move') { editor.setTransform({ ...box, x: box.x + dx, y: box.y + dy }); return; }
     const west = g.corner!.endsWith('w'), north = g.corner!.startsWith('n');
     const x = west ? Math.min(box.x + dx, box.x + box.width - 1) : box.x, y = north ? Math.min(box.y + dy, box.y + box.height - 1) : box.y;
@@ -494,7 +494,7 @@
   .brush-panel { display: grid; gap: 12px; padding: 4px; max-width: min(92vw, 34rem); }
   .brush-panel h3 { margin: 0 0 6px; font-size: 14px; }
   .brush-panel section { display: grid; gap: 6px; }
-  .range { display: flex; gap: 8px; align-items: center; font-size: 13px; }
+  .range { display: flex; gap: 8px; align-items: center; font-size: 13px; white-space: nowrap; }
   .range input[type=range] { flex: 1; min-width: 6rem; }
   .swatches, .brush-list { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
   .swatch-control :global(button) { padding: 2px; min-width: 0; }
