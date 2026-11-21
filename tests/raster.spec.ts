@@ -23,10 +23,10 @@ test('new raster dimensions use viewport initially, validate, remember, and keep
   await page.getByLabel('Width in pixels').fill('400');await page.getByLabel('Height in pixels').fill('200');await page.getByLabel('Height in pixels').press('Enter');await page.locator('[data-action="open"] button').click();
   const canvas=page.getByRole('img',{name:'Drawing canvas for sized.png'});await expect(canvas.locator('canvas')).toBeVisible();
   await canvas.hover();for(let i=0;i<15;i++)await page.mouse.wheel(0,1000);
-  await expect.poll(()=>canvas.locator('canvas').evaluate(c=>Math.max(c.getBoundingClientRect().width,c.getBoundingClientRect().height))).toBeCloseTo(await page.evaluate(()=>parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--min-box'))),0);
+  await expect.poll(async()=>Number(await canvas.getAttribute('data-raster-zoom'))*400).toBeCloseTo(await page.evaluate(()=>parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--min-box'))),0);
   await button(page,'Pan').click();const box=(await canvas.boundingBox())!;
   await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();await page.mouse.move(box.x+box.width+1000,box.y-1000);await page.mouse.up();
-  expect(await canvas.evaluate(node=>{const a=node.getBoundingClientRect(),b=node.querySelector('canvas')!.getBoundingClientRect();return b.right>a.left&&b.left<a.right&&b.bottom>a.top&&b.top<a.bottom})).toBe(true);
+  expect(await canvas.evaluate(node=>{const view=(node as unknown as {visualView:{toScreen(x:number,y:number):[number,number]}}).visualView,a=node.getBoundingClientRect(),[l,t]=view.toScreen(0,0),[r,b]=view.toScreen(400,200);return a.left+r>a.left&&a.left+l<a.right&&a.top+b>a.top&&a.top+t<a.bottom})).toBe(true);
   await button(page,'Exit').click();await button(page,'home').click();await create(page,'remember.png');
   await expect(page.getByLabel('Width in pixels')).toHaveValue('400');await expect(page.getByLabel('Height in pixels')).toHaveValue('200');
 });
@@ -61,7 +61,12 @@ test('raster touch taps undo/redo while a pinch with one stationary finger prese
   await create(page,'gestures.png');await sizeCanvas(page,400,200);await page.locator('[data-action="open"] button').click();
   const canvas=page.getByRole('img',{name:'Drawing canvas for gestures.png'});await expect(canvas.locator('canvas')).toBeVisible();
   await drag(page,canvas,[[50,50],[150,50]]);
-  const tap=async(count:number)=>canvas.evaluate((node,count)=>{const box=node.getBoundingClientRect();const touches=Array.from({length:count},(_,i)=>new Touch({identifier:i+1,target:node,clientX:box.x+30+i*30,clientY:box.y+30}));node.dispatchEvent(new TouchEvent('touchstart',{bubbles:true,touches,changedTouches:touches}));node.dispatchEvent(new TouchEvent('touchend',{bubbles:true,touches:[],changedTouches:touches}));},count);
+  const cdp=await context.newCDPSession(page),frame=(await canvas.boundingBox())!;
+  // Real touch input (pointer and touch events), as on a tablet.
+  const tap=async(count:number)=>{
+    await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:Array.from({length:count},(_,i)=>({id:i+1,x:frame.x+30+i*30,y:frame.y+30}))});
+    await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+  };
   await tap(2);expect(await alpha(canvas,100,50)).toBe(0);await tap(3);expect(await alpha(canvas,100,50)).toBe(255);
   const before=Number(await canvas.getAttribute('data-raster-zoom')),box=(await canvas.boundingBox())!,protocol=await context.newCDPSession(page);
   const a={id:1,x:box.x+100,y:box.y+80},b={id:2,x:box.x+200,y:box.y+80};

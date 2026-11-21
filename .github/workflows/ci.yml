@@ -31,6 +31,9 @@ jobs:
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm exec playwright test tests/visual.spec.ts tests/raster.spec.ts tests/drawing-input.spec.ts tests/features.spec.ts --reporter=line
         env: { CI: '1' }
+      - name: Show failure snapshots
+        if: failure()
+        run: find test-results -name error-context.md -exec sh -c 'echo "===== $1"; head -c 6000 "$1"' _ {} \;
       - uses: actions/upload-artifact@v4
         if: failure()
         with: { name: playwright-results, path: notework/test-results, retention-days: 7 }

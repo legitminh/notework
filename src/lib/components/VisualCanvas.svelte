@@ -419,9 +419,9 @@
 {/if}
 {#if layered}
   <div class="image-layers visual-layers" aria-label="Image layers">
-    <ChoiceMenu label="active layer" value={activeLayer?.id ?? ''} disabled={saving || publishing}
-      choices={[...layers].reverse().map((item) => ({ id: item.id, label: `${item.entry.name ?? item.entry.file}${documentMode ? ` · ${kindLabel(item.entry.kind)}` : ''}${item.missing ? ' (missing)' : ''}${item.entry.visible ? '' : ' (hidden)'}` }))}
-      onchange={(id) => layerAction(() => editor.setActiveLayer(id))} />
+    <ChoiceMenu label="active layer" value={String([...layers].reverse().findIndex((item) => item.id === activeLayer?.id))} disabled={saving || publishing}
+      choices={[...layers].reverse().map((item, index) => ({ id: String(index), label: `${item.entry.name ?? item.entry.file}${documentMode ? ` · ${kindLabel(item.entry.kind)}` : ''}${item.missing ? ' (missing)' : ''}${item.entry.visible ? '' : ' (hidden)'}` }))}
+      onchange={(index) => layerAction(() => editor.setActiveLayer([...layers].reverse()[Number(index)].id))} />
     <div class="editor-controls">
       <Control onclick={() => layerAction(() => editor.addLayer('raster', `Layer ${editor.layers.length + 1}`))} disabled={layers.length >= 100}>Add layer</Control>
       {#if documentMode}<Control onclick={() => layerAction(() => editor.addLayer('vector'))} disabled={layers.length >= 100}>Add vector layer</Control>{/if}

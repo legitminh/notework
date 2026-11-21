@@ -11,7 +11,7 @@ async function drag(page: Page, canvas: Locator, points: number[][]) {
 async function createVisual(page: Page, name = 'sketch') {
   await page.goto('/'); await button(page, 'app settings').click(); await button(page, 'create new file/folder').click();
   await page.getByLabel('name', { exact: true }).fill(name);
-  await expect(page.getByLabel('Path for page text file', { exact: true })).toHaveText(`home/${name}/${name}.visual`);
+  await expect(page.locator('.creation-option').filter({ has: button(page, 'create visual document') }).getByLabel('Path for page text file', { exact: true })).toHaveText(`home/${name}/${name}.visual`);
   await button(page, 'create visual document').click();
   await page.getByLabel('Width in pixels').fill('400'); await page.getByLabel('Height in pixels').fill('200');
   await button(page, 'Create canvas').click();
