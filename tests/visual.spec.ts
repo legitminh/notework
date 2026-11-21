@@ -46,7 +46,10 @@ test('visual documents are page folders whose layers are separate assets, and re
   await page.goto('/');
   await button(page, 'sketch/').click();
   canvas = await openMain(page);
-  await expect.poll(() => alpha(canvas, 100, 50)).toBe(255);
+  // The vector layer was active when the document closed, and is active again; read the raster layer directly.
+  expect(await canvas.evaluate((node) => (node as Hooked).visualEditor.layers.map((layer) => layer.entry.kind))).toEqual(['raster', 'vector']);
+  await expect.poll(() => canvas.evaluate((node) => (node as unknown as { visualEditor: { layers: { raster?: { read(r: object): { data: Uint8ClampedArray } } }[] } }).visualEditor.layers[0].raster!.read({ x: 100, y: 50, width: 1, height: 1 }).data[3])).toBe(255);
+  await expect(page.locator('[data-choice="active layer"]')).toHaveAttribute('data-value', '0');
   expect(await canvas.evaluate((node) => (node as Hooked).visualEditor.state.color)).toBe('#e03131');
   // The organizer file is plain text the user can read and edit.
   await button(page, 'Raw text').click();
