@@ -15,9 +15,12 @@
   import type { Drawing, Point } from '../drawing';
   import DrawingEditor from './DrawingEditor.svelte';
   import ImageEditor from './ImageEditor.svelte';
+  import VisualDocumentEditor from './VisualDocumentEditor.svelte';
 
-  let { workspace, node, onExit, onMissing, stylusOnly, pdfMargins, autosaveMs, initialPoint }: {
+  let { workspace, node, onExit, onMissing, onRawText, stylusOnly, pdfMargins, autosaveMs, initialPoint }: {
     initialPoint?: Point;
+    /** Visual documents: switch to the plaintext main file. */
+    onRawText?: () => void;
     stylusOnly: boolean;
     autosaveMs: number;
     pdfMargins: PdfMargins;
@@ -54,7 +57,7 @@
           if (!active) return;
           releaseGitHubFile = handle.repository.retainFile(handle.path, file);
         }
-        const loaded = await loadDrawing(handle, node.storage);
+        const loaded = await loadDrawing(handle, node.storage, { workspace, node });
         if (active) resource = loaded;
       } catch (cause) {
         if (!active) return;
@@ -67,7 +70,9 @@
 </script>
 
 {#if resource}
-  {#if resource.image}
+  {#if resource.visual}
+    <VisualDocumentEditor {initialPoint} bind:this={drawingEditor} {resource} {stylusOnly} {autosaveMs} {pdfMargins} {onExit} {onRawText} onSaved={(saved) => { resource = saved; }} />
+  {:else if resource.image}
     <ImageEditor {initialPoint} bind:this={drawingEditor} {resource} {node} {stylusOnly} {autosaveMs} {pdfMargins} {onExit} onSaved={(saved) => { resource = saved; }} />
   {:else}
   <div class="standalone-drawing-editor" bind:this={editor}>

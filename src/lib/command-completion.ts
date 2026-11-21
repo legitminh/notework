@@ -43,7 +43,8 @@ function drawingTargets(workspace: Workspace, source: StateNode, query: string, 
 
 function targetsFor(format: string): typeof drawingTargets {
   return (...args) => drawingTargets(...args).filter((option) => format === 'svg'
-    ? option.label.toLowerCase().endsWith('.svg') : imageFormat(option.label) === format);
+    ? option.label.toLowerCase().endsWith('.svg') : format === 'visual'
+    ? option.label.toLowerCase().endsWith('.visual') : imageFormat(option.label) === format);
 }
 
 interface EditorCommand {
@@ -56,6 +57,7 @@ interface EditorCommand {
 const commands: readonly EditorCommand[] = [
   { name: 'page', detail: 'Embed a read-only file', targets: (workspace, source, query, files) => drawingTargets(workspace, source, query, files, false) },
   ...['svg', 'png', 'jpeg', 'heic', 'ora'].map((format) => ({ name: `${format}page`, detail: `Insert a ${format.toUpperCase()} page`, targets: targetsFor(format) })),
+  { name: 'visualpage', detail: 'Insert a layered visual document', targets: targetsFor('visual') },
   { name: 'prettify', detail: 'Format and color parent lines', placement: 'next-line' },
   { name: 'pretty', detail: 'Format the following lines', placement: 'next-line' },
   { name: 'unpretty', detail: 'Return to regular text', placement: 'next-line' },

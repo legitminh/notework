@@ -26,7 +26,8 @@
     "fflate": "^0.8.3",
     "pdf-lib": "^1.17.1",
     "polyclip-ts": "^0.16.8",
-    "svelte": "^5.57.3"
+    "svelte": "^5.57.3",
+    "visual.editor": "link:../visual.editor"
   },
   "devDependencies": {
     "@playwright/test": "^1.64.1",

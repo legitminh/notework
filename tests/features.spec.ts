@@ -184,7 +184,7 @@ for (const format of ['png', 'jpeg', 'heic', 'ora']) {
     await page.reload(); await action(page, `picture.${format}`).click(); await action(page, 'open').click();
     await expect(page.getByRole('img', { name: `Drawing canvas for picture.${format}` })).toBeVisible();
     if (format === 'ora') await expectChoiceCount(page, 'active layer', 2);
-    await expect(page.locator('[data-image-layer="active"] canvas')).toBeVisible();
+    await expect(page.locator('canvas.visual-canvas')).toBeVisible();
   });
 }
 

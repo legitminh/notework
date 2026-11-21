@@ -61,7 +61,7 @@ async function createAssetInternal(workspace: Workspace, parent: StateNode | nul
     created = true;
     if (type.kind === 'directory' && type.initialFileName) {
       const file = await (handle as FileSystemDirectoryHandle).getFileHandle(type.initialFileName(name), { create: true });
-      await writeResourceContent(file as unknown as LocalFile, parent?.storage ?? 'browser', ['']);
+      await writeResourceContent(file as unknown as LocalFile, parent?.storage ?? 'browser', [type.initialFileContent?.() ?? '']);
     }
     if (type.kind === 'file') await writeResourceContent(handle as unknown as LocalFile, parent?.storage ?? 'browser', [await type.initialContent?.() ?? '']);
     createdId = parent ? nodeId(parent.sourceId, [...parent.path, name])

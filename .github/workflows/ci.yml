@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches-ignore: main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: notework
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: notework }
+      # Notework links the sibling engine checkout (`link:../visual.editor`).
+      - uses: actions/checkout@v4
+        with: { repository: legitminh/visual.editor, path: visual.editor }
+      - uses: pnpm/action-setup@v3
+        with: { version: 11 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: pnpm, cache-dependency-path: notework/pnpm-lock.yaml }
+      - run: pnpm install
+      - run: pnpm check
+      - run: pnpm build
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm exec playwright test tests/visual.spec.ts tests/raster.spec.ts tests/drawing-input.spec.ts tests/features.spec.ts --reporter=line
+        env: { CI: '1' }
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with: { name: playwright-results, path: notework/test-results, retention-days: 7 }

@@ -1,6 +1,8 @@
 import { blankImage, imageFormats } from './images';
 import { serializeDrawing } from './drawing';
 import { cleanFilename } from './filenames';
+import { canvasSize } from './canvas-size';
+import { newVisualDocumentText } from './visual-documents';
 
 export interface AssetType {
   id: string;
@@ -9,11 +11,17 @@ export interface AssetType {
   extension?: string;
   initialFileName?: (folderName: string) => string;
   initialContent?: () => string | Uint8Array | Promise<string | Uint8Array>;
+  /** Content of a directory type's initial file (default: empty). */
+  initialFileContent?: () => string;
+  /** Ask for canvas dimensions before creating. */
+  canvas?: boolean;
 }
 
 // Creation UI and resource initialization both use this registry.
 export const assetTypes: readonly AssetType[] = [
   { id: 'page-folder', label: 'page folder', kind: 'directory', initialFileName: (name) => `${name}.main` },
+  { id: 'visual', label: 'visual document', kind: 'directory', canvas: true, initialFileName: (name) => `${name}.visual`,
+    initialFileContent: () => newVisualDocumentText(canvasSize()) },
   { id: 'folder', label: 'folder', kind: 'directory' },
   { id: 'text', label: 'text file', kind: 'file', initialContent: () => '' },
   { id: 'svg', label: 'svg file', kind: 'file', extension: '.svg', initialContent: () => serializeDrawing([]) },

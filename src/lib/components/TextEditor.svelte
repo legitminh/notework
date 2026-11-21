@@ -23,10 +23,15 @@
 <script lang="ts">
   import Control from './Control.svelte';
   import ImageEditor from './ImageEditor.svelte';
+  import VisualDocumentEditor from './VisualDocumentEditor.svelte';
+  import { createVisualDocument } from '../visual-documents';
+  import { connectSibling } from '../wiki';
+  import { loadDrawing } from '../drawing-files';
+  import { nodeId } from '../workspace';
   import CanvasSizeForm from './CanvasSizeForm.svelte';
   import type { CanvasSize } from '../canvas-size';
   let rasterHost = $state<HTMLDivElement>();
-  let rasterFormat = $state<ImageFormat>();
+  let rasterFormat = $state<ImageFormat | 'visual'>();
   import { imageFormat, readImage, imageFormats, composite, canvasBlob, type ImageFormat } from '../images';
   import { saveImage } from '../drawing-files';
   import { dialogShortcuts } from '../shortcut-scope.svelte';
@@ -239,6 +244,32 @@
     } catch (cause) { error = cause; }
   }
 
+  /** Create a visual document page folder beside the note and open it inline. */
+  async function insertVisual(size: CanvasSize) {
+    if (!view || saving || githubPublishing || inlineDrawing) return;
+    error = '';
+    try {
+      if (node.storage === 'github') throw new Error('Create visual documents in GitHub folders with “create new file/folder”, then link them with \\visualpage.');
+      const folder = await containingFolder(workspace, node, handle);
+      if (node.storage === 'local') await requireWrite(folder, true);
+      const name = `visual-${crypto.randomUUID().slice(0, 8)}`;
+      const { directory, main } = await createVisualDocument(folder, name, size, node.storage);
+      await connectSibling(workspace, node, directory as unknown as LocalFile);
+      await saveWorkspace(workspace.data);
+      const reference = `${name}/${name}.visual`;
+      previews.set(reference, loadDrawing(main, node.storage, { workspace, node, folder: directory }));
+      catalogRequest = undefined;
+      const { from, to } = view.state.selection.main;
+      const before = from === view.state.doc.lineAt(from).from ? '' : '\n';
+      const after = to < view.state.doc.length && view.state.sliceDoc(to, to + 1) === '\n' ? '' : '\n';
+      const insert = `${before}\\visualpage[${reference}]${after}`;
+      view.dispatch({ changes: { from, to, insert }, selection: { anchor: from + insert.length + (after ? 0 : 1) },
+        annotations: Transaction.userEvent.of('input'), scrollIntoView: true });
+      const page = view.state.field(pageWidgets.field).pages.find((page) => page.name === reference);
+      if (page) await openDrawing(page);
+    } catch (cause) { error = cause; }
+  }
+
   function refreshDrawingPreviews() {
     if (!view || !active) return;
     for (const { name } of view.state.field(pageWidgets.field).pages) {
@@ -318,9 +349,12 @@
       if (drawing.resource) {
         const target = await resolveFileReference(workspace, node, drawing.page.name, await catalog());
         if (!target) throw new Error('The drawing file could not be found.');
-        await workspace.handle(target.id);
-        await deleteResource(workspace, target);
-        workspace.forget(target.id);
+        // A visual document owns its page folder (main file plus layer assets).
+        const owner = drawing.resource.visual && target.path.length > 1
+          ? await workspace.node(nodeId(target.sourceId, target.path.slice(0, -1))).catch(() => target) : target;
+        await workspace.handle(owner.id);
+        await deleteResource(workspace, owner);
+        workspace.forget(owner.id);
         await saveWorkspace(workspace.data);
       }
       const { from, to } = drawing.page;
@@ -800,7 +834,14 @@
     {/if}
     {#if inlineDrawing}
       <div class="inline-drawing-controller">
-        {#if inlineDrawing.resource?.image}
+        {#if inlineDrawing.resource?.visual}
+          <VisualDocumentEditor initialPoint={initialDrawingPoint} bind:this={drawingEditor} bind:usingTools resource={inlineDrawing.resource} {stylusOnly} {autosaveMs} {pdfMargins}
+            surfaceTarget={rasterHost} onExit={closeInlineDrawing} onDelete={deleteInlineDrawing}
+            onSaved={(resource) => { if (inlineDrawing) {
+              inlineDrawing.resource = resource; previews.set(inlineDrawing.page.name, Promise.resolve(resource));
+              view?.dispatch({ effects: pageWidgets.setPreview.of({ name: inlineDrawing.page.name, strokes: [], image: resource.preview && resource.image ? { src: resource.preview, height: resource.image.height / resource.image.width * 1024 } : undefined }) });
+            } }} />
+        {:else if inlineDrawing.resource?.image}
           <ImageEditor initialPoint={initialDrawingPoint} bind:this={drawingEditor} bind:usingTools resource={inlineDrawing.resource} {node} {stylusOnly} {autosaveMs} {pdfMargins}
             surfaceTarget={rasterHost} onExit={closeInlineDrawing} onDelete={deleteInlineDrawing}
             onSaved={(resource) => { if (inlineDrawing) {
@@ -855,11 +896,12 @@
   }}>
     {#snippet children()}
   {#if rasterFormat}
-    <CanvasSizeForm onCancel={() => rasterFormat = undefined} onCreate={(size) => { choseDrawingFormat = true; formatDialog.close(); void insertDrawing(rasterFormat!, undefined, size); }} />
+    <CanvasSizeForm onCancel={() => rasterFormat = undefined} onCreate={(size) => { choseDrawingFormat = true; formatDialog.close(); if (rasterFormat === 'visual') void insertVisual(size); else void insertDrawing(rasterFormat!, undefined, size); }} />
   {:else}
   <h2>Choose drawing format</h2>
-  <p class="muted">SVG stores vector strokes. PNG, JPEG and HEIC store one image; ORA preserves layers.</p>
+  <p class="muted">SVG stores vector strokes on an endless page. A visual document is a layered canvas (raster and vector layers, brushes) stored as a page folder. PNG, JPEG and HEIC store one image; ORA preserves raster layers.</p>
   <div class="editor-controls">
+    <Control onclick={() => { rasterFormat = 'visual'; }}>Visual document</Control>
     {#each ['svg', ...imageFormats] as kind}
       <Control onclick={() => { if (kind === 'svg') { choseDrawingFormat = true; formatDialog.close(); void insertDrawing('svg'); } else rasterFormat = kind as ImageFormat; }}>{kind.toUpperCase()}</Control>
     {/each}

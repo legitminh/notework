@@ -17,6 +17,15 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          path: notework
+
+      # Notework links the sibling engine checkout (`link:../visual.editor`).
+      - name: Checkout visual.editor
+        uses: actions/checkout@v4
+        with:
+          repository: legitminh/visual.editor
+          path: visual.editor
 
       # If you're using pnpm, add this step then change the commands and cache key below to use `pnpm`
       - name: Install pnpm
@@ -29,11 +38,14 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+          cache-dependency-path: notework/pnpm-lock.yaml
 
       - name: Install dependencies
+        working-directory: notework
         run: pnpm install
 
       - name: build
+        working-directory: notework
         env:
           BASE_PATH: ''
         run: |
@@ -46,7 +58,7 @@ jobs:
         uses: actions/upload-pages-artifact@v3
         with:
           # this should match the `pages` option in your adapter-static options
-          path: './build'
+          path: './notework/build'
 
   deploy:
     needs: build_site

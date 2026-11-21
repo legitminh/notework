@@ -117,7 +117,7 @@ for (const format of ['svg', 'png'] as const) for (const pointerType of ['pen', 
     await action(page, `open: ${name}`).click();
     if (format === 'svg') await ink(5);
     else {
-      await expect(canvas.locator('[data-image-layer="active"]')).toBeVisible();
+      await expect(canvas.locator('canvas.visual-canvas')).toBeVisible();
       const pixels = await Promise.all([50,110,170,230,290,350].map(y=>alpha(canvas,140,y)));
       expect(pixels).toEqual([255, 255, 255, 255, 255, 0]);
     }

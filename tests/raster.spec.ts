@@ -53,7 +53,7 @@ test('ORA uses pixel layers with undo across layer switches and layer operations
   const canvas=page.getByRole('img',{name:'Drawing canvas for layered.ora'});await expect(canvas.locator('canvas')).toBeVisible();
   await drag(page,canvas,[[50,50],[150,50]]);expect(await alpha(canvas,100,50)).toBe(255);
   await button(page,'Add layer').click();expect(await alpha(canvas,100,50)).toBe(0);await drag(page,canvas,[[50,100],[150,100]]);
-  await button(page,'Undo').click();expect(await alpha(canvas,100,100)).toBe(0);await button(page,'Undo').click();await expect(canvas.locator('canvas')).toHaveCount(1);expect(await alpha(canvas,100,50)).toBe(255);
+  await button(page,'Undo').click();expect(await alpha(canvas,100,100)).toBe(0);await button(page,'Undo').click();await expect(page.locator('[data-choice="active layer"]')).toBeVisible();expect(await canvas.evaluate(node=>(node as unknown as {visualEditor:{layers:unknown[]}}).visualEditor.layers.length)).toBe(1);expect(await alpha(canvas,100,50)).toBe(255);
   await button(page,'Undo').click();expect(await alpha(canvas,100,50)).toBe(0);await button(page,'Redo').click();expect(await alpha(canvas,100,50)).toBe(255);
 });
 

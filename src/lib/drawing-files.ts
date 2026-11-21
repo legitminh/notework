@@ -8,6 +8,7 @@ import { readDrawing, serializeDrawing, type Drawing } from './drawing';
 import { writeResourceContent } from './resource-content';
 import { saveWorkspace } from './persistence';
 import { GitHubFile, gitBlobSha } from './github/repository';
+import { isVisualName, visualContext, visualPreview, type VisualContext } from './visual-documents';
 
 function drawingScope(source: StateNode) {
   const parent = parentId(source);
@@ -27,14 +28,24 @@ export interface DrawingResource {
   githubBasedOn?: string | null;
   image?: ImageDocument;
   preview?: string;
+  /** Present for `.visual` documents: `image` then holds the flattened composite. */
+  visual?: VisualContext;
 }
+
+export interface DrawingContext { workspace: Workspace; node: StateNode; folder?: FileSystemDirectoryHandle }
 
 export function hasDrawingDraft(resource?: DrawingResource) {
   return resource?.handle instanceof GitHubFile && !!resource.handle.repository.draft(resource.handle.path);
 }
 
-export async function loadDrawing(handle: LocalFile, storage: Storage): Promise<DrawingResource> {
+export async function loadDrawing(handle: LocalFile, storage: Storage, context?: DrawingContext): Promise<DrawingResource> {
   const file = await handle.getFile();
+  if (isVisualName(handle.name)) {
+    if (!context) throw new Error('Open this visual document from its folder.');
+    const visual = await visualContext(context.workspace, context.node, handle, context.folder);
+    const { image, preview } = await visualPreview(visual);
+    return { handle, file, strokes: [], storage, image, preview, visual };
+  }
   const draft = handle instanceof GitHubFile ? handle.repository.draft(handle.path) : undefined;
   const githubBasedOn = handle instanceof GitHubFile ? await gitBlobSha(file) : undefined;
   const githubBase = handle instanceof GitHubFile ? (draft ? draft.base : githubBasedOn) : undefined;
@@ -62,20 +73,31 @@ async function resolveDrawing(
   const target = await resolveFileReference(workspace, source, reference, files);
   if (target) {
     const handle = await workspace.handle(target.id);
-    if (handle.kind === 'file') return { resource: await loadDrawing(handle, target.storage), node: target };
+    if (handle.kind === 'file') return { resource: await loadDrawing(handle, target.storage, { workspace, node: target }), node: target };
   }
   // Older versions placed local drawings in OPFS. Keep those existing links readable.
   const entry = source.storage === 'local' && canCreateSiblingDrawing(reference) ? sidecar(workspace, source, reference) : undefined;
   if (entry) {
     try {
       const node = await workspace.node(nodeId(entry.id));
-      return { resource: await loadDrawing(await workspace.handle(node.id) as LocalFile, entry.storage ?? 'browser'), node };
+      return { resource: await loadDrawing(await workspace.handle(node.id) as LocalFile, entry.storage ?? 'browser', { workspace, node }), node };
     }
     catch (error) { if (!isMissing(error)) throw error; }
   }
+  if (isVisualName(reference) && reference.includes('/')) {
+    // A page-folder document next to the note: `name/name.visual`.
+    const parts = reference.split('/');
+    if (parts.some((part) => !part || part === '.' || part === '..')) return undefined;
+    try {
+      let folder = await containingFolder(workspace, source, file);
+      for (const part of parts.slice(0, -1)) folder = await folder.getDirectoryHandle(part);
+      const handle = await folder.getFileHandle(parts.at(-1)!) as unknown as LocalFile;
+      return { resource: await loadDrawing(handle, source.storage, { workspace, node: source, folder }) };
+    } catch (error) { if (isMissing(error) || error instanceof TypeError) return undefined; throw error; }
+  }
   if (!canCreateSiblingDrawing(reference)) return undefined;
   const folder = await containingFolder(workspace, source, file);
-  try { return { resource: await loadDrawing(await folder.getFileHandle(reference) as unknown as LocalFile, source.storage) }; }
+  try { return { resource: await loadDrawing(await folder.getFileHandle(reference) as unknown as LocalFile, source.storage, { workspace, node: source, folder }) }; }
   catch (error) { if (isMissing(error)) return undefined; throw error; }
 }
 
@@ -124,7 +146,7 @@ async function stageSibling(
   try {
     await writeDrawing(handle, strokes, source.storage, size);
     id = (await connectSibling(workspace, source, handle)).id;
-    return { id, resource: await loadDrawing(handle, source.storage), rollback };
+    return { id, resource: await loadDrawing(handle, source.storage, { workspace, node: source, folder }), rollback };
   } catch (error) { await rollback(); throw error; }
 }
 

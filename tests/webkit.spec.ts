@@ -1,3 +1,4 @@
+import { rasterPoint, alpha as rasterAlpha } from './raster-helpers';
 import { chooseMenu } from './menu-helpers';
 import { test, expect, webkit } from '@playwright/test';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -150,11 +151,11 @@ test('WebKit raster canvas paints pixels, clears a lasso region, and saves undo/
     await page.getByLabel('name',{exact:true}).fill('pixels.png');await button('create png image').click();
     await page.getByLabel('Width in pixels').fill('400');await page.getByLabel('Height in pixels').fill('200');await button('Create canvas').click();
     await page.locator('[data-action="open"] button').click();
-    const canvas=page.getByRole('img',{name:'Drawing canvas for pixels.png'}), pixels=canvas.locator('[data-image-layer="active"] canvas');
+    const canvas=page.getByRole('img',{name:'Drawing canvas for pixels.png'}), pixels=canvas.locator('canvas.visual-canvas');
     await expect(pixels).toBeVisible();
-    const at=async(x:number,y:number)=>pixels.evaluate((node,[x,y])=>{const c=node as HTMLCanvasElement,r=c.getBoundingClientRect();return {x:r.x+x*r.width/c.width,y:r.y+y*r.height/c.height};},[x,y]);
+    const at=(x:number,y:number)=>rasterPoint(canvas,x,y);
     const draw=async(points:number[][])=>{for(const[i,p]of points.entries()){const q=await at(p[0],p[1]);await page.mouse.move(q.x,q.y,{steps:i?5:1});if(!i)await page.mouse.down();}await page.mouse.up();};
-    const alpha=(x:number,y:number)=>pixels.evaluate((node,[x,y])=>(node as HTMLCanvasElement).getContext('2d')!.getImageData(x,y,1,1).data[3],[x,y]);
+    const alpha=(x:number,y:number)=>rasterAlpha(canvas,x,y);
     await draw([[50,100],[300,100]]);const inside=await alpha(150,100),outside=await alpha(250,100);expect(inside).toBeGreaterThan(200);expect(outside).toBeGreaterThan(200);
     await button('Lasso').click();await draw([[100,50],[200,50],[200,150],[100,150],[100,50]]);
     await button('Clear selected pixels').click();expect(await alpha(150,100)).toBe(0);expect(await alpha(250,100)).toBe(outside);

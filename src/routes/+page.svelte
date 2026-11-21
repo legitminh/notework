@@ -32,6 +32,7 @@
   import type { AssetType } from '../lib/asset-types';
   import TextEditor from '../lib/components/TextEditor.svelte';
   import StandaloneDrawing from '../lib/components/StandaloneDrawing.svelte';
+  import { isVisualName } from '../lib/visual-documents';
   import { renameResource } from '../lib/rename-resource';
   import { stripFilenameEditingArtifacts } from '../lib/filenames';
   import { relocateResource } from '../lib/relocate-resource';
@@ -67,6 +68,9 @@
   let capacity = $state<{ usage: number; quota: number; persistent: boolean }>();
   let storageStatus = $state('');
   let editing = $state(false);
+  /** A visual document opened as its plaintext main file instead of the visual editor. */
+  let rawTextId = $state<string>();
+  $effect(() => { if (!editing) rawTextId = undefined; });
   let previewLocation = $state.raw<{ id: string; location: PreviewLocation }>();
   let creating = $state(false);
   let virtualKeyboard = $state(false);
@@ -830,8 +834,9 @@
       {:else if editing && current}
         {@const id = current.id}
         {#key current.uri}
-          {#if current.drawing}
-            <StandaloneDrawing initialPoint={previewLocation?.id === id && previewLocation.location.kind === 'drawing' ? previewLocation.location.point : undefined} bind:this={activeEditor} {pdfMargins} {stylusOnly} autosaveMs={autosaveSeconds * 1000} {workspace} node={current} onExit={exitEditor} onMissing={() => { void unavailableCurrent(id, 'missing'); }} />
+          {#if current.drawing && rawTextId !== id}
+            <StandaloneDrawing initialPoint={previewLocation?.id === id && previewLocation.location.kind === 'drawing' ? previewLocation.location.point : undefined} bind:this={activeEditor} {pdfMargins} {stylusOnly} autosaveMs={autosaveSeconds * 1000} {workspace} node={current} onExit={exitEditor} onMissing={() => { void unavailableCurrent(id, 'missing'); }}
+              onRawText={isVisualName(current.name) ? () => { rawTextId = id; } : undefined} />
           {:else}
             <TextEditor initialLocation={previewLocation?.id === id ? previewLocation.location : undefined} bind:this={activeEditor} {showLineNumbers} {showLineIndex} {workspace} node={current} {wrapLines} {prettyFontSize} {prettyMargin} {vimMode} {stylusOnly} {pdfMargins} autosaveMs={autosaveSeconds * 1000} onExit={exitEditor}
               onMissing={() => { void unavailableCurrent(id, 'missing'); }} onOpenLink={openLinkedFile} />

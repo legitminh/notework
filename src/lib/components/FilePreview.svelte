@@ -103,7 +103,7 @@
         const handle = await workspace.handle(node.id);
         if (handle.kind !== 'file') return;
         if (node.drawing) {
-          const resource = await loadDrawing(handle, node.storage);
+          const resource = await loadDrawing(handle, node.storage, { workspace, node });
           if (!active) return;
           image = resource.preview ?? (objectURL = URL.createObjectURL(new Blob([serializeDrawing(resource.strokes)], { type: 'image/svg+xml' })));
         } else {

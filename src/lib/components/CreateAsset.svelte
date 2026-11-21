@@ -6,6 +6,7 @@
   import StorageNotice from './StorageNotice.svelte';
   import { assetTypes, assetName, validAssetName, validAssetInput, type AssetType } from '../asset-types';
   import { stripFilenameEditingArtifacts } from '../filenames';
+  import { newVisualDocumentText } from '../visual-documents';
 
   let { path, machineFolder, githubFolder = false, busy, supported, error, onCreate, onCancel }: {
     path: string;
@@ -33,13 +34,14 @@
   {#if rasterType}
     <CanvasSizeForm {busy} onCancel={() => rasterType = undefined} onCreate={(size) => {
       const type = rasterType!;
-      onCreate(name, { ...type, initialContent: async () => new Uint8Array(await (await blankImage(imageFormat(type.extension!)!, size)).arrayBuffer()) });
+      if (type.canvas) onCreate(name, { ...type, initialFileContent: () => newVisualDocumentText(size) });
+      else onCreate(name, { ...type, initialContent: async () => new Uint8Array(await (await blankImage(imageFormat(type.extension!)!, size)).arrayBuffer()) });
     }} />
   {:else}
   {#each assetTypes as type (type.id)}
     <div class="creation-option">
       <Action label={`create ${type.label}`} disabled={busy || !supported || !validAssetInput(name, type)}
-        onSelect={() => { if (imageFormat(type.extension ?? '')) rasterType = type; else onCreate(name, type); }} />
+        onSelect={() => { if (type.canvas || imageFormat(type.extension ?? '')) rasterType = type; else onCreate(name, type); }} />
       <p class="path" aria-label={`Path for ${type.label}`}>{path}/{assetName(name, type) || '…'}{type.kind === 'directory' ? '/' : ''}</p>
       {#if type.initialFileName}
         <p class="path" aria-label="Path for page text file">{path}/{name.trim() || '…'}/{name.trim() ? type.initialFileName(name.trim()) : '….main'}</p>
