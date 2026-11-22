@@ -43,22 +43,74 @@
     commit([converted[1] && converted[2] ? converted[0] : hsv[0], converted[1], converted[2]]);
   }
 
-  // Wheel geometry: hue ring outside, saturation/value square inside.
-  const SIZE = $derived(size), RING = $derived(Math.round(size / 10)), SQUARE = $derived(Math.floor((size / 2 - Math.round(size / 10) - 6) * Math.SQRT2));
+  // Geometry: a hue ring (annulus between OUTER and INNER radii) around an HSV triangle whose
+  // corners are the pure hue, white and black. The triangle turns with the hue, as in Krita/GIMP/MyPaint.
+  const SIZE = $derived(size), OUTER = $derived(size / 2 - 1), INNER = $derived(size / 2 - Math.max(12, Math.round(size / 9)));
+  const TRI = $derived(INNER - 4);
   let wheel: HTMLDivElement;
-  let dragging: 'ring' | 'square' | undefined;
-  function pick(event: PointerEvent, start = false) {
-    const rect = wheel.getBoundingClientRect(), x = event.clientX - rect.left - SIZE / 2, y = event.clientY - rect.top - SIZE / 2;
-    if (start) dragging = Math.hypot(x, y) > SIZE / 2 - RING - 4 ? 'ring' : Math.abs(x) <= SQUARE / 2 + 4 && Math.abs(y) <= SQUARE / 2 + 4 ? 'square' : undefined;
-    if (dragging === 'ring') commit([(Math.atan2(y, x) * 180 / Math.PI + 450) % 360, hsv[1], hsv[2]]);
-    else if (dragging === 'square') commit([hsv[0], clamp(x / SQUARE + 0.5, 0, 1), clamp(0.5 - y / SQUARE, 0, 1)]);
+  let surface = $state<HTMLCanvasElement>();
+  let dragging: 'ring' | 'triangle' | undefined;
+  /** Screen angle (radians, y down) of a hue; red at the top, hues increase clockwise. */
+  const angleOf = (hue: number) => (hue - 90) * Math.PI / 180;
+  function corners(hue: number): [[number, number], [number, number], [number, number]] {
+    const a = angleOf(hue), r = TRI, c = SIZE / 2;
+    const at = (t: number): [number, number] => [c + Math.cos(t) * r, c + Math.sin(t) * r];
+    return [at(a), at(a + 2 * Math.PI / 3), at(a + 4 * Math.PI / 3)]; // hue, white, black
   }
-  const hueAngle = $derived((hsv[0] - 90) * Math.PI / 180);
+  /** Barycentric weights of p in triangle (hue, white, black). */
+  function weights(p: [number, number], [h, w, b]: ReturnType<typeof corners>) {
+    const det = (w[1] - b[1]) * (h[0] - b[0]) + (b[0] - w[0]) * (h[1] - b[1]);
+    const wh = ((w[1] - b[1]) * (p[0] - b[0]) + (b[0] - w[0]) * (p[1] - b[1])) / det;
+    const ww = ((b[1] - h[1]) * (p[0] - b[0]) + (h[0] - b[0]) * (p[1] - b[1])) / det;
+    return [wh, ww, 1 - wh - ww];
+  }
+  // HSV from weights: value = hue + white share, saturation = hue share of value.
+  function svFromWeights([wh, ww]: number[]): [number, number] {
+    const h = clamp(wh, 0, 1), w = clamp(ww, 0, 1 - h), v = clamp(h + w, 0, 1);
+    return [v ? clamp(h / v, 0, 1) : 0, v];
+  }
+  function pick(event: PointerEvent, start = false) {
+    const rect = wheel.getBoundingClientRect(), x = event.clientX - rect.left, y = event.clientY - rect.top;
+    const distance = Math.hypot(x - SIZE / 2, y - SIZE / 2);
+    if (start) dragging = distance >= INNER - 2 && distance <= OUTER + 4 ? 'ring' : distance < INNER ? 'triangle' : undefined;
+    if (dragging === 'ring') commit([(Math.atan2(y - SIZE / 2, x - SIZE / 2) * 180 / Math.PI + 450) % 360, hsv[1], hsv[2]]);
+    else if (dragging === 'triangle') { const [sat, val] = svFromWeights(weights([x, y], corners(hsv[0]))); commit([hsv[0], sat, val]); }
+  }
+  // Paint ring + triangle into one canvas; repainted only when the hue or size changes.
+  $effect(() => {
+    const hue = hsv[0], canvas = surface, dpr = Math.max(1, Math.min(3, globalThis.devicePixelRatio || 1));
+    if (!canvas) return;
+    const pixels = Math.round(SIZE * dpr);
+    canvas.width = canvas.height = pixels;
+    const context = canvas.getContext('2d')!, image = context.createImageData(pixels, pixels), data = image.data;
+    const tri = corners(hue), [r0, g0, b0] = hsvToRgb(hue, 1, 1);
+    for (let py = 0; py < pixels; py++) for (let px = 0; px < pixels; px++) {
+      const x = (px + 0.5) / dpr, y = (py + 0.5) / dpr, distance = Math.hypot(x - SIZE / 2, y - SIZE / 2), o = (py * pixels + px) * 4;
+      if (distance >= INNER && distance <= OUTER) {
+        const [r, g, b] = hsvToRgb((Math.atan2(y - SIZE / 2, x - SIZE / 2) * 180 / Math.PI + 450) % 360, 1, 1);
+        const edge = Math.min(1, (distance - INNER) * dpr, (OUTER - distance) * dpr);
+        data[o] = r; data[o + 1] = g; data[o + 2] = b; data[o + 3] = 255 * edge;
+      } else if (distance < INNER) {
+        const [wh, ww, wb] = weights([x, y], tri);
+        const inside = Math.min(wh, ww, wb);
+        if (inside < -1 / (TRI * 0.9)) continue;
+        // Pure hue × wh + white × ww + black × wb.
+        data[o] = r0 * wh + 255 * ww; data[o + 1] = g0 * wh + 255 * ww; data[o + 2] = b0 * wh + 255 * ww;
+        data[o + 3] = 255 * clamp(1 + inside * TRI * 0.9, 0, 1);
+      }
+    }
+    context.putImageData(image, 0, 0);
+  });
+  const marker = $derived.by(() => {
+    const [h, w, b] = corners(hsv[0]), wh = hsv[1] * hsv[2], ww = hsv[2] - wh, wb = 1 - hsv[2];
+    return [h[0] * wh + w[0] * ww + b[0] * wb, h[1] * wh + w[1] * ww + b[1] * wb];
+  });
+  const hueMarker = $derived([SIZE / 2 + Math.cos(angleOf(hsv[0])) * (INNER + OUTER) / 2, SIZE / 2 + Math.sin(angleOf(hsv[0])) * (INNER + OUTER) / 2]);
 </script>
 
 <div class="color-wheel-panel">
   <div class="wheel" bind:this={wheel} style:width={`${SIZE}px`} style:height={`${SIZE}px`} role="slider" tabindex="0"
-    aria-label="Color wheel: hue, saturation and value" aria-valuetext={`hue ${Math.round(hsv[0])}, saturation ${Math.round(hsv[1] * 100)}%, value ${Math.round(hsv[2] * 100)}%`} aria-valuenow={Math.round(hsv[0])}
+    aria-label="Color wheel: hue ring and saturation/value triangle" aria-valuetext={`hue ${Math.round(hsv[0])}, saturation ${Math.round(hsv[1] * 100)}%, value ${Math.round(hsv[2] * 100)}%`} aria-valuenow={Math.round(hsv[0])}
     onpointerdown={(event) => { wheel.setPointerCapture(event.pointerId); pick(event, true); }}
     onpointermove={(event) => { if (dragging) pick(event); }}
     onpointerup={() => { dragging = undefined; }}
@@ -71,11 +123,9 @@
       else return;
       event.preventDefault();
     }}>
-    <div class="ring" style:--ring={`${RING}px`}></div>
-    <div class="square" style:width={`${SQUARE}px`} style:height={`${SQUARE}px`} style:--hue={`hsl(${hsv[0]} 100% 50%)`}>
-      <span class="square-marker" style:left={`${hsv[1] * 100}%`} style:top={`${(1 - hsv[2]) * 100}%`}></span>
-    </div>
-    <span class="ring-marker" style:left={`${SIZE / 2 + Math.cos(hueAngle) * (SIZE / 2 - RING / 2)}px`} style:top={`${SIZE / 2 + Math.sin(hueAngle) * (SIZE / 2 - RING / 2)}px`}></span>
+    <canvas class="wheel-surface" bind:this={surface} style:width={`${SIZE}px`} style:height={`${SIZE}px`}></canvas>
+    <span class="triangle-marker" style:left={`${marker[0]}px`} style:top={`${marker[1]}px`} style:background={value}></span>
+    <span class="ring-marker" style:left={`${hueMarker[0]}px`} style:top={`${hueMarker[1]}px`} style:width={`${OUTER - INNER + 2}px`} style:height={`${OUTER - INNER + 2}px`}></span>
   </div>
   <div class="channels">
     <div class="editor-controls">
@@ -101,14 +151,10 @@
   .color-wheel-panel { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-start; }
   .wheel { position: relative; flex: none; touch-action: none; border-radius: 50%; cursor: crosshair; }
   .wheel:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
-  .ring { position: absolute; inset: 0; border-radius: 50%;
-    background: conic-gradient(from 0deg, hsl(0 100% 50%), hsl(60 100% 50%), hsl(120 100% 50%), hsl(180 100% 50%), hsl(240 100% 50%), hsl(300 100% 50%), hsl(360 100% 50%));
-    -webkit-mask: radial-gradient(circle, transparent calc(50% - var(--ring)), #000 calc(50% - var(--ring) + 1px));
-    mask: radial-gradient(circle, transparent calc(50% - var(--ring)), #000 calc(50% - var(--ring) + 1px)); }
-  .square { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
-    background: linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, var(--hue)); }
-  .square-marker, .ring-marker { position: absolute; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px #000; pointer-events: none; }
-  .ring-marker { width: 14px; height: 14px; margin: -7px 0 0 -7px; }
+  .wheel-surface { position: absolute; inset: 0; display: block; }
+  .triangle-marker, .ring-marker { position: absolute; transform: translate(-50%, -50%); border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px #000; pointer-events: none; box-sizing: border-box; }
+  .triangle-marker { width: 12px; height: 12px; }
+  .ring-marker { background: transparent; }
   .channels { display: grid; gap: 2px; min-width: 11rem; font-size: 12px; }
   .channels :global(button) { font-size: 12px; }
   .channels label { display: flex; align-items: center; gap: 6px; }
