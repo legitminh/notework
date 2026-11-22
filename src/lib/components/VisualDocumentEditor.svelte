@@ -30,7 +30,11 @@
   const github = context.folder instanceof GitHubDirectory;
 
   export async function saveForNavigation() { return await canvas?.saveForNavigation() ?? !editor; }
-  export async function focusToolbar() { canvas?.focusToolbar(); }
+  export async function focusToolbar() {
+    // The canvas mounts after decoding; wait briefly so editor-history navigation can focus its toolbar.
+    for (let waited = 0; !canvas && !error && waited < 10_000; waited += 20) await new Promise((resolve) => setTimeout(resolve, 20));
+    canvas?.focusToolbar();
+  }
   export function resumeEditing() { canvas?.resumeEditing(); }
 
   async function persist(requestWrite: boolean) {

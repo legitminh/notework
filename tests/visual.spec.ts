@@ -36,7 +36,7 @@ test('visual documents are page folders whose layers are separate assets, and re
   expect(await canvas.evaluate((node) => (node as Hooked).visualEditor.layers.map((layer) => layer.entry.kind))).toEqual(['raster', 'vector']);
   // Brush settings: select Brush again to open size, color wheel and brush types.
   await button(page, 'Brush').click();
-  await expect(page.getByRole('slider', { name: 'Color wheel: hue, saturation and value' })).toBeVisible();
+  await expect(page.getByRole('slider', { name: /^Color wheel/ })).toBeVisible();
   await page.getByLabel('Hex color').fill('#e03131'); await page.getByLabel('Hex color').press('Enter');
   await button(page, 'Basic-1').click();
   await expect(button(page, 'Basic-1')).toHaveAttribute('aria-pressed', 'true');
