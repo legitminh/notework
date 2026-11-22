@@ -2,7 +2,7 @@
   import { onMount, tick, untrack } from 'svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
-  import { Keyflow, Document, set_theme_id, min_box, state_viewport, lockstep_scrolling, key_presets, set_available_keys } from '@legitminh/keyflow';
+  import { Keyflow, Document, set_theme_id, min_box, state_viewport, lockstep_scrolling, key_presets, set_available_keys, keypath_visibility } from '@legitminh/keyflow';
   import { NavigationHistory } from '../lib/navigation-history';
   import FilePreview from '../lib/components/FilePreview.svelte';
   import type { PreviewLocation } from '../lib/preview-location';
@@ -818,7 +818,7 @@
   <meta name="description" content="A local-first network of files, folders, and notes. Navigate your information with Keyflow." />
 </svelte:head>
 
-<Keyflow options={{ storagePrefix: 'notework:keyflow:', minBox: 40, lockstep: false, keys: key_presets.alphanumeric }}>
+<Keyflow options={{ storagePrefix: 'notework:keyflow:', minBox: 40, lockstep: false, keys: key_presets.alphanumeric, keypathVisible: 'auto' }}>
   <Document scrollKeys={editing && current ? false : {}}>
     <main class="app" class:editing-view={editing && !!current} aria-label="notework" aria-busy={loading}>
       {#if relocateTarget}
@@ -916,6 +916,8 @@
             }} />
             <p class="muted">Zero-based line index in spare margins: gray/gray = 0, transparent/gray = 1, gray/transparent = 2, transparent/transparent = 3.</p>
             <h3>keyboard</h3>
+            <Action label={`key labels: ${keypath_visibility.visible ? 'shown' : 'hidden'}`} onSelect={() => keypath_visibility.toggle()} />
+            <p class="muted">Shown by default on computers and hidden on phones and tablets. Shortcuts keep working while labels are hidden.</p>
             <ChoiceMenu label="shortcut input space" value={shortcutAlphabet}
               choices={[{ id: 'alphanumeric', label: 'Alphanumeric (A–Z, 0–9)' }, { id: 'letters', label: 'Letters (A–Z)' }]}
               onchange={(value) => {
@@ -955,7 +957,7 @@
             }} />
             <Action label="smaller type" onSelect={() => min_box.set(Math.max(24, min_box.value - 4))} />
             <Action label="larger type" onSelect={() => min_box.set(Math.min(72, min_box.value + 4))} />
-            <p class="muted">Use the colored key labels or click a button. Tab and Enter also work. Scrolling is native.</p>
+            <p class="muted">Use the colored key labels (when shown) or click a button. Tab and Enter also work. Scrolling is native.</p>
             <h3>GitHub updates</h3>
             <label class="field"><span>GitHub check interval (seconds)</span>
               <input type="number" min="1" step="any" value={githubPollSeconds} oninput={(event) => updateGitHubInterval(event.currentTarget)} />

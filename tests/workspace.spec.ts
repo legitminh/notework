@@ -183,11 +183,24 @@ test('empty home, exact navigation order, native scrolling, and keyboard activat
   await page.keyboard.press(shortcut!.trim());
   await expect(page.getByRole('heading', { name: 'app settings' })).toBeVisible();
   await expect(button(page, 'create new file/folder')).toBeEnabled();
-  await page.evaluate(() => sessionStorage.setItem('notework:keyflow:lockstep_scrolling', 'true'));
+  await page.evaluate(() => localStorage.setItem('notework:keyflow:lockstep_scrolling', 'true'));
   await page.reload();
   await expect(button(page, 'app settings')).toBeEnabled();
   await expect(page.locator('.viewport')).toHaveCSS('overflow-y', 'auto');
-  expect(await page.evaluate(() => sessionStorage.getItem('notework:keyflow:lockstep_scrolling'))).toBe('false');
+  expect(await page.evaluate(() => localStorage.getItem('notework:keyflow:lockstep_scrolling'))).toBe('false');
+});
+
+test('key labels show on computers and can be hidden from app settings', async ({ page }) => {
+  const settings = button(page, 'app settings');
+  await expect(settings.locator('.pending_route')).not.toHaveText('');
+  await settings.click();
+  await button(page, 'key labels: shown').click();
+  await expect(button(page, 'key labels: hidden')).toBeVisible();
+  await expect(page.locator('.pending_route')).toHaveCount(0);
+  expect(await page.evaluate(() => localStorage.getItem('notework:keyflow:keypath_visible'))).toBe('false');
+  await page.reload();
+  await expect(button(page, 'app settings')).toBeEnabled();
+  await expect(page.locator('.pending_route')).toHaveCount(0);
 });
 
 test('folder direct children, file display, parent navigation, and browser back', async ({ page }) => {
@@ -453,6 +466,11 @@ test('Cmd/Ctrl+P includes root folders and navigates to folder results', async (
 
 test.describe('search field modes', () => {
   test.use({ hasTouch: true });
+  // Touch devices hide key labels by default; these tests read them to drive keyboard navigation.
+  test.beforeEach(async ({ page }) => {
+    await page.evaluate(() => localStorage.setItem('notework:keyflow:keypath_visible', 'true'));
+    await page.reload();
+  });
 
   for (const exit of ['Escape', 'button'] as const) {
     test(`${exit} leaves the field, preserves results, and restores keyboard navigation`, async ({ page }) => {
