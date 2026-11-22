@@ -24,7 +24,7 @@ test('new raster dimensions use viewport initially, validate, remember, and keep
   const canvas=page.getByRole('img',{name:'Drawing canvas for sized.png'});await expect(canvas.locator('canvas')).toBeVisible();
   await canvas.hover();for(let i=0;i<15;i++)await page.mouse.wheel(0,1000);
   await expect.poll(async()=>Number(await canvas.getAttribute('data-raster-zoom'))*400).toBeCloseTo(await page.evaluate(()=>parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--min-box'))),0);
-  await button(page,'Pan').click();const box=(await canvas.boundingBox())!;
+  await button(page,'Editor').click();await button(page,'Pan').click();const box=(await canvas.boundingBox())!;
   await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();await page.mouse.move(box.x+box.width+1000,box.y-1000);await page.mouse.up();
   expect(await canvas.evaluate(node=>{const view=(node as unknown as {visualView:{toScreen(x:number,y:number):[number,number]}}).visualView,a=node.getBoundingClientRect(),[l,t]=view.toScreen(0,0),[r,b]=view.toScreen(400,200);return a.left+r>a.left&&a.left+l<a.right&&a.top+b>a.top&&a.top+t<a.bottom})).toBe(true);
   await button(page,'Exit').click();await button(page,'home').click();await create(page,'remember.png');
@@ -52,7 +52,7 @@ test('ORA uses pixel layers with undo across layer switches and layer operations
   await create(page,'layered.ora','ora');await sizeCanvas(page,400,200);await page.locator('[data-action="open"] button').click();
   const canvas=page.getByRole('img',{name:'Drawing canvas for layered.ora'});await expect(canvas.locator('canvas')).toBeVisible();
   await drag(page,canvas,[[50,50],[150,50]]);expect(await alpha(canvas,100,50)).toBe(255);
-  await button(page,'Add layer').click();expect(await alpha(canvas,100,50)).toBe(0);await drag(page,canvas,[[50,100],[150,100]]);
+  await button(page,'Layer').click();await button(page,'Add layer').click();await page.keyboard.press('Escape');expect(await alpha(canvas,100,50)).toBe(0);await drag(page,canvas,[[50,100],[150,100]]);
   await button(page,'Undo').click();expect(await alpha(canvas,100,100)).toBe(0);await button(page,'Undo').click();await expect(page.locator('[data-choice="active layer"]')).toBeVisible();expect(await canvas.evaluate(node=>(node as unknown as {visualEditor:{layers:unknown[]}}).visualEditor.layers.length)).toBe(1);expect(await alpha(canvas,100,50)).toBe(255);
   await button(page,'Undo').click();expect(await alpha(canvas,100,50)).toBe(0);await button(page,'Redo').click();expect(await alpha(canvas,100,50)).toBe(255);
 });

@@ -169,9 +169,11 @@ for (const format of ['png', 'jpeg', 'heic', 'ora']) {
     await create(page, `picture.${format}`, `${format} image`);
     await action(page, 'open').click(); await stroke(page);
     if (format === 'ora') {
+      await drawTools(page).getByRole('button', { name: 'Layer', exact: true }).click();
       await page.getByRole('button', { name: 'Add layer', exact: true }).click();
       await expect(choiceMenu(page, 'active layer')).toHaveAttribute('data-value', '0');
       await expectChoiceCount(page, 'active layer', 2);
+      await page.keyboard.press('Escape');
       await stroke(page);
     }
     await drawTools(page).getByRole('button', { name: 'Exit', exact: true }).click();
@@ -183,7 +185,7 @@ for (const format of ['png', 'jpeg', 'heic', 'ora']) {
     if (format === 'ora') expect(data.slice(0, 2)).toEqual([80, 75]);
     await page.reload(); await action(page, `picture.${format}`).click(); await action(page, 'open').click();
     await expect(page.getByRole('img', { name: `Drawing canvas for picture.${format}` })).toBeVisible();
-    if (format === 'ora') await expectChoiceCount(page, 'active layer', 2);
+    if (format === 'ora') { await drawTools(page).getByRole('button', { name: 'Layer', exact: true }).click(); await expectChoiceCount(page, 'active layer', 2); }
     await expect(page.locator('canvas.visual-canvas')).toBeVisible();
   });
 }
@@ -441,7 +443,8 @@ test('raster eraser removes saved pixels locally, supports undo, and keeps surro
   await eraser.click(); await eraser.click();
   const slider = page.getByRole('slider', { name: 'Eraser size', exact: true });
   await expect(slider).toBeVisible();
-  await page.keyboard.down('ArrowUp'); await page.waitForTimeout(100); await page.keyboard.up('ArrowUp');
+  // Persistent positional slider controls: tap the increase control.
+  await page.getByRole('button', { name: /Increase Eraser size$/ }).click();
   await page.keyboard.press('Escape');
   const box = (await canvas.boundingBox())!;
   const center = await rasterPoint(canvas,200,100);

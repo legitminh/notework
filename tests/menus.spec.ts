@@ -141,6 +141,7 @@ test('search and drawing format choosers provide Keyflow arrow navigation and Ba
 test('image-layer menu owns Escape and keyboard selection while the drawing editor is mounted', async ({ page }) => {
   await create(page, 'layers', 'ora image');
   await page.locator('[data-action="open"] button').click();
+  await button(page, 'Layer').click();
   await button(page, 'Add layer').click();
   await expect(button(page, 'Add layer')).toBeEnabled();
   const layer = choiceMenu(page, 'active layer');

@@ -74,7 +74,9 @@
   import { GitHubFile, gitBlobSha } from '../github/repository';
   import { draftQueue } from '../github/storage';
 
-  let { workspace, node, wrapLines, prettyFontSize, prettyMargin, vimMode, stylusOnly, showLineNumbers, showLineIndex, pdfMargins, autosaveMs, onExit, onMissing, onOpenLink, initialLocation }: {
+  let { workspace, node, wrapLines, prettyFontSize, prettyMargin, vimMode, stylusOnly, showLineNumbers, showLineIndex, pdfMargins, autosaveMs, onExit, onMissing, onOpenLink, initialLocation, onVisualEditor }: {
+    /** Shown for a visual document's plaintext main file: save and return to the visual editor. */
+    onVisualEditor?: () => void;
     workspace: Workspace; node: StateNode; initialLocation?: PreviewLocation;
     wrapLines: boolean;
     showLineNumbers: boolean;
@@ -827,6 +829,7 @@
     <div class="editor-controls" role="group" aria-label="Editor toolbar" tabindex="-1" bind:this={toolbar}
       use:preserveContentFocus={() => !usingTools && !!view?.hasFocus}>
       <Control aria-keyshortcuts="Control+Escape" onclick={requestExit} disabled={saving || githubPublishing}>Exit<span class="shortcut-hint" aria-hidden="true">Ctrl+Esc</span></Control>
+      {#if onVisualEditor}<Control onclick={() => { void saveForNavigation().then((saved) => { if (saved) onVisualEditor?.(); }); }} disabled={saving || githubPublishing}>Visual editor</Control>{/if}
       <Control aria-keyshortcuts={vimMode ? undefined : 'Control+F'} onclick={find} disabled={loading || githubPublishing}><span class="visually-hidden">Find and replace</span><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="10" cy="10" r="6" /><path d="m14.5 14.5 5 5" /></svg>{#if !vimMode}<span class="shortcut-hint" aria-hidden="true">Ctrl+F</span>{/if}</Control>
       <Control onclick={() => { choseDrawingFormat = false; rasterFormat = undefined; choosingDrawing = true; formatDialog.showModal(); }} disabled={loading || saving || githubPublishing}>Draw…<span class="shortcut-hint" aria-hidden="true">Command+B · SVG</span></Control>
       <Control onclick={() => imagePicker.click()} disabled={loading || saving || githubPublishing}>Insert image</Control>

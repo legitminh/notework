@@ -839,7 +839,8 @@
               onRawText={isVisualName(current.name) ? () => { rawTextId = id; } : undefined} />
           {:else}
             <TextEditor initialLocation={previewLocation?.id === id ? previewLocation.location : undefined} bind:this={activeEditor} {showLineNumbers} {showLineIndex} {workspace} node={current} {wrapLines} {prettyFontSize} {prettyMargin} {vimMode} {stylusOnly} {pdfMargins} autosaveMs={autosaveSeconds * 1000} onExit={exitEditor}
-              onMissing={() => { void unavailableCurrent(id, 'missing'); }} onOpenLink={openLinkedFile} />
+              onMissing={() => { void unavailableCurrent(id, 'missing'); }} onOpenLink={openLinkedFile}
+              onVisualEditor={rawTextId === id ? () => { rawTextId = undefined; } : undefined} />
           {/if}
         {/key}
       {:else}

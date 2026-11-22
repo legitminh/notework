@@ -29,7 +29,7 @@ jobs:
       - run: pnpm check
       - run: pnpm build
       - run: pnpm exec playwright install --with-deps chromium
-      - run: pnpm exec playwright test tests/visual.spec.ts tests/raster.spec.ts tests/drawing-input.spec.ts tests/features.spec.ts --reporter=line
+      - run: pnpm exec playwright test tests/visual.spec.ts tests/raster.spec.ts tests/drawing-input.spec.ts tests/features.spec.ts tests/menus.spec.ts tests/github.spec.ts tests/export.spec.ts --reporter=line
         env: { CI: '1' }
       - name: Show failure snapshots
         if: failure()

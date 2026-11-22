@@ -39,6 +39,7 @@
   let imageReady = $state(false);
   let imageFailed = $state(false);
   let view: EditorView | undefined;
+  const isSvg = $derived(node.name.toLowerCase().endsWith('.svg'));
 
   function drawingPoint(rect: DOMRect, event: MouseEvent): Point {
     const scale = DRAWING_WIDTH / Math.max(1, rect.width);
@@ -106,6 +107,11 @@
           const resource = await loadDrawing(handle, node.storage, { workspace, node });
           if (!active) return;
           image = resource.preview ?? (objectURL = URL.createObjectURL(new Blob([serializeDrawing(resource.strokes)], { type: 'image/svg+xml' })));
+        } else if (node.name.toLowerCase().endsWith('.svg')) {
+          // Show SVG files (e.g. visual-document vector layers) as pictures; <img> never runs embedded scripts.
+          const file = await handle.getFile();
+          if (!active) return;
+          image = objectURL = URL.createObjectURL(new Blob([await file.arrayBuffer()], { type: 'image/svg+xml' }));
         } else {
           const file = await handle.getFile();
           const format = await inspectTextFile(file, workspace.format(node.id));
@@ -156,9 +162,9 @@
   </span>
   <div class="preview-open-hint" aria-hidden="true"><span>open</span></div>
   <div class="preview-content">
-    {#if node.drawing && !error && !imageFailed && (loading || !imageReady)}<ImageLoading />
+    {#if (node.drawing || isSvg) && !error && !imageFailed && (loading || !imageReady)}<ImageLoading />
     {:else if loading}<p class="muted">loading preview…</p>{/if}
-    {#if image}<img src={image} alt={`Preview of ${node.name}`} onload={() => { imageReady = true; }} onerror={() => { imageFailed = true; error = new Error('Could not display this image.'); }} />{/if}
+    {#if image}<img class:svg-image={isSvg && !node.drawing} src={image} alt={`Preview of ${node.name}`} onload={() => { imageReady = true; }} onerror={() => { imageFailed = true; error = new Error('Could not display this image.'); }} />{/if}
     <div bind:this={host}></div>
   </div>
 </div>
@@ -178,4 +184,6 @@
   .embedded .preview-content { min-height: 0; }
   .embedded img { padding-left: var(--page-indent); }
   img { display: block; width: 100%; height: auto; }
+  /* Transparent SVG layers read better on a light checkerboard in either theme. */
+  img.svg-image { background: repeating-conic-gradient(#e8e8e8 0 25%, #fff 0 50%) 0 0 / 16px 16px; }
 </style>

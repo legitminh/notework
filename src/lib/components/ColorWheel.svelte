@@ -1,6 +1,6 @@
 <script lang="ts">
   import Control from './Control.svelte';
-  let { value, onchange }: { value: string; onchange: (hex: string) => void } = $props();
+  let { value, onchange, size = 184 }: { value: string; onchange: (hex: string) => void; size?: number } = $props();
 
   type HSV = [number, number, number];
   const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
@@ -44,7 +44,7 @@
   }
 
   // Wheel geometry: hue ring outside, saturation/value square inside.
-  const SIZE = 184, RING = 18, SQUARE = Math.floor((SIZE / 2 - RING - 6) * Math.SQRT2);
+  const SIZE = $derived(size), RING = $derived(Math.round(size / 10)), SQUARE = $derived(Math.floor((size / 2 - Math.round(size / 10) - 6) * Math.SQRT2));
   let wheel: HTMLDivElement;
   let dragging: 'ring' | 'square' | undefined;
   function pick(event: PointerEvent, start = false) {
@@ -109,11 +109,12 @@
     background: linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, var(--hue)); }
   .square-marker, .ring-marker { position: absolute; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px #000; pointer-events: none; }
   .ring-marker { width: 14px; height: 14px; margin: -7px 0 0 -7px; }
-  .channels { display: grid; gap: 4px; min-width: 12rem; font-size: 13px; }
+  .channels { display: grid; gap: 2px; min-width: 11rem; font-size: 12px; }
+  .channels :global(button) { font-size: 12px; }
   .channels label { display: flex; align-items: center; gap: 6px; }
   .channels input[type=range] { flex: 1; min-width: 6rem; }
   .channels input[type=number] { width: 4.2em; }
-  .hex { width: 6.5em; font-family: var(--font-mono); }
+  .hex { width: 6.5em; font-family: var(--font-mono); padding: 2px 4px; min-height: 0; height: auto; }
   .hue-range { accent-color: var(--primary); }
   .swatch { display: inline-block; width: 28px; height: 28px; border-radius: 4px; border: 1px solid var(--tertiary); }
 </style>

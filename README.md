@@ -135,7 +135,7 @@ pnpm test
 
 The update command resolves upstream HEAD and pins that commit in `package.json` and `pnpm-lock.yaml`. Commit both files along with the matching `pnpm-workspace.yaml` approval. To target a revision manually: `pnpm add -w '@legitminh/keyflow@github:legitminh/keyflow#COMMIT'`.
 
-The current dependency is **Keyflow 0.10.0**, pinned to commit `e0c6a576b9e41e67da3f8d51a4f02313b46a5684`. It provides input frames, menus, and virtual keyboards, including directional flick keys. Notework defaults to the alphanumeric shortcut alphabet.
+The current dependency is **Keyflow 0.10.0** plus `BoundedText` and the persistent `HorizontalSlider`/`VerticalSlider` from upstream `main`, pinned to commit `dd346a21faadf73a7e5843ac4db64cf50b70c702`. It provides input frames, menus, and virtual keyboards, including directional flick keys. Notework defaults to the alphanumeric shortcut alphabet.
 
 Navigation, configuration, picker, dialog, export and editor toolbar buttons use the library through `Control.svelte`. Ordinary buttons retain visibility-based automatic shortcuts, while modal dialog controls use stable persistent shortcuts. Relocate cancellation uses `StaticButton` with Escape; within the search popup, Escape first leaves the field and then closes the popup. The app adapter forwards accessible names, pressed states and existing editor shortcut annotations to the underlying button. Dialog scoping disables background controls and closed-dialog controls through Keyflow's native `disabled` prop, suspending their shortcuts while retaining their button elements.
 

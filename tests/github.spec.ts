@@ -438,15 +438,19 @@ for (const format of ['png', 'jpeg', 'ora']) {
       pixel.forEach((channel, index) => expect(Math.abs(channel - color[index])).toBeLessThanOrEqual(1));
     }
     if (format === 'ora') {
+      await remote.getByRole('button', { name: 'Layer', exact: true }).click();
       await remote.getByRole('button', { name: 'Add layer', exact: true }).click();
       await expectChoiceCount(remote, 'active layer', 2);
+      await page.keyboard.press('Escape');
+      await local.getByRole('button', { name: 'Layer', exact: true }).click();
       await expectChoiceCount(local, 'active layer', 1);
+      await page.keyboard.press('Escape');
     }
     await remote.getByRole('button', { name: 'Brush', exact: true }).click();
     const size = remote.getByRole('slider', { name: 'Pen size', exact: true });
     await expect(size).toBeVisible();
     await expect(local.getByRole('slider')).toHaveCount(0);
-    await page.keyboard.press('ArrowUp');
+    await remote.getByRole('button', { name: /Increase Pen size$/ }).click();
     await expect(size).toHaveAttribute('aria-valuenow', '4');
     await page.keyboard.press('Escape');
     await expect(size).toHaveCount(0);
@@ -466,7 +470,7 @@ for (const format of ['png', 'jpeg', 'ora']) {
     expect(repo.bytes(name)).not.toEqual(upstream);
     await action(page, 'open').click();
     await expect(page.getByRole('img', { name: `Drawing canvas for ${name}` })).toBeVisible();
-    if (format === 'ora') await expectChoiceCount(page, 'active layer', 2);
+    if (format === 'ora') { await page.getByRole('button', { name: 'Layer', exact: true }).click(); await expectChoiceCount(page, 'active layer', 2); }
   });
 }
 
