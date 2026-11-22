@@ -131,44 +131,44 @@
     <span class="triangle-marker" style:left={`${marker[0]}px`} style:top={`${marker[1]}px`} style:background={value}></span>
     <span class="ring-marker" style:left={`${hueMarker[0]}px`} style:top={`${hueMarker[1]}px`} style:width={`${OUTER - INNER + 2}px`} style:height={`${OUTER - INNER + 2}px`}></span>
   </div>
+  <!-- To the right of the wheel: one horizontal stream of mode, channel values, sliders and hex. -->
   <div class="channels">
-    <div class="channel-row">
-      <Control onclick={() => mode = 'hsv'} aria-pressed={mode === 'hsv'}>HSV</Control>
-      <Control onclick={() => mode = 'rgb'} aria-pressed={mode === 'rgb'}>RGB</Control>
-      <span class="swatch current" style:background={value} aria-hidden="true"></span>
-    </div>
-    <!-- Keyflow sliders and number boxes: every channel is reachable from the keyboard. -->
+    <Control onclick={() => mode = 'hsv'} aria-pressed={mode === 'hsv'}>HSV</Control>
+    <Control onclick={() => mode = 'rgb'} aria-pressed={mode === 'rgb'}>RGB</Control>
+    <span class="swatch current" style:background={value} aria-hidden="true"></span>
     {#if mode === 'hsv'}
-      <div class="channel-row"><span class="channel">H</span><HorizontalSlider value={Math.round(hsv[0])} min={0} max={359} step={1} speed={120} label="Hue" onchange={(hue: number) => commit([hue, hsv[1], hsv[2]])} />
-        <NumberBox value={Math.round(hsv[0])} min={0} max={359} step={1} width="4ch" label="Hue value" onchange={(hue: number) => commit([hue, hsv[1], hsv[2]])} /></div>
-      <div class="channel-row"><span class="channel">S</span><HorizontalSlider value={Math.round(hsv[1] * 100)} min={0} max={100} step={1} speed={50} label="Saturation" onchange={(sat: number) => commit([hsv[0], sat / 100, hsv[2]])} />
-        <NumberBox value={Math.round(hsv[1] * 100)} min={0} max={100} step={1} width="4ch" label="Saturation value" onchange={(sat: number) => commit([hsv[0], sat / 100, hsv[2]])} /></div>
-      <div class="channel-row"><span class="channel">V</span><HorizontalSlider value={Math.round(hsv[2] * 100)} min={0} max={100} step={1} speed={50} label="Value" onchange={(val: number) => commit([hsv[0], hsv[1], val / 100])} />
-        <NumberBox value={Math.round(hsv[2] * 100)} min={0} max={100} step={1} width="4ch" label="Value value" onchange={(val: number) => commit([hsv[0], hsv[1], val / 100])} /></div>
+      <span class="pair"><span class="channel">H</span><NumberBox value={Math.round(hsv[0])} min={0} max={359} step={1} width="4ch" label="Hue value" onchange={(hue: number) => commit([hue, hsv[1], hsv[2]])} /></span>
+      <HorizontalSlider value={Math.round(hsv[0])} min={0} max={359} step={1} speed={120} label="Hue" onchange={(hue: number) => commit([hue, hsv[1], hsv[2]])} />
+      <span class="pair"><span class="channel">S</span><NumberBox value={Math.round(hsv[1] * 100)} min={0} max={100} step={1} width="4ch" label="Saturation value" onchange={(sat: number) => commit([hsv[0], sat / 100, hsv[2]])} /></span>
+      <HorizontalSlider value={Math.round(hsv[1] * 100)} min={0} max={100} step={1} speed={50} label="Saturation" onchange={(sat: number) => commit([hsv[0], sat / 100, hsv[2]])} />
+      <span class="pair"><span class="channel">V</span><NumberBox value={Math.round(hsv[2] * 100)} min={0} max={100} step={1} width="4ch" label="Value value" onchange={(val: number) => commit([hsv[0], hsv[1], val / 100])} /></span>
+      <HorizontalSlider value={Math.round(hsv[2] * 100)} min={0} max={100} step={1} speed={50} label="Value" onchange={(val: number) => commit([hsv[0], hsv[1], val / 100])} />
     {:else}
       {#each ['Red', 'Green', 'Blue'] as channel, index (channel)}
-        <div class="channel-row"><span class="channel">{channel[0]}</span><HorizontalSlider value={rgb[index]} min={0} max={255} step={1} speed={120} label={channel} onchange={(next: number) => setRgb(index, next)} />
-          <NumberBox value={rgb[index]} min={0} max={255} step={1} width="4ch" label={`${channel} value`} onchange={(next: number) => setRgb(index, next)} /></div>
+        <span class="pair"><span class="channel">{channel[0]}</span><NumberBox value={rgb[index]} min={0} max={255} step={1} width="4ch" label={`${channel} value`} onchange={(next: number) => setRgb(index, next)} /></span>
+        <HorizontalSlider value={rgb[index]} min={0} max={255} step={1} speed={120} label={channel} onchange={(next: number) => setRgb(index, next)} />
       {/each}
     {/if}
-    <div class="channel-row"><span class="channel">Hex</span>
-      <TextBox singleLine bind:value={hexDraft} label="Hex color" spellcheck={false}
-        onexit={(text) => { const hex = text.trim(); if (/^#?[0-9a-f]{6}$/i.test(hex)) { const next = rgbToHsv(...hexToRgb(hex)); commit([next[1] && next[2] ? next[0] : hsv[0], next[1], next[2]]); } hexDraft = lastValue || value; }} />
-    </div>
+    <span class="pair"><span class="channel">Hex</span>
+    <TextBox singleLine bind:value={hexDraft} label="Hex color" spellcheck={false}
+      onexit={(text) => { const hex = text.trim(); if (/^#?[0-9a-f]{6}$/i.test(hex)) { const next = rgbToHsv(...hexToRgb(hex)); commit([next[1] && next[2] ? next[0] : hsv[0], next[1], next[2]]); } hexDraft = lastValue || value; }} /></span>
   </div>
 </div>
 
 <style>
-  .color-wheel-panel { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-start; }
+  /* Wheel on the left; the channel stream fills the rest of the line beside it. */
+  .color-wheel-panel { display: flex; gap: 1ch; align-items: flex-start; flex: 1 1 100%; min-width: 0; }
   .wheel { position: relative; flex: none; touch-action: none; border-radius: 50%; cursor: crosshair; }
   .wheel:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
   .wheel-surface { position: absolute; inset: 0; display: block; }
   .triangle-marker, .ring-marker { position: absolute; transform: translate(-50%, -50%); border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px #000; pointer-events: none; box-sizing: border-box; }
   .triangle-marker { width: 12px; height: 12px; }
   .ring-marker { background: transparent; }
-  .channels { display: grid; gap: 0; min-width: 0; }
-  .channel-row { display: flex; flex-wrap: wrap; align-items: center; gap: .4ch; line-height: var(--min-box); }
-  .channel { display: inline-block; min-width: 3ch; }
-  .channel-row :global(.keyflow-slider) { padding: 0; gap: .3ch; --slider-length: 8rem; }
+  .channels { flex: 1 1 18rem; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 0 .6ch; line-height: var(--min-box); }
+  .channels > :global(*) { flex: none; }
+  .channel { display: inline-block; min-width: 1.5ch; }
+  /* A label stays on the same line as its value box. */
+  .pair { display: inline-flex; align-items: center; gap: .4ch; white-space: nowrap; }
+  .channels :global(.keyflow-slider) { padding: 0; gap: .3ch; --slider-length: 8rem; }
   .swatch { display: inline-block; width: var(--min-box); height: calc(var(--min-box) * .7); border-radius: 4px; border: 1px solid var(--tertiary); }
 </style>

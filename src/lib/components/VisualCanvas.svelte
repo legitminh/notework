@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
-  import { get_input_frame, active_input_frame, min_box, SubKeyframe, HorizontalSlider, BoundedText, TextBox, type SubKeyframeController } from '@legitminh/keyflow';
+  import { get_input_frame, active_input_frame, min_box, SubKeyframe, HorizontalSlider, BoundedText, TextBox, NumberBox, type SubKeyframeController } from '@legitminh/keyflow';
   import { CanvasRenderer, InputController, ViewTransform, fromPointerEvent, sanitizeBrush, BRUSH_IMPORT_EXTENSIONS,
     rotateQuad, scaleQuad, translateQuad, moveCorner, moveEdge, edgeMidpoint, quadCenter,
     type VisualEditor, type Brush, type Rect, type Quad } from 'visual.editor';
@@ -486,69 +486,58 @@
 
 {#snippet brushPanel(kind: 'brush' | 'eraser')}
   {@const brush = kind === 'eraser' ? currentEraser : currentBrush}
-  <div class="menu-flow">
-    <section class="menu-group">
-      {#if kind === 'brush'}
-        <p class="menu-label">Pen size: {Math.round(penSize)}</p><HorizontalSlider bind:value={penSize} min={1} max={300} step={1} speed={40} label="Pen size" />
-        <p class="menu-label">Opacity: {penOpacity}%</p><HorizontalSlider bind:value={penOpacity} min={1} max={100} step={1} speed={50} label="Brush opacity" />
-      {:else}
-        <p class="menu-label">Eraser size: {Math.round(eraserSize)}</p><HorizontalSlider bind:value={eraserSize} min={1} max={500} step={1} speed={60} label="Eraser size" />
-      {/if}
-    </section>
+  {@const reference = kind === 'eraser' ? eraserRef : brushRef}
+  <!-- Horizontal component stream: every control flows left to right and folds like text. -->
+  <div class="stream">
     {#if kind === 'brush'}
-      <section class="menu-group">
-        <ColorWheel value={color} size={132} onchange={(value) => editor.setState({ color: value })} />
-      </section>
-      <section class="menu-group">
-        <p class="menu-label">Palette</p>
-        <div class="swatches" aria-label="Palette">
-          {#each paletteColors as swatch (swatch)}
-            <span class="swatch-control" class:chosen={color === swatch} style:--swatch={swatch}><Control onclick={() => editor.setState({ color: swatch })} aria-label={`Use color ${swatch}`} aria-pressed={color === swatch}><span class="swatch" aria-hidden="true"></span></Control></span>
-          {/each}
-          <Control onclick={addPaletteColor} aria-label="Add current color to palette">+</Control>
-          {#if paletteColors.includes(color)}<Control onclick={() => removePaletteColor(color)} aria-label="Remove current color from palette">−</Control>{/if}
-        </div>
-        {#if recentColors.length}
-          <p class="menu-label">Recent</p>
-          <div class="swatches" aria-label="Recent colors">
-            {#each recentColors as recent (recent)}
-              <span class="swatch-control small" class:chosen={color === recent} style:--swatch={recent}><Control onclick={() => editor.setState({ color: recent })} aria-label={`Use recent color ${recent}`}><span class="swatch" aria-hidden="true"></span></Control></span>
-            {/each}
-          </div>
-        {/if}
-      </section>
-    {/if}
-    <section class="menu-group">
-      <p class="menu-label">{kind === 'brush' ? 'Brush type' : 'Eraser type'}</p>
-      <div class="brush-list">
-        {#each brushes.filter(({ brush: item }) => kind === 'eraser' ? item.eraser : !item.eraser).sort((a, b) => Number(palette.includes(b.reference)) - Number(palette.includes(a.reference)) || a.brush.name.localeCompare(b.brush.name, undefined, { numeric: true })) as item (item.reference)}
-          <Control onclick={() => chooseBrush(kind, item.reference)} aria-pressed={item.reference === (kind === 'eraser' ? eraserRef : brushRef)}>{shortName(item.brush)}</Control>
-        {/each}
-      </div>
-      {#if library}
-        <div class="menu-row">
-          <Control onclick={() => { importKind = kind; brushImport?.click(); }} disabled={brushBusy}>Import brush…</Control>
-          {#if !(kind === 'eraser' ? eraserRef : brushRef)?.startsWith('builtin:') && (kind === 'eraser' ? eraserRef : brushRef)}<Control onclick={() => { void saveBrushFile(kind); }} disabled={brushBusy || !brushEdited}>Save brush file</Control>{/if}
-        </div>
-      {/if}
-    </section>
-    <section class="menu-group brush-config">
-      <!-- A nested Keyflow input frame: its trigger and every setting inside are keyboard-routed. -->
-      <SubKeyframe label={`Configure ${shortName(brush)}`} class="brush-config-menu" closeOnOutside={false}>
-        {#snippet children()}
-      {#each brushSettings as setting (setting.key)}
-        <div class="setting-row"><span class="menu-label">{setting.label} {Math.round(setting.get(brush))}{setting.unit}</span>
-          <HorizontalSlider value={Math.round(setting.get(brush))} min={setting.min} max={setting.max} step={1} speed={setting.speed} label={`${shortName(brush)} ${setting.label.toLowerCase()}`}
-            onchange={(next: number) => editBrush(kind, setting.set(next))} /></div>
+      <span class="pair"><span class="stream-label">Pen size</span><NumberBox bind:value={penSize} min={1} max={300} step={1} width="4ch" label="Pen size value" /></span>
+      <HorizontalSlider bind:value={penSize} min={1} max={300} step={1} speed={40} label="Pen size" />
+      <span class="pair"><span class="stream-label">Opacity</span><NumberBox bind:value={penOpacity} min={1} max={100} step={1} width="4ch" label="Brush opacity value" format={(value) => `${value}%`} /></span>
+      <HorizontalSlider bind:value={penOpacity} min={1} max={100} step={1} speed={50} label="Brush opacity" />
+      <span class="stream-break" aria-hidden="true"></span>
+      <ColorWheel value={color} size={132} onchange={(value) => editor.setState({ color: value })} />
+      <span class="stream-break" aria-hidden="true"></span>
+      <span class="stream-label">Palette</span>
+      {#each paletteColors as swatch (swatch)}
+        <span class="swatch-control" class:chosen={color === swatch} style:--swatch={swatch}><Control onclick={() => editor.setState({ color: swatch })} aria-label={`Use color ${swatch}`} aria-pressed={color === swatch}><span class="swatch" aria-hidden="true"></span></Control></span>
       {/each}
-      <div class="menu-row">
-        <Control onclick={() => editBrush(kind, { sizePressure: !brush.sizePressure })} aria-pressed={brush.sizePressure}>Pressure → size</Control>
-        <Control onclick={() => editBrush(kind, { opacityPressure: !brush.opacityPressure })} aria-pressed={brush.opacityPressure}>Pressure → opacity</Control>
-        <Control onclick={() => editBrush(kind, { flowPressure: !brush.flowPressure })} aria-pressed={brush.flowPressure}>Pressure → flow</Control>
-      </div>
-        {/snippet}
-      </SubKeyframe>
-    </section>
+      <Control onclick={addPaletteColor} aria-label="Add current color to palette">+</Control>
+      {#if paletteColors.includes(color)}<Control onclick={() => removePaletteColor(color)} aria-label="Remove current color from palette">−</Control>{/if}
+      {#if recentColors.length}
+        <span class="stream-label">Recent</span>
+        {#each recentColors as recent (recent)}
+          <span class="swatch-control small" class:chosen={color === recent} style:--swatch={recent}><Control onclick={() => editor.setState({ color: recent })} aria-label={`Use recent color ${recent}`}><span class="swatch" aria-hidden="true"></span></Control></span>
+        {/each}
+      {/if}
+    {:else}
+      <span class="pair"><span class="stream-label">Eraser size</span><NumberBox bind:value={eraserSize} min={1} max={500} step={1} width="4ch" label="Eraser size value" /></span>
+      <HorizontalSlider bind:value={eraserSize} min={1} max={500} step={1} speed={60} label="Eraser size" />
+    {/if}
+    <span class="stream-break" aria-hidden="true"></span>
+    <span class="stream-label">{kind === 'brush' ? 'Brush type' : 'Eraser type'}</span>
+    {#each brushes.filter(({ brush: item }) => kind === 'eraser' ? item.eraser : !item.eraser).sort((a, b) => Number(palette.includes(b.reference)) - Number(palette.includes(a.reference)) || a.brush.name.localeCompare(b.brush.name, undefined, { numeric: true })) as item (item.reference)}
+      <Control onclick={() => chooseBrush(kind, item.reference)} aria-pressed={item.reference === reference}>{shortName(item.brush)}</Control>
+    {/each}
+    {#if library}
+      <Control onclick={() => { importKind = kind; brushImport?.click(); }} disabled={brushBusy}>Import brush…</Control>
+      {#if reference && !reference.startsWith('builtin:')}<Control onclick={() => { void saveBrushFile(kind); }} disabled={brushBusy || !brushEdited}>Save brush file</Control>{/if}
+    {/if}
+    <!-- A nested Keyflow input frame: its trigger and every setting inside are keyboard-routed. -->
+    <SubKeyframe label={`Configure ${shortName(brush)}`} class="brush-config-menu" closeOnOutside={false}>
+      {#snippet children()}
+        <div class="stream">
+          {#each brushSettings as setting (setting.key)}
+            <span class="pair"><span class="stream-label">{setting.label}</span><NumberBox value={Math.round(setting.get(brush))} min={setting.min} max={setting.max} step={1} width="4ch" label={`${shortName(brush)} ${setting.label.toLowerCase()} value`}
+              format={(value) => `${value}${setting.unit}`} onchange={(next: number) => editBrush(kind, setting.set(next))} /></span>
+            <HorizontalSlider value={Math.round(setting.get(brush))} min={setting.min} max={setting.max} step={1} speed={setting.speed} label={`${shortName(brush)} ${setting.label.toLowerCase()}`}
+              onchange={(next: number) => editBrush(kind, setting.set(next))} />
+          {/each}
+          <Control onclick={() => editBrush(kind, { sizePressure: !brush.sizePressure })} aria-pressed={brush.sizePressure}>Pressure → size</Control>
+          <Control onclick={() => editBrush(kind, { opacityPressure: !brush.opacityPressure })} aria-pressed={brush.opacityPressure}>Pressure → opacity</Control>
+          <Control onclick={() => editBrush(kind, { flowPressure: !brush.flowPressure })} aria-pressed={brush.flowPressure}>Pressure → flow</Control>
+        </div>
+      {/snippet}
+    </SubKeyframe>
   </div>
 {/snippet}
 
@@ -586,20 +575,16 @@
   <!-- Input-frame menus overlay the whole toolbar and flow left to right, wrapping as needed. -->
   <SubKeyframe label="Editor" showTrigger={false} enterTrigger={null} bind:this={editorMenu} class="visual-menu" onclose={resumeEditing} disabled={saving || publishing}>
     {#snippet children()}
-      <div class="menu-flow">
-        <section class="menu-group menu-row">
+      <div class="stream">
           <Control onclick={() => zoomBy(1 / 1.25)}>Zoom out</Control>
           <Control onclick={() => zoomBy(1.25)}>Zoom in</Control>
           <Control onclick={() => { void chooseTool('pan'); editorMenu?.exit(); }} aria-pressed={panTool}>Pan</Control>
           <Control onclick={() => { fit(); }}>Fit canvas</Control>
           {#if onRawText}<Control onclick={() => { void save(false, true).then((ok) => { if (ok !== false || !editor.dirty) onRawText?.(); }); }} disabled={saving || publishing}>Raw text</Control>{/if}
           {#if onDelete}<Control onclick={() => { input.interrupt(); void onDelete?.(); }} disabled={saving || publishing}>Delete drawing</Control>{/if}
-        </section>
-        <section class="menu-group">
-          <p class="menu-label">{name}</p>
-          <p class="menu-label raster-info">{editor.width} × {editor.height} px · {zoomText}</p>
-          <p class="menu-label">{statusText}{notice ? ` · ${notice}` : ''}</p>
-        </section>
+          <span class="stream-label">{name}</span>
+          <span class="stream-label raster-info">{editor.width} × {editor.height} px · {zoomText}</span>
+          <span class="stream-label">{statusText}{notice ? ` · ${notice}` : ''}</span>
       </div>
     {/snippet}
   </SubKeyframe>
@@ -612,32 +597,24 @@
   {#if layered}
     <SubKeyframe label="Layers" showTrigger={false} enterTrigger={null} bind:this={layerMenu} class="visual-menu" onclose={resumeEditing} disabled={saving || publishing}>
       {#snippet children()}
-        <div class="menu-flow">
-          <section class="menu-group">
+        <div class="stream">
             <ChoiceMenu label="active layer" value={String([...layers].reverse().findIndex((item) => item.id === activeLayer?.id))} disabled={saving || publishing}
               choices={[...layers].reverse().map((item, index) => ({ id: String(index), label: `${item.entry.name ?? item.entry.file}${documentMode ? ` · ${kindLabel(item.entry.kind)}` : ''}${item.missing ? ' (missing)' : ''}${item.entry.visible ? '' : ' (hidden)'}` }))}
               onchange={(index) => layerAction(() => editor.setActiveLayer([...layers].reverse()[Number(index)].id))} />
-          </section>
-          <section class="menu-group menu-row">
             <Control onclick={() => layerAction(() => editor.addLayer('raster', `Layer ${editor.layers.length + 1}`))} disabled={layers.length >= 100}>Add layer</Control>
             {#if documentMode}<Control onclick={() => layerAction(() => editor.addLayer('vector'))} disabled={layers.length >= 100}>Add vector layer</Control>{/if}
             <Control onclick={() => layerAction(() => editor.removeLayer())} disabled={layers.length < 2}>Delete layer</Control>
             <Control onclick={() => layerAction(() => activeLayer && editor.updateLayer(activeLayer.id, { visible: !activeLayer.entry.visible }))}>{activeLayer?.entry.visible ? 'Hide layer' : 'Show layer'}</Control>
             <Control onclick={() => layerAction(() => activeLayer && editor.moveLayer(activeLayer.id, 1))} disabled={layers.at(-1)?.id === activeLayer?.id}>Raise layer</Control>
             <Control onclick={() => layerAction(() => activeLayer && editor.moveLayer(activeLayer.id, -1))} disabled={layers[0]?.id === activeLayer?.id}>Lower layer</Control>
-          </section>
           {#if activeLayer}
-            <section class="menu-group">
-              <p class="menu-label">Layer opacity: {layerOpacity}%</p>
-              <HorizontalSlider bind:value={layerOpacity} min={0} max={100} step={1} speed={50} label="Layer opacity" />
-            </section>
+            <span class="pair"><span class="stream-label">Layer opacity</span><NumberBox bind:value={layerOpacity} min={0} max={100} step={1} width="4ch" label="Layer opacity value" format={(value) => `${value}%`} /></span>
+            <HorizontalSlider bind:value={layerOpacity} min={0} max={100} step={1} speed={50} label="Layer opacity" />
             {#if documentMode}
-              <section class="menu-group">
-                <div class="setting-row"><span class="menu-label">Name</span>
-                  <TextBox singleLine value={activeLayer.entry.name ?? ''} label="Layer name" placeholder="unnamed"
-                    onexit={(text) => { const layer = editor.activeLayer; if (layer && (text.trim() || undefined) !== layer.entry.name) layerAction(() => editor.updateLayer(layer.id, { name: text.trim() || undefined })); }} /></div>
-                <p class="menu-label">{activeLayer.entry.file} · {kindLabel(activeLayer.entry.kind)}</p>
-              </section>
+              <span class="stream-label">Name</span>
+              <TextBox singleLine value={activeLayer.entry.name ?? ''} label="Layer name" placeholder="unnamed"
+                onexit={(text) => { const layer = editor.activeLayer; if (layer && (text.trim() || undefined) !== layer.entry.name) layerAction(() => editor.updateLayer(layer.id, { name: text.trim() || undefined })); }} />
+              <span class="stream-label">{activeLayer.entry.file} · {kindLabel(activeLayer.entry.kind)}</span>
             {/if}
           {/if}
         </div>
@@ -708,11 +685,7 @@
   /* Height is left to Keyflow, which extends the panel down to the usable viewport and only then scrolls. */
   .visual-bar :global(.visual-menu .subkeyframe-panel) { width: 100%; box-sizing: border-box; overflow: auto;
     background: var(--background); border-bottom: 1px solid var(--tertiary); }
-  .menu-flow { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: flex-start; }
-  .menu-group { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-  .menu-row { flex-direction: row; flex-wrap: wrap; gap: 4px; align-items: center; }
   .menu-label { margin: 0; }
-  .swatches, .brush-list { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; max-width: 34rem; }
   .swatch-control :global(button) { padding: 2px; min-width: 0; }
   .swatch { display: block; width: 22px; height: 22px; border-radius: 4px; background: var(--swatch); border: 1px solid var(--tertiary); }
   .swatch-control.small .swatch { width: 16px; height: 16px; }
@@ -721,11 +694,18 @@
   .swatch-control.chosen .swatch::after { content: ''; position: absolute; left: 50%; top: 50%; width: 8px; height: 8px; transform: translate(-50%, -50%);
     border-radius: 50%; background: #fff; box-shadow: 0 0 0 1.5px #000; }
   .swatch-control.small.chosen .swatch::after { width: 6px; height: 6px; }
-  .setting-row { display: flex; align-items: center; gap: .5ch; flex-wrap: wrap; }
+  /* Horizontal component stream: inline items wrap like text; a break item forces a new line. */
+  .stream { display: flex; flex-wrap: wrap; align-items: center; gap: 0 .6ch; }
+  .stream > :global(*) { flex: none; }
+  .stream-label { white-space: nowrap; }
+  /* A label stays on the same line as its value box. */
+  .pair { display: inline-flex; align-items: center; gap: .6ch; white-space: nowrap; }
+  .stream-break { flex-basis: 100% !important; height: 0; }
+  .stream :global(.keyflow-slider) { padding: 0; gap: .3ch; --slider-length: 10rem; }
+  .stream :global(.keyflow-subkeyframe) { flex-basis: 100% !important; }
   /* The nested configure menu opens in place inside the brush panel. */
   .brush-config :global(.brush-config-menu .subkeyframe-panel) { max-height: none !important; }
   /* Dense menus: keep panels short so most of the canvas stays reachable underneath. */
-  .menu-flow :global(.keyflow-slider) { padding: 0 .25rem; gap: .4rem; }
   .visual-missing { flex: none; border: 1px solid #c92a2a; border-radius: 4px; padding: 0 .5ch; font-size: calc(var(--min-box) * .8); line-height: var(--min-box); }
   .visual-missing p { margin: 0; }
   .raster-surface { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow: hidden !important; }
