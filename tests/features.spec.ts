@@ -198,7 +198,7 @@ test('the drawing format choice offers only SVG and visual documents, and insert
   await sizeCanvas(page);
   await stroke(page); await drawTools(page).getByRole('button', { name: 'Exit', exact: true }).click();
   const text = page.getByRole('textbox', { name: 'Edit images.txt' });
-  await expect(text).toContainText(/\\visualpage\[visual-[0-9a-f]{8}\/visual-[0-9a-f]{8}\.visual\]/);
+  await expect(page.getByRole('button', { name: /^Edit drawing visual-[0-9a-f]{8}\/visual-[0-9a-f]{8}\.visual$/ })).toBeVisible();
   await text.press('Control+s'); await textTools(page).getByRole('button', { name: 'Exit', exact: true }).click();
   expect(Buffer.from((await bytes(page, 'images.txt'))!).toString()).toMatch(/\\visualpage\[visual-.*\.visual\]/);
 });
