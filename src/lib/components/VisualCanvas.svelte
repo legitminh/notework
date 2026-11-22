@@ -488,7 +488,7 @@
         <p class="menu-label">Palette</p>
         <div class="swatches" aria-label="Palette">
           {#each paletteColors as swatch (swatch)}
-            <span class="swatch-control" style:--swatch={swatch}><Control onclick={() => editor.setState({ color: swatch })} aria-label={`Use color ${swatch}`} aria-pressed={color === swatch}><span class="swatch" aria-hidden="true"></span></Control></span>
+            <span class="swatch-control" class:chosen={color === swatch} style:--swatch={swatch}><Control onclick={() => editor.setState({ color: swatch })} aria-label={`Use color ${swatch}`} aria-pressed={color === swatch}><span class="swatch" aria-hidden="true"></span></Control></span>
           {/each}
           <Control onclick={addPaletteColor} aria-label="Add current color to palette">+</Control>
           {#if paletteColors.includes(color)}<Control onclick={() => removePaletteColor(color)} aria-label="Remove current color from palette">−</Control>{/if}
@@ -497,7 +497,7 @@
           <p class="menu-label">Recent</p>
           <div class="swatches" aria-label="Recent colors">
             {#each recentColors as recent (recent)}
-              <span class="swatch-control small" style:--swatch={recent}><Control onclick={() => editor.setState({ color: recent })} aria-label={`Use recent color ${recent}`}><span class="swatch" aria-hidden="true"></span></Control></span>
+              <span class="swatch-control small" class:chosen={color === recent} style:--swatch={recent}><Control onclick={() => editor.setState({ color: recent })} aria-label={`Use recent color ${recent}`}><span class="swatch" aria-hidden="true"></span></Control></span>
             {/each}
           </div>
         {/if}
@@ -693,6 +693,11 @@
   .swatch-control :global(button) { padding: 2px; min-width: 0; }
   .swatch { display: block; width: 22px; height: 22px; border-radius: 4px; background: var(--swatch); border: 1px solid var(--tertiary); }
   .swatch-control.small .swatch { width: 16px; height: 16px; }
+  /* The chosen colour carries a centred dot, outlined so it shows on light and dark swatches alike. */
+  .swatch { position: relative; }
+  .swatch-control.chosen .swatch::after { content: ''; position: absolute; left: 50%; top: 50%; width: 8px; height: 8px; transform: translate(-50%, -50%);
+    border-radius: 50%; background: #fff; box-shadow: 0 0 0 1.5px #000; }
+  .swatch-control.small.chosen .swatch::after { width: 6px; height: 6px; }
   .brush-config { font-size: 13px; }
   .brush-config summary { cursor: pointer; }
   /* Dense menus: keep panels short so most of the canvas stays reachable underneath. */
