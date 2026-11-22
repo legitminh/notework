@@ -300,7 +300,7 @@
     if (!editor.doc.brushes.includes(reference)) editor.addBrush(reference, brush, true);
     editor.setState(kind === 'eraser' ? { eraser: reference, eraserSize: brush.size } : { brush: reference, brushSize: brush.size, brushOpacity: brush.opacity });
   }
-  let brushEdited = $state(false), brushBusy = $state(false), configureOpen = $state(false);
+  let brushEdited = $state(false), brushBusy = $state(false);
   function editBrush(kind: 'brush' | 'eraser', patch: Partial<Brush>) {
     const reference = kind === 'eraser' ? eraserRef : brushRef, current = kind === 'eraser' ? currentEraser : currentBrush;
     if (!reference) return;
@@ -528,8 +528,9 @@
       {/if}
     </section>
     <section class="menu-group brush-config">
-      <div class="menu-row"><Control onclick={() => configureOpen = !configureOpen} aria-expanded={configureOpen} aria-pressed={configureOpen}>Configure {shortName(brush)}</Control></div>
-      {#if configureOpen}
+      <!-- A nested Keyflow input frame: its trigger and every setting inside are keyboard-routed. -->
+      <SubKeyframe label={`Configure ${shortName(brush)}`} class="brush-config-menu" closeOnOutside={false}>
+        {#snippet children()}
       {#each brushSettings as setting (setting.key)}
         <div class="setting-row"><span class="menu-label">{setting.label} {Math.round(setting.get(brush))}{setting.unit}</span>
           <HorizontalSlider value={Math.round(setting.get(brush))} min={setting.min} max={setting.max} step={1} speed={setting.speed} label={`${shortName(brush)} ${setting.label.toLowerCase()}`}
@@ -540,7 +541,8 @@
         <Control onclick={() => editBrush(kind, { opacityPressure: !brush.opacityPressure })} aria-pressed={brush.opacityPressure}>Pressure → opacity</Control>
         <Control onclick={() => editBrush(kind, { flowPressure: !brush.flowPressure })} aria-pressed={brush.flowPressure}>Pressure → flow</Control>
       </div>
-      {/if}
+        {/snippet}
+      </SubKeyframe>
     </section>
   </div>
 {/snippet}
@@ -714,6 +716,8 @@
     border-radius: 50%; background: #fff; box-shadow: 0 0 0 1.5px #000; }
   .swatch-control.small.chosen .swatch::after { width: 6px; height: 6px; }
   .setting-row { display: flex; align-items: center; gap: .5ch; flex-wrap: wrap; }
+  /* The nested configure menu opens in place inside the brush panel. */
+  .brush-config :global(.brush-config-menu .subkeyframe-panel) { max-height: none !important; }
   /* Dense menus: keep panels short so most of the canvas stays reachable underneath. */
   .menu-flow :global(.keyflow-slider) { padding: 0 .25rem; gap: .4rem; }
   .visual-missing { flex: none; border: 1px solid #c92a2a; border-radius: 4px; padding: 0 .5ch; font-size: calc(var(--min-box) * .8); line-height: var(--min-box); }

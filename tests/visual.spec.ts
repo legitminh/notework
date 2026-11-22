@@ -164,9 +164,13 @@ test('visual editor settings are Keyflow controls: number boxes, sliders, toggle
   await page.getByRole('textbox', { name: 'Red value', exact: true }).press('ControlOrMeta+a');
   await page.keyboard.type('300'); await page.keyboard.press('Enter');
   expect((await canvas.evaluate((node) => (node as unknown as { visualEditor: { state: { color: string } } }).visualEditor.state.color)).slice(0, 3)).toBe('#ff');
-  await page.getByRole('button', { name: /Configure / }).click();
+  // Configure is a nested Keyflow input frame with its own trigger and Back.
+  await page.getByRole('button', { name: /^Configure / }).click();
   await button(page, 'Pressure → size').click();
   expect(await canvas.evaluate((node) => (node as unknown as { visualEditor: { currentBrush: { sizePressure: boolean } } }).visualEditor.currentBrush.sizePressure)).toBe(true);
+  await page.keyboard.press('Escape');
+  await expect(button(page, 'Pressure → size')).toHaveCount(0);
+  await expect(page.getByRole('slider', { name: 'Pen size', exact: true })).toBeVisible();
   await page.keyboard.press('Escape');
   await button(page, 'Layer').click();
   await button(page, 'Layer name').click();
