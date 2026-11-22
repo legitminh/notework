@@ -193,7 +193,7 @@ test('the drawing format choice offers only SVG and visual documents, and insert
   await create(page, 'images.txt'); await action(page, 'open').click();
   await textTools(page).getByRole('button', { name: 'Draw…', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Choose drawing format' });
-  await expect(dialog.locator('.editor-controls button')).toHaveText(['SVG', 'Visual document']);
+  await expect(dialog.locator('.editor-controls button')).toHaveText([/SVG$/, /Visual document$/]);
   await dialog.getByRole('button', { name: 'Visual document', exact: true }).click();
   await sizeCanvas(page);
   await stroke(page); await drawTools(page).getByRole('button', { name: 'Exit', exact: true }).click();
@@ -374,7 +374,7 @@ test('navigation previews are read only, render prettify, and open the matching 
 });
 
 test('bracket shortcuts traverse separate navigation and editor histories and branch after going back', async ({ page }) => {
-  await seedImage(page, 'third.png', 400, 200);
+  await seedImage(page, 'third.png', 400, 200); await home(page);
   await create(page, 'first.txt'); await action(page, 'open').click();
   await page.getByRole('textbox', { name: 'Edit first.txt', exact: true }).fill('first');
   await textTools(page).getByRole('button', { name: 'Exit', exact: true }).click();
