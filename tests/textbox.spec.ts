@@ -64,7 +64,7 @@ test('Enter preserves the search query and restores navigation shortcuts', async
 });
 
 test('Enter confirms valid settings, but leaves invalid values and IME composition focused', async ({ page }) => {
-  await button(page, 'app settings').click();
+  await button(page, 'app settings').click(); await button(page, 'saving and sync').click();
   const interval = page.getByLabel('autosave at most every (seconds)', { exact: true });
   await interval.fill('0');
   await interval.press('Enter');
@@ -77,6 +77,7 @@ test('Enter confirms valid settings, but leaves invalid values and IME compositi
   await expect(interval).toHaveValue('12');
   await expect.poll(() => page.evaluate(() => localStorage.getItem('notework:autosave-seconds'))).toBe('12');
 
+  await button(page, 'back to app settings').click(); await button(page, 'export').click();
   const margin = page.getByLabel('top margin (min-box)', { exact: true });
   await margin.fill('2');
   await margin.press('Enter');

@@ -107,7 +107,7 @@ async function connectDocuments(page: Page) {
   await button(page, 'app settings').click();
   await chooseItems(page, ['Documents/']);
   await expect(button(page, 'Documents/')).toBeVisible();
-  await expect(button(page, 'app settings')).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.locator('#settings-heading')).toHaveCount(0);
 }
 
 async function chooseItems(page: Page, names: string[]) {
@@ -193,7 +193,7 @@ test('empty home, exact navigation order, native scrolling, and keyboard activat
 test('key labels show on computers and can be hidden from app settings', async ({ page }) => {
   const settings = button(page, 'app settings');
   await expect(settings.locator('.pending_route')).not.toHaveText('');
-  await settings.click();
+  await settings.click(); await button(page, 'keyboard').click();
   await button(page, 'key labels: shown').click();
   await expect(button(page, 'key labels: hidden')).toBeVisible();
   await expect(page.locator('.pending_route')).toHaveCount(0);
@@ -390,7 +390,7 @@ test('removing a folder from root excludes cached files, old links, and link sug
   await openAllFileSearch(page); await dialog.getByRole('searchbox').fill('notes');
   await expect(dialog.locator('.search-status')).toContainText('1 result found');
   await dialog.getByRole('button', { name: 'Exit search', exact: true }).click();
-  await button(page, 'app settings').click();
+  await button(page, 'app settings').click(); await button(page, 'sources and storage').click();
   await page.getByRole('button', { name: 'Remove Documents from root', exact: true }).click();
   await button(page, 'close app settings').click();
   for (const entry of ['button', 'shortcut'] as const) {
@@ -416,8 +416,9 @@ test('removing a folder from root excludes cached files, old links, and link sug
   await openAllFileSearch(page); await dialog.getByRole('searchbox').fill('notes');
   await expect(dialog.locator('.search-status')).toContainText('0 results found');
   await dialog.getByRole('button', { name: 'Exit search', exact: true }).click();
-  await button(page, 'app settings').click();
+  await button(page, 'app settings').click(); await button(page, 'sources and storage').click();
   await expect(page.getByRole('button', { name: 'add Documents to root', exact: true })).toHaveCount(0);
+  await button(page, 'back to app settings').click();
   await chooseItems(page, ['Documents/']);
   await openAllFileSearch(page); await dialog.getByRole('searchbox').fill('notes');
   await expect(dialog.locator('.search-status')).toContainText('1 result found');
@@ -531,7 +532,7 @@ test('restored grants request permission only on explicit reconnect and handle d
   await connectDocuments(page);
   await page.evaluate(() => { localStorage.setItem('test-permission', 'prompt'); localStorage.setItem('test-deny', 'yes'); });
   await page.reload();
-  await button(page, 'app settings').click();
+  await button(page, 'app settings').click(); await button(page, 'sources and storage').click();
   await expect(page.getByText('Documents · needs permission')).toBeVisible();
   await button(page, 'reconnect Documents').click();
   await expect(page.getByRole('alert')).toContainText('was not granted');
@@ -553,7 +554,7 @@ test('picker cancellation and denial keep home empty', async ({ page }) => {
   await picker.getByRole('button', { name: 'browse location…', exact: true }).click();
   await expect(picker.getByRole('alert')).toContainText('Access is not available');
   await picker.getByRole('button', { name: 'cancel', exact: true }).click();
-  await button(page, 'app settings').click();
+  await button(page, 'app settings').click(); await button(page, 'sources and storage').click();
   await expect(page.getByText('Home has no items. Connect a source here or create an item from home.')).toBeVisible();
 });
 
@@ -665,7 +666,7 @@ test('chooser navigates folders and remembers the selected file rather than its 
 
 test('removing root transitions keeps local files intact', async ({ page }) => {
   await connectDocuments(page);
-  await button(page, 'app settings').click();
+  await button(page, 'app settings').click(); await button(page, 'sources and storage').click();
   await page.getByRole('button', { name: 'Remove Documents from root', exact: true }).click();
   await expect(button(page, 'Documents/')).toHaveCount(0);
   const exists = await page.evaluate(async () => {
@@ -840,7 +841,7 @@ test('long lines wrap by default without changing saved text, and settings can t
   await expect(page.getByText('saved in browser storage', { exact: true })).toBeVisible();
   await toolbar(page, 'Exit').click();
   await button(page, '..').click();
-  await button(page, 'app settings').click();
+  await button(page, 'app settings').click(); await button(page, 'text editor').click();
   await button(page, 'wrap long lines: on').click();
   await expect(button(page, 'wrap long lines: off')).toBeVisible();
   await page.reload();
@@ -852,7 +853,7 @@ test('long lines wrap by default without changing saved text, and settings can t
 });
 
 test('optional Vim mode persists, handles normal commands, and saves with :w', async ({ page }) => {
-  await button(page, 'app settings').click();
+  await button(page, 'app settings').click(); await button(page, 'text editor').click();
   const setting = button(page, 'Vim mode: off');
   await setting.scrollIntoViewIfNeeded();
   const shortcut = setting.locator('.pending_route');
@@ -1056,7 +1057,7 @@ for (const kind of ['inline', 'standalone']) {
 }
 
 test('text and SVG files autosave at the configured maximum frequency', async ({ page }) => {
-  await button(page, 'app settings').click();
+  await button(page, 'app settings').click(); await button(page, 'saving and sync').click();
   const interval = page.getByLabel('autosave at most every (seconds)', { exact: true });
   await expect(interval).toHaveValue('4');
   await interval.fill('1');
@@ -1084,7 +1085,7 @@ test('text and SVG files autosave at the configured maximum frequency', async ({
   await page.reload(); await button(page, 'automatic.svg').click(); await openEditor(page);
   await expect(canvas.locator('polyline')).toHaveCount(1);
   await tools.getByRole('button', { name: 'Exit', exact: true }).click();
-  await button(page, '..').click(); await button(page, 'app settings').click();
+  await button(page, '..').click(); await button(page, 'app settings').click(); await button(page, 'saving and sync').click();
   await expect(interval).toHaveValue('1');
 });
 
@@ -1617,7 +1618,7 @@ test('pretty font sizing can be turned off without losing bold headings or spaci
 
   await toolbar(page, 'Exit').click();
   await button(page, '..').click();
-  await button(page, 'app settings').click();
+  await button(page, 'app settings').click(); await button(page, 'text editor').click();
   await button(page, 'pretty font sizing: on').press('Enter');
   await expect(button(page, 'pretty font sizing: off')).toBeVisible();
   await page.reload();
@@ -1644,7 +1645,7 @@ test('pretty margin can be disabled, persists, and stays independent of font siz
   const settings = async () => {
     await toolbar(page, 'Exit').click();
     await button(page, '..').click();
-    await button(page, 'app settings').click();
+    await button(page, 'app settings').click(); await button(page, 'text editor').click();
   };
   const reopen = async () => {
     await button(page, 'close app settings').click();
@@ -1656,7 +1657,7 @@ test('pretty margin can be disabled, persists, and stays independent of font siz
   await button(page, 'pretty margin: on').press('Enter');
   await expect(button(page, 'pretty margin: off')).toBeVisible();
   await page.reload();
-  await button(page, 'app settings').click();
+  await button(page, 'app settings').click(); await button(page, 'text editor').click();
   await expect(button(page, 'pretty margin: off')).toBeVisible();
   await reopen();
   for (const heading of await headings.all()) {
@@ -2709,7 +2710,7 @@ test('drawing touch gestures undo, redo, pan and zoom; stylus-only mode persists
   await expect(canvas.locator('polyline')).toHaveCount(1);
   await forceSave(page);
   await tools.getByRole('button', { name: 'Exit', exact: true }).click();
-  await button(page, '..').click(); await button(page, 'app settings').click();
+  await button(page, '..').click(); await button(page, 'app settings').click(); await button(page, 'image editor').click();
   await button(page, 'draw with only physical stylus: disabled').click();
   await expect(button(page, 'draw with only physical stylus: enabled')).toBeVisible();
   await page.reload();
@@ -3403,7 +3404,7 @@ test('a warm content index excludes removed roots until they are explicitly reco
     await dialog.getByRole('button', { name: 'Exit search', exact: true }).click();
   }
   await find('1 matching file');
-  await button(page, 'app settings').click();
+  await button(page, 'app settings').click(); await button(page, 'sources and storage').click();
   await page.getByRole('button', { name: 'Remove Documents from root', exact: true }).click();
   await button(page, 'close app settings').click();
   await find('0 matching files');

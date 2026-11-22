@@ -158,6 +158,20 @@
     current?.choose(value);
   }
   let panelElement = $state<HTMLDivElement>();
+  type SettingsSection = 'sources' | 'appearance' | 'keyboard' | 'text-editor' | 'image-editor' | 'saving' | 'export';
+  const settingsSections: { id: SettingsSection; label: string; description: string }[] = [
+    { id: 'sources', label: 'sources and storage', description: 'Choose which files and folders are directly reachable from home, and manage connected sources.' },
+    { id: 'appearance', label: 'appearance', description: 'Color theme and type size.' },
+    { id: 'keyboard', label: 'keyboard', description: 'Key labels, shortcut keys, and the virtual keyboard.' },
+    { id: 'text-editor', label: 'text editor', description: 'Line display, Vim mode, wrapping, and pretty display.' },
+    { id: 'image-editor', label: 'image editor', description: 'Drawing input.' },
+    { id: 'saving', label: 'saving and sync', description: 'Autosave timing and GitHub update checks.' },
+    { id: 'export', label: 'export', description: 'PDF export margins.' },
+  ];
+  // App settings replace the home view as an in-page screen (no URL of its own), so
+  // the page's native scroll stays the only scroll area.
+  let settingsSection = $state<SettingsSection | null>(null);
+  let settingsElement = $state<HTMLDivElement>();
   let renameDialog: HTMLDialogElement;
   let renameForm: HTMLFormElement;
   let renameName = $state('');
@@ -576,6 +590,33 @@
     catch { /* The preference still works in this session. */ }
   }
 
+  async function enterSettingsScreen(focus?: string) {
+    await tick();
+    state_viewport.viewport?.scrollTo({ top: 0 });
+    const target = focus ? settingsElement?.querySelector<HTMLButtonElement>(`[data-action=${JSON.stringify(focus)}] button`) : undefined;
+    (target ?? settingsElement?.querySelector<HTMLButtonElement>('button'))?.focus({ preventScroll: true });
+  }
+
+  /** Show the top settings screen, or one category's screen. `from` refocuses the category being left. */
+  async function showSettings(section: SettingsSection | null, from?: SettingsSection | null) {
+    const entering = panel !== 'settings' && panel !== 'github';
+    settingsSection = section; panel = 'settings';
+    if (entering) await refresh();
+    await enterSettingsScreen(from ? settingsSections.find((item) => item.id === from)?.label : undefined);
+  }
+
+  async function showGitHubSettings() {
+    panel = 'github';
+    await enterSettingsScreen();
+  }
+
+  async function closeSettings() {
+    panel = null; settingsSection = null;
+    await tick();
+    state_viewport.viewport?.scrollTo({ top: 0 });
+    document.querySelector<HTMLButtonElement>('nav [data-action="app settings"] button')?.focus({ preventScroll: true });
+  }
+
   async function togglePanel(next: typeof panel) {
     panel = panel === next ? null : next;
     if (panel === 'settings') await refresh();
@@ -843,6 +884,11 @@
               onVisualEditor={rawTextId === id ? () => { rawTextId = undefined; } : undefined} />
           {/if}
         {/key}
+      {:else if !current && (panel === 'settings' || panel === 'github')}
+        <div class="settings-page" bind:this={settingsElement}>
+          {#if panel === 'settings'}{@render settingsContents()}{:else}{@render githubContents()}{/if}
+          {#if message}<StorageNotice error={message} />{/if}
+        </div>
       {:else}
       {#snippet panelContents()}
       <div bind:this={panelElement}>
@@ -869,119 +915,8 @@
               <p class="muted">Reconnect this {resourceType} through its containing folder to delete it from Notework.</p>
             {/if}
           </section>
-        {:else if panel === 'settings'}
-          <section class="panel" aria-labelledby="settings-heading">
-            <h2 id="settings-heading">app settings</h2>
-            <p class="muted">Choose which files and folders are directly reachable from home.</p>
-            <Action label="create new file/folder" onSelect={startCreating} disabled={loading || busy || !canCreateHere} />
-            <Action label="add existing folder/file" onSelect={() => { picking = true; }} disabled={!supported || busy} />
-            <Action label="GitHub repositories" onSelect={() => togglePanel('github')} disabled={loading || busy} />
-
-            {#if capacity}
-              <p class="muted">{(capacity.usage / 1048576).toFixed(1)} MB used · {(capacity.quota / 1073741824).toFixed(1)} GB estimated quota · {capacity.persistent ? 'persistent storage' : 'best-effort storage'}</p>
-              <Action label="keep browser storage" onSelect={retainStorage} />
-            {/if}
-            {#if storageStatus}<p class="muted" role="status">{storageStatus}</p>{/if}
-
-            <h3>root transitions</h3>
-            {#if !rootIds.length}<p class="muted">Home has no items. Connect a source here or create an item from home.</p>{/if}
-            {#each rootIds as id (id)}
-              <div class="config-row"><span>{label(id)}</span><Control class="small-button" onclick={() => remove(ROOT, id)} aria-label={`Remove ${label(id)} from root`}>remove from root</Control></div>
-            {/each}
-            <p class="muted">Removing a transition never deletes the original file or folder.</p>
-
-            {#if connectedSources.length}
-              <h3>connected sources</h3>
-              <div class="source-list">
-                {#each connectedSources as grant (grant.id)}
-                  <div class="config-row"><span>{grant.handle.name} · {grant.storage !== 'local' ? storageLabel(grant.storage ?? 'local') : permissions[grant.id] === 'granted' ? 'read access granted' : 'needs permission'}</span></div>
-                  {#if grant.storage === 'local' && permissions[grant.id] !== 'granted'}
-                    <Action label={`reconnect ${grant.handle.name}`} onSelect={() => reconnect(grant.id)} disabled={busy || loading} />
-                  {/if}
-                  {#if !rootIds.includes(nodeId(grant.id))}
-                    <Control class="small-button config-row" onclick={() => { workspace.link(ROOT, nodeId(grant.id)); void persist(); }}>add {grant.handle.name} to root</Control>
-                  {/if}
-                {/each}
-              </div>
-            {/if}
-
-            <h3>appearance</h3>
-            <ChoiceMenu label="color theme" value={themeChoice} choices={themeChoices.map((id) => ({ id, label: id }))}
-              onchange={(value) => chooseTheme(value as ThemeChoice)} />
-            <Action label={`line numbers: ${showLineNumbers ? 'on' : 'off'}`} onSelect={() => {
-              showLineNumbers = !showLineNumbers; saveAppearancePreference('notework:line-numbers', showLineNumbers);
-            }} />
-            <Action label={`line index mod 4: ${showLineIndex ? 'on' : 'off'}`} onSelect={() => {
-              showLineIndex = !showLineIndex; saveAppearancePreference('notework:line-index', showLineIndex);
-            }} />
-            <p class="muted">Zero-based line index in spare margins: gray/gray = 0, transparent/gray = 1, gray/transparent = 2, transparent/transparent = 3.</p>
-            <h3>keyboard</h3>
-            <Action label={`key labels: ${keypath_visibility.visible ? 'shown' : 'hidden'}`} onSelect={() => keypath_visibility.toggle()} />
-            <p class="muted">Shown by default on computers and hidden on phones and tablets. Key colors stay, and shortcuts keep working while labels are hidden.</p>
-            <ChoiceMenu label="shortcut input space" value={shortcutAlphabet}
-              choices={[{ id: 'alphanumeric', label: 'Alphanumeric (A–Z, 0–9)' }, { id: 'letters', label: 'Letters (A–Z)' }]}
-              onchange={(value) => {
-                shortcutAlphabet = value;
-                set_available_keys(value === 'letters' ? key_presets.letters : key_presets.alphanumeric);
-                try { localStorage.setItem('notework:shortcut-alphabet', value); } catch { /* Session only. */ }
-              }} />
-            <Action label={`virtual keyboard: ${virtualKeyboard ? 'on' : 'off'}`} onSelect={() => {
-              virtualKeyboard = !virtualKeyboard; saveAppearancePreference('notework:virtual-keyboard', virtualKeyboard);
-            }} />
-            <ChoiceMenu label="virtual keyboard layout" value={keyboardChoice} choices={keyboardChoices}
-              onchange={(value) => {
-                if (!isKeyboardChoice(value)) return;
-                keyboardChoice = value;
-                try { localStorage.setItem('notework:keyboard-layout', value); } catch { /* Session only. */ }
-              }} />
-            <p class="muted">Off by default. When enabled, use the selected Keyflow keyboard instead of the system text keyboard. Flick alpha supports directional gestures during text editing.</p>
-            <Action label={`Vim mode: ${vimMode ? 'on' : 'off'}`} onSelect={() => {
-              vimMode = !vimMode;
-              saveAppearancePreference('notework:vim-mode', vimMode);
-            }} />
-            <Action label={`wrap long lines: ${wrapLines ? 'on' : 'off'}`} onSelect={() => {
-              wrapLines = !wrapLines;
-              saveAppearancePreference('notework:wrap-lines', wrapLines);
-            }} />
-            <Action label={`pretty font sizing: ${prettyFontSize ? 'on' : 'off'}`} onSelect={() => {
-              prettyFontSize = !prettyFontSize;
-              saveAppearancePreference('notework:pretty-font-size', prettyFontSize);
-            }} />
-            <Action label={`pretty margin: ${prettyMargin ? 'on' : 'off'}`} onSelect={() => {
-              prettyMargin = !prettyMargin;
-              saveAppearancePreference('notework:pretty-margin', prettyMargin);
-            }} />
-            <Action label={`draw with only physical stylus: ${stylusOnly ? 'enabled' : 'disabled'}`} onSelect={() => {
-              stylusOnly = !stylusOnly;
-              saveAppearancePreference('notework:stylus-only', stylusOnly);
-            }} />
-            <Action label="smaller type" onSelect={() => min_box.set(Math.max(24, min_box.value - 4))} />
-            <Action label="larger type" onSelect={() => min_box.set(Math.min(72, min_box.value + 4))} />
-            <p class="muted">Use the colored key labels (when shown) or click a button. Tab and Enter also work. Scrolling is native.</p>
-            <h3>GitHub updates</h3>
-            <label class="field"><span>GitHub check interval (seconds)</span>
-              <input type="number" min="1" step="any" value={githubPollSeconds} oninput={(event) => updateGitHubInterval(event.currentTarget)} />
-            </label>
-            <p class="muted">Default: 4 seconds. Checks pause while offline or the app is hidden. Unchanged repositories use conditional requests; rate limits pause checks automatically. Open drafts are preserved.</p>
-            <h3>autosave</h3>
-            <label class="field"><span>autosave at most every (seconds)</span>
-              <input type="number" min={MIN_AUTOSAVE_SECONDS} step="1" value={autosaveSeconds}
-                oninput={(event) => updateAutosaveInterval(event.currentTarget)} />
-            </label>
-            <p class="muted">Default: {DEFAULT_AUTOSAVE_SECONDS} seconds. Exit saves first and queues GitHub sync in the background. Local files may ask for write access when you exit.</p>
-            <h3>export margins</h3>
-            <p class="muted" id="pdf-margin-units">Each side defaults to 1 min-box. Set 0 for no margin; fractions are allowed.</p>
-            {#each pdfMarginSides as side}
-              <label class="field"><span>{side} margin (min-box)</span>
-                <input type="number" min="0" step="any" value={pdfMargins[side]} aria-describedby="pdf-margin-units"
-                  oninput={(event) => updatePdfMargin(side, event.currentTarget)} />
-              </label>
-            {/each}
-          </section>
         {:else if panel === 'github'}
-          <Action label="back to app settings" onSelect={() => togglePanel('settings')} disabled={busy || loading} />
-          <GitHubSettings sources={githubSources} {busy} error={githubError}
-            onConnect={connectGitHub} onUpdate={reconnectGitHub} onDisconnect={disconnectGitHub} />
+          {@render githubContents()}
         {/if}
       </div>
       {/snippet}
@@ -996,10 +931,7 @@
             <Action label="create new file/folder" onSelect={startCreating} disabled={loading || busy || !canCreateHere} />
           {/if}
         {:else}
-          <Menu label="app settings" open={panel !== null} disabled={(busy || loading) && panel === null}
-            onopen={() => { void togglePanel('settings'); }} onclose={() => { panel = null; }}>
-            {#snippet children()}{@render panelContents()}{/snippet}
-          </Menu>
+          <Action label="app settings" onSelect={() => { void showSettings(null); }} disabled={busy || loading} />
         {/if}
         <hr />
         {#if current}
@@ -1123,3 +1055,138 @@
     <GitHubReconnectDialog {connection} onSave={(token) => updateGitHubToken(id, token)} onClose={finishGitHubReconnect} />
   {/if}
 </Keyflow>
+
+{#snippet settingsContents()}
+  {#if settingsSection}
+    {@const section = settingsSections.find((item) => item.id === settingsSection)!}
+    <div class="settings-controls">
+      <Action label="back to app settings" keys={relocateTarget ? undefined : 'esc'} onSelect={() => { void showSettings(null, settingsSection); }} />
+      <Action label="close app settings" onSelect={() => { void closeSettings(); }} />
+    </div>
+    <section class="panel" aria-labelledby="settings-heading">
+      <h1 id="settings-heading">{section.label}</h1>
+      <p class="muted">{section.description}</p>
+      {#if settingsSection === 'sources'}
+        <Action label="GitHub repositories" onSelect={() => { void showGitHubSettings(); }} disabled={loading || busy} />
+        {#if capacity}
+          <p class="muted">{(capacity.usage / 1048576).toFixed(1)} MB used · {(capacity.quota / 1073741824).toFixed(1)} GB estimated quota · {capacity.persistent ? 'persistent storage' : 'best-effort storage'}</p>
+          <Action label="keep browser storage" onSelect={retainStorage} />
+        {/if}
+        {#if storageStatus}<p class="muted" role="status">{storageStatus}</p>{/if}
+
+        <h2>root transitions</h2>
+        {#if !rootIds.length}<p class="muted">Home has no items. Connect a source here or create an item from home.</p>{/if}
+        {#each rootIds as id (id)}
+          <div class="config-row"><span>{label(id)}</span><Control class="small-button" onclick={() => remove(ROOT, id)} aria-label={`Remove ${label(id)} from root`}>remove from root</Control></div>
+        {/each}
+        <p class="muted">Removing a transition never deletes the original file or folder.</p>
+
+        {#if connectedSources.length}
+          <h2>connected sources</h2>
+          <div class="source-list">
+            {#each connectedSources as grant (grant.id)}
+              <div class="config-row"><span>{grant.handle.name} · {grant.storage !== 'local' ? storageLabel(grant.storage ?? 'local') : permissions[grant.id] === 'granted' ? 'read access granted' : 'needs permission'}</span></div>
+              {#if grant.storage === 'local' && permissions[grant.id] !== 'granted'}
+                <Action label={`reconnect ${grant.handle.name}`} onSelect={() => reconnect(grant.id)} disabled={busy || loading} />
+              {/if}
+              {#if !rootIds.includes(nodeId(grant.id))}
+                <Control class="small-button config-row" onclick={() => { workspace.link(ROOT, nodeId(grant.id)); void persist(); }}>add {grant.handle.name} to root</Control>
+              {/if}
+            {/each}
+          </div>
+        {/if}
+      {:else if settingsSection === 'appearance'}
+        <ChoiceMenu label="color theme" value={themeChoice} choices={themeChoices.map((id) => ({ id, label: id }))}
+          onchange={(value) => chooseTheme(value as ThemeChoice)} />
+        <Action label="smaller type" onSelect={() => min_box.set(Math.max(24, min_box.value - 4))} />
+        <Action label="larger type" onSelect={() => min_box.set(Math.min(72, min_box.value + 4))} />
+      {:else if settingsSection === 'keyboard'}
+        <Action label={`key labels: ${keypath_visibility.visible ? 'shown' : 'hidden'}`} onSelect={() => keypath_visibility.toggle()} />
+        <p class="muted">Shown by default on computers and hidden on phones and tablets. Key colors stay, and shortcuts keep working while labels are hidden.</p>
+        <ChoiceMenu label="shortcut input space" value={shortcutAlphabet}
+          choices={[{ id: 'alphanumeric', label: 'Alphanumeric (A–Z, 0–9)' }, { id: 'letters', label: 'Letters (A–Z)' }]}
+          onchange={(value) => {
+            shortcutAlphabet = value;
+            set_available_keys(value === 'letters' ? key_presets.letters : key_presets.alphanumeric);
+            try { localStorage.setItem('notework:shortcut-alphabet', value); } catch { /* Session only. */ }
+          }} />
+        <Action label={`virtual keyboard: ${virtualKeyboard ? 'on' : 'off'}`} onSelect={() => {
+          virtualKeyboard = !virtualKeyboard; saveAppearancePreference('notework:virtual-keyboard', virtualKeyboard);
+        }} />
+        <ChoiceMenu label="virtual keyboard layout" value={keyboardChoice} choices={keyboardChoices}
+          onchange={(value) => {
+            if (!isKeyboardChoice(value)) return;
+            keyboardChoice = value;
+            try { localStorage.setItem('notework:keyboard-layout', value); } catch { /* Session only. */ }
+          }} />
+        <p class="muted">Off by default. When enabled, use the selected Keyflow keyboard instead of the system text keyboard. Flick alpha supports directional gestures during text editing.</p>
+        <p class="muted">Use the colored key labels (when shown) or click a button. Tab and Enter also work. Scrolling is native.</p>
+      {:else if settingsSection === 'text-editor'}
+        <Action label={`line numbers: ${showLineNumbers ? 'on' : 'off'}`} onSelect={() => {
+          showLineNumbers = !showLineNumbers; saveAppearancePreference('notework:line-numbers', showLineNumbers);
+        }} />
+        <Action label={`line index mod 4: ${showLineIndex ? 'on' : 'off'}`} onSelect={() => {
+          showLineIndex = !showLineIndex; saveAppearancePreference('notework:line-index', showLineIndex);
+        }} />
+        <p class="muted">Zero-based line index in spare margins: gray/gray = 0, transparent/gray = 1, gray/transparent = 2, transparent/transparent = 3.</p>
+        <Action label={`Vim mode: ${vimMode ? 'on' : 'off'}`} onSelect={() => {
+          vimMode = !vimMode;
+          saveAppearancePreference('notework:vim-mode', vimMode);
+        }} />
+        <Action label={`wrap long lines: ${wrapLines ? 'on' : 'off'}`} onSelect={() => {
+          wrapLines = !wrapLines;
+          saveAppearancePreference('notework:wrap-lines', wrapLines);
+        }} />
+        <Action label={`pretty font sizing: ${prettyFontSize ? 'on' : 'off'}`} onSelect={() => {
+          prettyFontSize = !prettyFontSize;
+          saveAppearancePreference('notework:pretty-font-size', prettyFontSize);
+        }} />
+        <Action label={`pretty margin: ${prettyMargin ? 'on' : 'off'}`} onSelect={() => {
+          prettyMargin = !prettyMargin;
+          saveAppearancePreference('notework:pretty-margin', prettyMargin);
+        }} />
+      {:else if settingsSection === 'image-editor'}
+        <Action label={`draw with only physical stylus: ${stylusOnly ? 'enabled' : 'disabled'}`} onSelect={() => {
+          stylusOnly = !stylusOnly;
+          saveAppearancePreference('notework:stylus-only', stylusOnly);
+        }} />
+      {:else if settingsSection === 'saving'}
+        <h2>autosave</h2>
+        <label class="field"><span>autosave at most every (seconds)</span>
+          <input type="number" min={MIN_AUTOSAVE_SECONDS} step="1" value={autosaveSeconds}
+            oninput={(event) => updateAutosaveInterval(event.currentTarget)} />
+        </label>
+        <p class="muted">Default: {DEFAULT_AUTOSAVE_SECONDS} seconds. Exit saves first and queues GitHub sync in the background. Local files may ask for write access when you exit.</p>
+        <h2>GitHub updates</h2>
+        <label class="field"><span>GitHub check interval (seconds)</span>
+          <input type="number" min="1" step="any" value={githubPollSeconds} oninput={(event) => updateGitHubInterval(event.currentTarget)} />
+        </label>
+        <p class="muted">Default: 4 seconds. Checks pause while offline or the app is hidden. Unchanged repositories use conditional requests; rate limits pause checks automatically. Open drafts are preserved.</p>
+      {:else if settingsSection === 'export'}
+        <p class="muted" id="pdf-margin-units">Each side defaults to 1 min-box. Set 0 for no margin; fractions are allowed.</p>
+        {#each pdfMarginSides as side}
+          <label class="field"><span>{side} margin (min-box)</span>
+            <input type="number" min="0" step="any" value={pdfMargins[side]} aria-describedby="pdf-margin-units"
+              oninput={(event) => updatePdfMargin(side, event.currentTarget)} />
+          </label>
+        {/each}
+      {/if}
+    </section>
+  {:else}
+    <Action label="close app settings" keys={relocateTarget ? undefined : 'esc'} onSelect={() => { void closeSettings(); }} />
+    <section class="panel" aria-labelledby="settings-heading">
+      <h1 id="settings-heading">app settings</h1>
+      <Action label="create new file/folder" onSelect={startCreating} disabled={loading || busy || !canCreateHere} />
+      <Action label="add existing folder/file" onSelect={() => { panel = null; picking = true; }} disabled={!supported || busy} />
+      <h2>settings</h2>
+      {#each settingsSections as section (section.id)}
+        <Action label={section.label} onSelect={() => { void showSettings(section.id); }} />
+      {/each}
+    </section>
+  {/if}
+{/snippet}
+{#snippet githubContents()}
+  <Action label={current ? `back to configure ${resourceType}` : 'back to sources and storage'} keys={current || relocateTarget ? undefined : 'esc'} onSelect={() => { if (current) void togglePanel('configure'); else void showSettings('sources'); }} disabled={busy || loading} />
+  <GitHubSettings sources={githubSources} {busy} error={githubError}
+    onConnect={connectGitHub} onUpdate={reconnectGitHub} onDisconnect={disconnectGitHub} />
+{/snippet}

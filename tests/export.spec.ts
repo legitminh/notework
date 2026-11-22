@@ -301,7 +301,7 @@ test('tall notes stay on a single PDF page, and cancelling preparation leaves th
 
 test('independent PDF margins persist in min-boxes and pad drawing exports without stretching', async ({ page }) => {
   await page.goto('/');
-  await action(page, 'app settings').click();
+  await action(page, 'app settings').click(); await action(page, 'export').click();
   const values = { left: 2.5, right: .5, top: 1.25, bottom: 3 };
   for (const [side, value] of Object.entries(values)) {
     const input = page.getByLabel(`${side} margin (min-box)`, { exact: true });
@@ -311,10 +311,11 @@ test('independent PDF margins persist in min-boxes and pad drawing exports witho
   await page.getByLabel('left margin (min-box)', { exact: true }).fill('-2');
   expect(await page.getByLabel('left margin (min-box)', { exact: true }).evaluate((el) => (el as HTMLInputElement).validity.valid)).toBe(false);
   await page.reload();
-  await action(page, 'app settings').click();
+  await action(page, 'app settings').click(); await action(page, 'export').click();
   for (const [side, value] of Object.entries(values)) {
     await expect(page.getByLabel(`${side} margin (min-box)`, { exact: true })).toHaveValue(String(value));
   }
+  await action(page, 'back to app settings').click(); await action(page, 'appearance').click();
   await action(page, 'larger type').click();
   const minBox = await page.locator('html').evaluate((el) => parseFloat(getComputedStyle(el).getPropertyValue('--min-box')));
   await action(page, 'close app settings').click();
@@ -351,7 +352,7 @@ test('independent PDF margins persist in min-boxes and pad drawing exports witho
     .toBeCloseTo((points[1][0] - points[0][0]) / (points[1][1] - points[0][1]), 3);
   await page.keyboard.press('ControlOrMeta+s');
   await drawingTools.getByRole('button', { name: 'Exit', exact: true }).click();
-  await action(page, '..').click(); await action(page, 'app settings').click();
+  await action(page, '..').click(); await action(page, 'app settings').click(); await action(page, 'export').click();
   for (const side of Object.keys(values)) await page.getByLabel(`${side} margin (min-box)`, { exact: true }).fill('0');
   await page.reload(); await action(page, 'margins.svg').click(); await action(page, 'open').click();
   await expect(canvas).toBeVisible();

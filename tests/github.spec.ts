@@ -167,7 +167,7 @@ async function pressShortcut(page: Page, button: Locator) {
 
 async function connect(page: Page, keyboard = false) {
   await page.goto('/');
-  await action(page, 'app settings').click();
+  await action(page, 'app settings').click(); await action(page, 'sources and storage').click();
   await action(page, 'GitHub repositories').click();
   await page.getByLabel('Repository', { exact: true }).fill('https://github.com/example/notebook');
   const token = page.getByLabel('Personal access token', { exact: true });
@@ -192,7 +192,7 @@ test('setup instructions fit a narrow screen and GitHub form actions have keyboa
   const repo = await github(page, { 'note.txt': 'Original' });
   await connect(page, true);
   await action(page, 'home').click();
-  await action(page, 'app settings').click();
+  await action(page, 'app settings').click(); await action(page, 'sources and storage').click();
   await action(page, 'GitHub repositories').click();
   const list = page.getByRole('region', { name: 'GitHub repositories' }).getByRole('list');
   await expect(list).toContainText('Add permissions, select Contents');
@@ -946,10 +946,10 @@ test('search orders GitHub files by actual edit dates instead of blob identities
 
 test('GitHub polling defaults to four seconds, persists the interval, and pulls without replacing an open draft', async ({ page }) => {
   const repo = await github(page, { 'note.txt': 'Original' });
-  await connect(page); await action(page, 'home').click(); await action(page, 'app settings').click();
+  await connect(page); await action(page, 'home').click(); await action(page, 'app settings').click(); await action(page, 'saving and sync').click();
   const interval = page.getByLabel('GitHub check interval (seconds)', { exact: true });
   await expect(interval).toHaveValue('4'); await interval.fill('1');
-  await page.reload(); await action(page, 'app settings').click(); await expect(interval).toHaveValue('1');
+  await page.reload(); await action(page, 'app settings').click(); await action(page, 'saving and sync').click(); await expect(interval).toHaveValue('1');
   await action(page, 'close app settings').click(); await action(page, 'notebook/').click();
   repo.upstream({ 'new.txt': 'Pulled automatically' });
   await expect(action(page, 'new.txt')).toBeVisible({ timeout: 10_000 });
@@ -993,7 +993,7 @@ test('removing a GitHub root forgets credentials, caches and failed sync jobs ac
   repo.refuse(true);
   await exit(page).click();
   await expect(page.locator('.sync-progress')).toContainText('GitHub refused');
-  await action(page, 'home').click(); await action(page, 'app settings').click();
+  await action(page, 'home').click(); await action(page, 'app settings').click(); await action(page, 'sources and storage').click();
   await page.getByRole('button', { name: 'Remove notebook from root', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Remove notebook from root', exact: true })).toHaveCount(0);
   await expect(page.locator('.sync-progress')).toHaveCount(0);
@@ -1037,7 +1037,7 @@ test('root removal aborts an in-flight sync read and does not recreate its queue
   await page.getByRole('button', { name: 'Retry GitHub sync', exact: true }).click();
   await started;
   try {
-    await action(page, 'home').click(); await action(page, 'app settings').click();
+    await action(page, 'home').click(); await action(page, 'app settings').click(); await action(page, 'sources and storage').click();
     await page.getByRole('button', { name: 'Remove notebook from root', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Remove notebook from root', exact: true })).toHaveCount(0);
     await expect(page.locator('.sync-progress')).toHaveCount(0);

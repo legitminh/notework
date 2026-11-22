@@ -3,7 +3,6 @@ import { test, expect, type Page } from '@playwright/test';
 import { choiceMenu } from './menu-helpers';
 
 const button = (page: Page, name: string) => page.getByRole('button', { name, exact: true });
-const region = (page: Page, name: string) => page.getByRole('region', { name, exact: true });
 
 async function create(page: Page, name: string, kind = 'text file') {
   await button(page, 'app settings').click();
@@ -17,32 +16,37 @@ test.beforeEach(async ({ page }) => {
   await expect(button(page, 'app settings')).toBeEnabled();
 });
 
-test('settings and nested choices support arrow keys, shortcuts, Escape and focus restoration', async ({ page }, testInfo) => {
+test('settings screens support shortcuts, categories, Escape and focus restoration', async ({ page }, testInfo) => {
   const settings = button(page, 'app settings');
   await settings.focus();
   const shortcut = (await settings.locator('.pending_route').textContent())!.trim();
   await page.keyboard.type(shortcut);
-  await expect(settings).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.getByRole('heading', { name: 'app settings', exact: true })).toBeVisible();
   await expect(button(page, 'close app settings')).toBeFocused();
-  await expect(button(page, 'search')).toBeDisabled();
-  await page.keyboard.press('ArrowDown');
-  await expect(button(page, 'create new file/folder')).toBeFocused();
-  await page.keyboard.press('End');
-  await expect(region(page, 'app settings').getByRole('button', { name: 'Back', exact: true })).toBeFocused();
-  await page.keyboard.press('Home');
-  await expect(button(page, 'close app settings')).toBeFocused();
+  // Settings replace the home screen rather than layering over it.
+  await expect(page.getByRole('navigation', { name: 'state navigation' })).toHaveCount(0);
+  await expect(button(page, 'create new file/folder')).toBeVisible();
+  await expect(button(page, 'add existing folder/file')).toBeVisible();
+  await expect(choiceMenu(page, 'color theme')).toHaveCount(0);
 
+  await button(page, 'appearance').click();
+  await expect(page.getByRole('heading', { name: 'appearance', exact: true })).toBeVisible();
+  await expect(button(page, 'back to app settings')).toBeFocused();
+  await expect(button(page, 'create new file/folder')).toHaveCount(0);
   const theme = choiceMenu(page, 'color theme').locator('.subkeyframe-trigger');
   await theme.focus(); await theme.press('Enter');
   await expect(button(page, 'dark')).toBeFocused();
   await expect(button(page, 'system')).toHaveAttribute('aria-pressed', 'true');
-  await page.screenshot({ path: testInfo.outputPath('settings-menu.png') });
+  await page.screenshot({ path: testInfo.outputPath('settings-appearance.png') });
   await page.keyboard.press('ArrowDown'); await page.keyboard.press('Enter');
   await expect(theme).toHaveAttribute('aria-label', 'color theme: light');
   await expect(theme).toBeFocused();
-  await expect(settings).toHaveAttribute('aria-expanded', 'true');
   await expect.poll(() => page.evaluate(() => localStorage.getItem('notework:theme'))).toBe('light');
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('heading', { name: 'app settings', exact: true })).toBeVisible();
+  await expect(button(page, 'appearance')).toBeFocused();
 
+  await button(page, 'keyboard').click();
   const alphabet = choiceMenu(page, 'shortcut input space').locator('.subkeyframe-trigger');
   await alphabet.focus(); await alphabet.press('Enter');
   await page.keyboard.press('ArrowDown'); await page.keyboard.press('Enter');
@@ -58,13 +62,17 @@ test('settings and nested choices support arrow keys, shortcuts, Escape and focu
   await expect(layout).toHaveAttribute('data-value', 'flick-alpha');
   await expect(layout.locator('.subkeyframe-trigger')).toBeFocused();
   await page.keyboard.press('Escape');
-  await expect(settings).toHaveAttribute('aria-expanded', 'false');
+  await expect(button(page, 'keyboard')).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('heading', { name: 'app settings', exact: true })).toHaveCount(0);
   await expect(settings).toBeFocused();
   await expect(button(page, 'search')).toBeEnabled();
   await expect(page.locator('.viewport')).toHaveCSS('overflow-y', 'auto');
-  await settings.click();
-  await page.getByRole('region', { name: 'current state', exact: true }).getByRole('heading', { name: 'home', exact: true }).click();
-  await expect(settings).toHaveAttribute('aria-expanded', 'false');
+
+  // Category screens can also exit settings directly.
+  await settings.click(); await button(page, 'text editor').click();
+  await button(page, 'close app settings').click();
+  await expect(settings).toBeFocused();
 });
 
 for (const kind of ['file', 'folder']) {
@@ -157,16 +165,22 @@ test('image-layer menu owns Escape and keyboard selection while the drawing edit
   await expect(trigger).toBeFocused();
 });
 
-test('settings menu scrolls independently above the virtual keyboard and restores its parent position', async ({ page }) => {
-  await page.setViewportSize({width:600,height:760});
-  await button(page,'app settings').click();
-  await button(page,'virtual keyboard: off').click();
-  const panel=region(page,'app settings').and(page.locator('.subkeyframe-panel')), viewport=panel.locator(':scope > .subkeyframe-viewport');
+test('settings use the page scroll as their only scroll area, above the virtual keyboard', async ({ page }) => {
+  await page.setViewportSize({ width: 600, height: 500 });
+  await button(page, 'app settings').click();
+  await button(page, 'keyboard').click();
+  await button(page, 'virtual keyboard: off').click();
   await expect(page.locator('.keyboard-dock')).toBeVisible();
-  await expect.poll(async()=>panel.evaluate(node=>node.getBoundingClientRect().bottom)).toBeLessThanOrEqual(await page.locator('.keyboard-dock').evaluate(node=>node.getBoundingClientRect().top)+1);
-  const root=page.locator('.viewport'), before=await root.evaluate(node=>node.scrollTop);
-  await viewport.hover();await page.mouse.wheel(0,400);
-  await expect.poll(()=>viewport.evaluate(node=>node.scrollTop)).toBeGreaterThan(0);
-  expect(await root.evaluate(node=>node.scrollTop)).toBe(before);
-  await page.keyboard.press('Escape');await expect(button(page,'app settings')).toBeFocused();
+  const root = page.locator('.viewport'), screen = page.locator('.settings-page');
+  expect(await screen.evaluate((node) => [node, ...node.querySelectorAll('*')].filter((child) =>
+    /auto|scroll/.test(getComputedStyle(child).overflowY) && child.scrollHeight > child.clientHeight).length)).toBe(0);
+  expect(await root.evaluate((node) => node.scrollHeight > node.clientHeight)).toBe(true);
+  await screen.hover(); await page.mouse.wheel(0, 400);
+  await expect.poll(() => root.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
+  // Switching screens starts each one at the top.
+  await button(page, 'back to app settings').click();
+  await expect.poll(() => root.evaluate((node) => node.scrollTop)).toBe(0);
+  await expect(button(page, 'keyboard')).toBeFocused();
+  await button(page, 'close app settings').click();
+  await expect(button(page, 'app settings')).toBeFocused();
 });

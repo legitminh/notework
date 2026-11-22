@@ -38,11 +38,12 @@ test.beforeEach(async ({ page }) => { await page.goto('/'); await expect(action(
 
 test('keyboard defaults, persisted settings, virtual ASCII text and real flick input', async ({ page }) => {
   await expect(page.locator('.keyboard-dock')).toHaveCount(0);
-  await action(page, 'app settings').click();
+  await action(page, 'app settings').click(); await action(page, 'keyboard').click();
   await expect(choiceMenu(page, 'shortcut input space')).toHaveAttribute('data-value', 'alphanumeric');
   await expect(choiceMenu(page, 'virtual keyboard layout')).toHaveAttribute('data-value', 'ascii');
   await action(page, 'virtual keyboard: off').click();
   await expect(page.getByRole('region', { name: 'ASCII keyboard', exact: true })).toBeVisible();
+  await action(page, 'back to app settings').click();
   await action(page, 'create new file/folder').click();
   await page.getByLabel('name', { exact: true }).fill('keys.txt');
   await action(page, 'create text file').click();
@@ -54,7 +55,7 @@ test('keyboard defaults, persisted settings, virtual ASCII text and real flick i
   await page.locator('.keyboard-dock button').filter({ hasText: /^\[Enter\]$/ }).click();
   await expect(text.locator('.cm-line')).toHaveCount(2);
   await textTools(page).getByRole('button', { name: 'Exit', exact: true }).click();
-  await home(page); await action(page, 'app settings').click();
+  await home(page); await action(page, 'app settings').click(); await action(page, 'keyboard').click();
   await chooseMenu(page, 'virtual keyboard layout', 'flick-alpha');
   await page.reload();
   await action(page, 'keys.txt').click(); await action(page, 'open').click();
@@ -70,7 +71,7 @@ test('keyboard defaults, persisted settings, virtual ASCII text and real flick i
 test('virtual keyboard toggles immediately and stays responsive after modal search', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
-  await action(page, 'app settings').click();
+  await action(page, 'app settings').click(); await action(page, 'keyboard').click();
   const dock = page.locator('.keyboard-dock');
   for (let cycle = 0; cycle < 2; cycle++) {
     await action(page, 'virtual keyboard: off').click();
@@ -90,7 +91,7 @@ test('virtual keyboard toggles immediately and stays responsive after modal sear
     await expect(dialog).toHaveCount(0);
     await expect(dock).toBeVisible();
 
-    await action(page, 'app settings').click();
+    await action(page, 'app settings').click(); await action(page, 'keyboard').click();
     await action(page, 'virtual keyboard: on').click();
     await expect(dock).toHaveCount(0);
     await expect(page.locator('html')).not.toHaveClass(/virtual-keyboard-open/);
@@ -102,8 +103,9 @@ test('virtual keyboard toggles immediately and stays responsive after modal sear
 
 test('mod-4 uses spare space without narrowing editors and alternates gray with transparency', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1800, height: 900 });
-  await action(page, 'app settings').click();
+  await action(page, 'app settings').click(); await action(page, 'text editor').click();
   await action(page, 'line numbers: on').click();
+  await action(page, 'back to app settings').click();
   await action(page, 'create new file/folder').click();
   await page.getByLabel('name', { exact: true }).fill('lines.txt'); await action(page, 'create text file').click();
   await action(page, 'open').click();
@@ -123,7 +125,7 @@ test('mod-4 uses spare space without narrowing editors and alternates gray with 
   const narrow = await geometry();
   expect(narrow.width).toBe(390);
   await textTools(page).getByRole('button', { name: 'Exit', exact: true }).click();
-  await home(page); await action(page, 'app settings').click();
+  await home(page); await action(page, 'app settings').click(); await action(page, 'text editor').click();
   await action(page, 'line index mod 4: off').click();
   await action(page, 'close app settings').click();
   await action(page, 'lines.txt').click(); await action(page, 'open').click();
@@ -280,7 +282,7 @@ test('imported image pixels survive drawing, and image links export and rename c
 });
 
 test('virtual keyboard remains usable inside modal global search', async ({ page }) => {
-  await create(page, 'apple.txt'); await home(page); await action(page, 'app settings').click();
+  await create(page, 'apple.txt'); await home(page); await action(page, 'app settings').click(); await action(page, 'keyboard').click();
   await action(page, 'virtual keyboard: off').click(); await action(page, 'close app settings').click();
   await page.keyboard.press('Control+Shift+p');
   const dialog = page.getByRole('dialog', { name: 'Search all files', exact: true });
@@ -294,7 +296,7 @@ test('virtual keyboard remains usable inside modal global search', async ({ page
 });
 
 test('updated flick keyboard enters uppercase and editing gestures in the editor and search', async ({ page }) => {
-  await create(page, 'gestures.txt'); await home(page); await action(page, 'app settings').click();
+  await create(page, 'gestures.txt'); await home(page); await action(page, 'app settings').click(); await action(page, 'keyboard').click();
   await chooseMenu(page, 'virtual keyboard layout', 'flick-alpha');
   await action(page, 'virtual keyboard: off').click(); await action(page, 'close app settings').click();
   await action(page, 'gestures.txt').click(); await action(page, 'open').click();
@@ -500,7 +502,7 @@ test('filename opens separately, and a long preview click opens the clicked text
 
 test('system is the default theme and Keyflow dropdown persists explicit choices', async ({ page }) => {
   await page.emulateMedia({ colorScheme: 'dark' });
-  await action(page, 'app settings').click();
+  await action(page, 'app settings').click(); await action(page, 'appearance').click();
   const menu = () => page.getByRole('button', { name: /^color theme:/ });
   await expect(menu()).toHaveAttribute('aria-label', 'color theme: system');
   await expect(page.locator('html')).toHaveCSS('--background', 'hsl(0, 0%, 0%)');
@@ -512,7 +514,7 @@ test('system is the default theme and Keyflow dropdown persists explicit choices
   await expect(page.locator('html')).toHaveCSS('--background', 'hsl(0, 0%, 100%)');
   await page.emulateMedia({ colorScheme: 'light' }); await page.emulateMedia({ colorScheme: 'dark' });
   await expect(page.locator('html')).toHaveCSS('--background', 'hsl(0, 0%, 100%)');
-  await page.reload(); await action(page, 'app settings').click();
+  await page.reload(); await action(page, 'app settings').click(); await action(page, 'appearance').click();
   await expect(menu()).toHaveAttribute('aria-label', 'color theme: light');
   await menu().click(); await page.getByRole('region', { name: 'color theme: light' }).getByRole('button', { name: /system$/ }).click();
   await expect(page.locator('html')).toHaveCSS('--background', 'hsl(0, 0%, 0%)');
