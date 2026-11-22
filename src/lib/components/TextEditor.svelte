@@ -906,10 +906,10 @@
   <h2>Choose drawing format</h2>
   <p class="muted">SVG stores vector strokes on an endless page. A visual document is a layered canvas (raster and vector layers, brushes) stored as a page folder. PNG, JPEG and HEIC store one image; ORA preserves raster layers.</p>
   <div class="editor-controls">
-    <Control onclick={() => { rasterFormat = 'visual'; }}>Visual document</Control>
     {#each ['svg', ...imageFormats] as kind}
       <Control onclick={() => { if (kind === 'svg') { choseDrawingFormat = true; formatDialog.close(); void insertDrawing('svg'); } else rasterFormat = kind as ImageFormat; }}>{kind.toUpperCase()}</Control>
     {/each}
+    <Control onclick={() => { rasterFormat = 'visual'; }}>Visual document</Control>
   </div>
   {/if}
     {/snippet}

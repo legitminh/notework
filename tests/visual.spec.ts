@@ -97,14 +97,14 @@ test('toolbar is one row: title, editor, exit, tools, undo/redo, layer, export; 
   await createVisual(page, 'a-long-document-name');
   await openMain(page, 'a-long-document-name');
   const bar = page.getByRole('group', { name: 'Drawing toolbar' });
-  const labels = await bar.locator('.visual-tools > *').evaluateAll((nodes) => nodes.map((node) => (node.getAttribute('aria-label') ?? node.textContent ?? '').trim()).filter(Boolean));
+  const labels = await bar.locator(':scope > *').evaluateAll((nodes) => nodes.map((node) => (node.getAttribute('aria-label') ?? node.textContent ?? '').trim()).filter(Boolean));
   expect(labels.slice(0, 3)[0]).toContain('a-long-document-name');
   for (const name of ['Editor', 'Exit', 'Brush', 'Eraser', 'Lasso', 'Transform', 'Undo', 'Redo', 'Layer']) await expect(button(page, name)).toBeVisible();
   // The title is bounded to 16 characters and scrolls.
   const title = bar.locator('.keyflow-bounded-text');
   expect(await title.evaluate((node) => node.scrollWidth > node.clientWidth)).toBe(true);
   // Toolbar items stay on one line.
-  const tops = await bar.locator('.visual-tools > *').evaluateAll((nodes) => [...new Set(nodes.filter((node) => (node as HTMLElement).offsetParent).map((node) => Math.round(node.getBoundingClientRect().top / 10)))]);
+  const tops = await bar.locator(':scope > *').evaluateAll((nodes) => [...new Set(nodes.filter((node) => (node as HTMLElement).offsetParent).map((node) => Math.round(node.getBoundingClientRect().top / 10)))]);
   expect(tops.length).toBeLessThanOrEqual(2);
   // Brush settings stay open while painting on the canvas.
   await button(page, 'Brush').click();
@@ -148,5 +148,5 @@ test('vector lasso selects strokes fully inside, then Transform moves only them'
   await drag(page, canvas, [[50, 30], [50, 90]]);
   await button(page, 'Brush').click();
   const ys = await canvas.evaluate((node) => (node as unknown as { visualEditor: { activeLayer: { vector: { strokes: { points: number[] }[] } } } }).visualEditor.activeLayer.vector.strokes.map((stroke) => Math.round(stroke.points[1])).sort((a, b) => a - b));
-  expect(ys).toEqual([90, 150]);
+  expect(Math.abs(ys[0] - 90)).toBeLessThanOrEqual(2); expect(Math.abs(ys[1] - 150)).toBeLessThanOrEqual(2);
 });

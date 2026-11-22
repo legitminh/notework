@@ -533,8 +533,8 @@
   </div>
 {/snippet}
 
-<div class="visual-bar" role="group" aria-label="Drawing toolbar">
-  <div class="editor-controls drawing-controls visual-tools" tabindex="-1" bind:this={toolbar}
+<div class="visual-bar">
+  <div class="editor-controls drawing-controls visual-tools" role="group" aria-label="Drawing toolbar" tabindex="-1" bind:this={toolbar}
     use:preserveContentFocus={() => !usingTools && document.activeElement === viewport}>
     <span class="visual-title" class:unsaved={dirty} title={statusText}><BoundedText text={title} limit={16} label={`Editing ${title}`} /></span>
     <Control onclick={() => { usingTools = true; void editorMenu?.enter(); }}>Editor</Control>
