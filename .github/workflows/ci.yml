@@ -74,4 +74,6 @@ jobs:
           tail -20 dev.log
       - run: pnpm exec playwright install --with-deps chromium
       - name: Visual editor works on the dev server
+        # Reuse the dev server started above (Playwright only reuses servers outside CI mode).
+        env: { CI: '' }
         run: pnpm exec playwright test tests/visual.spec.ts tests/raster.spec.ts --reporter=line
