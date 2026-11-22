@@ -677,12 +677,11 @@
   .transform-slider :global(.keyflow-slider) { padding: 0 .25rem; gap: .4rem; }
   .transform-slider :global([role=slider]) { min-width: 7rem; }
   .outside-prompt { font-size: 13px; padding-inline: 6px; color: #c92a2a; }
-  /* Menus cover the toolbar edge to edge and grow downward only when a row is full. */
+  /* Menus cover the toolbar edge to edge, fill each row before wrapping, and grow down as far as there is room. */
   .visual-bar :global(.visual-menu) { position: absolute; top: 0; left: 0; right: 0; z-index: 10; }
-  .visual-bar :global(.visual-menu .subkeyframe-panel) { width: 100%; box-sizing: border-box; max-height: min(70vh, 40rem) !important; overflow: auto;
+  /* Height is left to Keyflow, which extends the panel down to the usable viewport and only then scrolls. */
+  .visual-bar :global(.visual-menu .subkeyframe-panel) { width: 100%; box-sizing: border-box; overflow: auto;
     background: var(--background); border-bottom: 1px solid var(--tertiary); }
-  /* Brush/eraser panels stay open while painting, so they never take more than ~45% of the screen. */
-  .visual-bar :global(.persistent-menu .subkeyframe-panel) { max-height: min(45vh, 26rem) !important; }
   .menu-flow { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: flex-start; }
   .menu-group { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
   .menu-row { flex-direction: row; flex-wrap: wrap; gap: 4px; align-items: center; }
