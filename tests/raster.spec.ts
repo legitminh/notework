@@ -1,9 +1,13 @@
 import { test, expect, type Page, type Locator } from '@playwright/test';
-import { sizeCanvas, rasterPoint, alpha } from './raster-helpers';
+import { rasterPoint, alpha, seedImage } from './raster-helpers';
 const button = (page:Page,name:string) => page.getByRole('button',{name,exact:true});
-async function create(page:Page,name:string,kind='png') {
+async function create(page:Page,name:string) {
   await page.goto('/'); await button(page,'app settings').click(); await button(page,'create new file/folder').click();
-  await page.getByLabel('name',{exact:true}).fill(name); await button(page,`create ${kind} image`).click();
+  await page.getByLabel('name',{exact:true}).fill(name); await button(page,'create visual document').click();
+}
+async function openVisual(page:Page,name:string) {
+  await page.locator('.file-navigation-row').filter({has:button(page,`${name}.visual`)}).locator('[data-action="open"] button').click();
+  const canvas=page.getByRole('img',{name:`Drawing canvas for ${name}.visual`});await expect(canvas.locator('canvas.visual-canvas')).toBeVisible();return canvas;
 }
 async function drag(page:Page,canvas:Locator,points:number[][]) {
   for (const [i,p] of points.entries()) { const at=await rasterPoint(canvas,p[0],p[1]);await page.mouse.move(at.x,at.y,{steps:i?5:1});if(!i)await page.mouse.down(); } await page.mouse.up();
@@ -15,19 +19,20 @@ async function imported(page:Page) {
   await page.getByLabel('Image file to insert').setInputFiles({name:'pixels.png',mimeType:'image/png',buffer:Buffer.from(data)});
   const canvas=page.getByRole('img',{name:/Drawing canvas for pixels-.*\.png/});await expect(canvas.locator('canvas')).toBeVisible();return canvas;
 }
-test('new raster dimensions use viewport initially, validate, remember, and keep canvas visible at minimum zoom',async({page})=>{
-  await create(page,'sized.png');
+test('new canvas dimensions use viewport initially, validate, remember, and keep canvas visible at minimum zoom',async({page})=>{
+  await create(page,'sized');
   const viewport=page.viewportSize()!;
   await expect(page.getByLabel('Width in pixels')).toHaveValue(String(viewport.width));await expect(page.getByLabel('Height in pixels')).toHaveValue(String(viewport.height));
   await page.getByLabel('Width in pixels').fill('0');await expect(button(page,'Create canvas')).toBeDisabled();
-  await page.getByLabel('Width in pixels').fill('400');await page.getByLabel('Height in pixels').fill('200');await page.getByLabel('Height in pixels').press('Enter');await page.locator('[data-action="open"] button').click();
-  const canvas=page.getByRole('img',{name:'Drawing canvas for sized.png'});await expect(canvas.locator('canvas')).toBeVisible();
+  await page.getByLabel('Width in pixels').fill('400');await page.getByLabel('Height in pixels').fill('200');await page.getByLabel('Height in pixels').press('Enter');
+  await expect(page.getByRole('heading',{name:'sized/',exact:true})).toBeVisible();
+  const canvas=await openVisual(page,'sized');
   await canvas.hover();for(let i=0;i<15;i++)await page.mouse.wheel(0,1000);
   await expect.poll(async()=>Number(await canvas.getAttribute('data-raster-zoom'))*400).toBeCloseTo(await page.evaluate(()=>parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--min-box'))),0);
   await button(page,'Editor').click();await button(page,'Pan').click();const box=(await canvas.boundingBox())!;
   await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();await page.mouse.move(box.x+box.width+1000,box.y-1000);await page.mouse.up();
   expect(await canvas.evaluate(node=>{const view=(node as unknown as {visualView:{toScreen(x:number,y:number):[number,number]}}).visualView,a=node.getBoundingClientRect(),[l,t]=view.toScreen(0,0),[r,b]=view.toScreen(400,200);return a.left+r>a.left&&a.left+l<a.right&&a.top+b>a.top&&a.top+t<a.bottom})).toBe(true);
-  await button(page,'Exit').click();await button(page,'home').click();await create(page,'remember.png');
+  await button(page,'Exit').click();await button(page,'home').click();await create(page,'remember');
   await expect(page.getByLabel('Width in pixels')).toHaveValue('400');await expect(page.getByLabel('Height in pixels')).toHaveValue('200');
 });
 test('lasso deletes only enclosed imported pixels; undo and redo restore the operation',async({page})=>{
@@ -49,7 +54,7 @@ test('lasso moves and resizes pixels within its bounds and preserves surrounding
   await button(page,'Undo').click();expect(await alpha(canvas,175,125)).toBe(255);
 });
 test('ORA uses pixel layers with undo across layer switches and layer operations',async({page})=>{
-  await create(page,'layered.ora','ora');await sizeCanvas(page,400,200);await page.locator('[data-action="open"] button').click();
+  await page.goto('/');await seedImage(page,'layered.ora',400,200);await page.locator('[data-action="open"] button').click();
   const canvas=page.getByRole('img',{name:'Drawing canvas for layered.ora'});await expect(canvas.locator('canvas')).toBeVisible();
   await drag(page,canvas,[[50,50],[150,50]]);expect(await alpha(canvas,100,50)).toBe(255);
   await button(page,'Layer').click();await button(page,'Add layer').click();await page.keyboard.press('Escape');expect(await alpha(canvas,100,50)).toBe(0);await drag(page,canvas,[[50,100],[150,100]]);
@@ -58,7 +63,7 @@ test('ORA uses pixel layers with undo across layer switches and layer operations
 });
 
 test('raster touch taps undo/redo while a pinch with one stationary finger preserves ink',async({page,context})=>{
-  await create(page,'gestures.png');await sizeCanvas(page,400,200);await page.locator('[data-action="open"] button').click();
+  await page.goto('/');await seedImage(page,'gestures.png',400,200);await page.locator('[data-action="open"] button').click();
   const canvas=page.getByRole('img',{name:'Drawing canvas for gestures.png'});await expect(canvas.locator('canvas')).toBeVisible();
   await drag(page,canvas,[[50,50],[150,50]]);
   const cdp=await context.newCDPSession(page),frame=(await canvas.boundingBox())!;

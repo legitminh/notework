@@ -1,4 +1,4 @@
-import { sizeCanvas, rasterPoint, alpha } from './raster-helpers';
+import { sizeCanvas, rasterPoint, alpha, seedImage } from './raster-helpers';
 import { choiceMenu, chooseMenu, expectChoiceCount } from './menu-helpers';
 import { test, expect, type Page } from '@playwright/test';
 // Image codecs share the browser's raster resources; run these cases sequentially.
@@ -11,7 +11,7 @@ async function create(page: Page, name: string, type = 'text file') {
   await action(page, 'create new file/folder').click();
   await page.getByLabel('name', { exact: true }).fill(name);
   await action(page, `create ${type}`).click();
-  if (type.endsWith(' image')) await sizeCanvas(page);
+  if (type === 'visual document') await sizeCanvas(page);
 }
 async function home(page: Page) { await action(page, 'home').click(); }
 async function bytes(page: Page, name: string) {
@@ -163,10 +163,10 @@ test('Draw SVG enters drawing immediately; Delete drawing removes its reference 
   expect(await bytes(page, name)).toBeNull();
 });
 
-for (const format of ['png', 'jpeg', 'heic', 'ora']) {
-  test(`${format} creates real encoded content, draws, saves, and reopens`, async ({ page }) => {
+for (const format of ['png', 'jpeg', 'ora']) {
+  test(`existing ${format} files open, draw, save as real encoded content, and reopen`, async ({ page }) => {
     test.setTimeout(90_000);
-    await create(page, `picture.${format}`, `${format} image`);
+    await seedImage(page, `picture.${format}`);
     await action(page, 'open').click(); await stroke(page);
     if (format === 'ora') {
       await drawTools(page).getByRole('button', { name: 'Layer', exact: true }).click();
@@ -181,7 +181,6 @@ for (const format of ['png', 'jpeg', 'heic', 'ora']) {
     const data = (await bytes(page, `picture.${format}`))!;
     if (format === 'png') expect(data.slice(0, 8)).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
     if (format === 'jpeg') expect(data.slice(0, 3)).toEqual([255, 216, 255]);
-    if (format === 'heic') expect(Buffer.from(data).subarray(4, 8).toString()).toBe('ftyp');
     if (format === 'ora') expect(data.slice(0, 2)).toEqual([80, 75]);
     await page.reload(); await action(page, `picture.${format}`).click(); await action(page, 'open').click();
     await expect(page.getByRole('img', { name: `Drawing canvas for picture.${format}` })).toBeVisible();
@@ -190,17 +189,18 @@ for (const format of ['png', 'jpeg', 'heic', 'ora']) {
   });
 }
 
-test('drawing format choice inserts the matching image directive and opens its editor', async ({ page }) => {
+test('the drawing format choice offers only SVG and visual documents, and inserts the visual page directive', async ({ page }) => {
   await create(page, 'images.txt'); await action(page, 'open').click();
   await textTools(page).getByRole('button', { name: 'Draw…', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Choose drawing format' });
-  await dialog.getByRole('button', { name: 'PNG', exact: true }).click();
+  await expect(dialog.locator('.editor-controls button')).toHaveText(['SVG', 'Visual document']);
+  await dialog.getByRole('button', { name: 'Visual document', exact: true }).click();
   await sizeCanvas(page);
   await stroke(page); await drawTools(page).getByRole('button', { name: 'Exit', exact: true }).click();
   const text = page.getByRole('textbox', { name: 'Edit images.txt' });
-  await expect(page.getByRole('button', { name: /^Edit drawing drawing-.*\.png$/ })).toBeVisible();
+  await expect(text).toContainText(/\\visualpage\[visual-[0-9a-f]{8}\/visual-[0-9a-f]{8}\.visual\]/);
   await text.press('Control+s'); await textTools(page).getByRole('button', { name: 'Exit', exact: true }).click();
-  expect(Buffer.from((await bytes(page, 'images.txt'))!).toString()).toMatch(/\\pngpage\[drawing-.*\.png\]/);
+  expect(Buffer.from((await bytes(page, 'images.txt'))!).toString()).toMatch(/\\visualpage\[visual-.*\.visual\]/);
 });
 
 test('Cmd/Ctrl+Shift+P searches from root with separate open and navigation actions', async ({ page }) => {
@@ -374,6 +374,7 @@ test('navigation previews are read only, render prettify, and open the matching 
 });
 
 test('bracket shortcuts traverse separate navigation and editor histories and branch after going back', async ({ page }) => {
+  await seedImage(page, 'third.png', 400, 200);
   await create(page, 'first.txt'); await action(page, 'open').click();
   await page.getByRole('textbox', { name: 'Edit first.txt', exact: true }).fill('first');
   await textTools(page).getByRole('button', { name: 'Exit', exact: true }).click();
@@ -401,7 +402,7 @@ test('bracket shortcuts traverse separate navigation and editor histories and br
   await expect(page.getByRole('button', { name: 'open: first.txt', exact: true })).toBeVisible();
   await page.keyboard.press('ControlOrMeta+]');
   await expect(page.getByRole('button', { name: 'open: first.txt', exact: true })).toBeVisible();
-  await home(page); await create(page, 'third.png', 'png image'); await action(page, 'open').click();
+  await home(page); await action(page, 'third.png').click(); await action(page, 'open').click();
   await expect(page.getByRole('img', { name: 'Drawing canvas for third.png', exact: true })).toBeVisible();
   await page.keyboard.press('Escape'); await page.keyboard.press('ControlOrMeta+[');
   await expect(second).toHaveText('second'); await expect(textTools(page)).toBeFocused();
@@ -616,7 +617,7 @@ test('page completion offers text targets and renaming updates the saved page di
 
 for (const format of ['svg', 'png']) {
   test(`${format} keeps strokes drawn during saves and ignores palm touches around pen input`, async ({ page, context }) => {
-    await create(page, `continuous.${format}`, format === 'svg' ? 'svg file' : 'png image');
+    if (format === 'svg') await create(page, 'continuous.svg', 'svg file'); else await seedImage(page, 'continuous.png');
     await action(page, 'open').click();
     const canvas = page.getByRole('img', { name: `Drawing canvas for continuous.${format}` });
     await expect(canvas).toBeVisible();
@@ -681,8 +682,7 @@ for (const format of ['svg', 'png']) {
 }
 
 test('image previews and editors animate a loading icon inside the image while decoding', async ({ page }) => {
-  await create(page, 'loading.png', 'png image');
-  await expect(action(page, 'open')).toBeVisible();
+  await seedImage(page, 'loading.png');
   await page.reload();
   await page.evaluate(() => {
     const original = window.createImageBitmap;

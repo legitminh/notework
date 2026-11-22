@@ -1,4 +1,4 @@
-import { sizeCanvas, rasterPoint, alpha } from './raster-helpers';
+import { rasterPoint, alpha, seedImage } from './raster-helpers';
 import { test, expect, type Page } from '@playwright/test';
 import { choiceMenu } from './menu-helpers';
 
@@ -10,7 +10,6 @@ async function create(page: Page, name: string, kind = 'text file') {
   await button(page, 'create new file/folder').click();
   await page.getByLabel('name', { exact: true }).fill(name);
   await button(page, `create ${kind}`).click();
-  if (kind.endsWith(' image')) await sizeCanvas(page);
 }
 
 test.beforeEach(async ({ page }) => {
@@ -130,7 +129,7 @@ test('search and drawing format choosers provide Keyflow arrow navigation and Ba
   await button(page, 'Draw…').click();
   await expect(button(page, 'SVG')).toBeFocused();
   await page.keyboard.press('ArrowDown');
-  await expect(button(page, 'PNG')).toBeFocused();
+  await expect(button(page, 'Visual document')).toBeFocused();
   await page.keyboard.press('End');
   await expect(button(page, 'Cancel')).toBeFocused();
   await page.keyboard.press('Enter');
@@ -139,7 +138,7 @@ test('search and drawing format choosers provide Keyflow arrow navigation and Ba
 });
 
 test('image-layer menu owns Escape and keyboard selection while the drawing editor is mounted', async ({ page }) => {
-  await create(page, 'layers', 'ora image');
+  await seedImage(page, 'layers.ora', 400, 200);
   await page.locator('[data-action="open"] button').click();
   await button(page, 'Layer').click();
   await button(page, 'Add layer').click();

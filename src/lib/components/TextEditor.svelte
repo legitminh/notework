@@ -31,8 +31,8 @@
   import CanvasSizeForm from './CanvasSizeForm.svelte';
   import type { CanvasSize } from '../canvas-size';
   let rasterHost = $state<HTMLDivElement>();
-  let rasterFormat = $state<ImageFormat | 'visual'>();
-  import { imageFormat, readImage, imageFormats, composite, canvasBlob, type ImageFormat } from '../images';
+  let rasterFormat = $state<'visual'>();
+  import { imageFormat, readImage, composite, canvasBlob, type ImageFormat } from '../images';
   import { saveImage } from '../drawing-files';
   import { dialogShortcuts } from '../shortcut-scope.svelte';
   import StorageNotice from './StorageNotice.svelte';
@@ -901,14 +901,12 @@
   }}>
     {#snippet children()}
   {#if rasterFormat}
-    <CanvasSizeForm onCancel={() => rasterFormat = undefined} onCreate={(size) => { choseDrawingFormat = true; formatDialog.close(); if (rasterFormat === 'visual') void insertVisual(size); else void insertDrawing(rasterFormat!, undefined, size); }} />
+    <CanvasSizeForm onCancel={() => rasterFormat = undefined} onCreate={(size) => { choseDrawingFormat = true; formatDialog.close(); void insertVisual(size); }} />
   {:else}
   <h2>Choose drawing format</h2>
-  <p class="muted">SVG stores vector strokes on an endless page. A visual document is a layered canvas (raster and vector layers, brushes) stored as a page folder. PNG, JPEG and HEIC store one image; ORA preserves raster layers.</p>
+  <p class="muted">SVG stores vector strokes on an endless page. A visual document is a layered canvas (raster and vector layers, brushes) stored as a page folder.</p>
   <div class="editor-controls">
-    {#each ['svg', ...imageFormats] as kind}
-      <Control onclick={() => { if (kind === 'svg') { choseDrawingFormat = true; formatDialog.close(); void insertDrawing('svg'); } else rasterFormat = kind as ImageFormat; }}>{kind.toUpperCase()}</Control>
-    {/each}
+    <Control onclick={() => { choseDrawingFormat = true; formatDialog.close(); void insertDrawing('svg'); }}>SVG</Control>
     <Control onclick={() => { rasterFormat = 'visual'; }}>Visual document</Control>
   </div>
   {/if}

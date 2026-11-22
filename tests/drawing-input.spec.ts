@@ -1,15 +1,17 @@
-import { sizeCanvas, rasterPoint, alpha, expectInk } from './raster-helpers';
+import { rasterPoint, alpha, expectInk, seedImage } from './raster-helpers';
 import { test, expect, type Page } from '@playwright/test';
 
 const action = (page: Page, name: string) => page.getByRole('button', { name, exact: true });
 
 async function create(page: Page, name: string, format: 'svg' | 'png') {
   await page.goto('/');
-  await action(page, 'app settings').click();
-  await action(page, 'create new file/folder').click();
-  await page.getByLabel('name', { exact: true }).fill(name);
-  await action(page, format === 'svg' ? 'create svg file' : 'create png image').click();
-  if (format === 'png') await sizeCanvas(page);
+  if (format === 'png') await seedImage(page, name);
+  else {
+    await action(page, 'app settings').click();
+    await action(page, 'create new file/folder').click();
+    await page.getByLabel('name', { exact: true }).fill(name);
+    await action(page, 'create svg file').click();
+  }
   await action(page, `open: ${name}`).click();
   const canvas = page.getByRole('img', { name: `Drawing canvas for ${name}`, exact: true });
   await expect(canvas).toBeVisible();

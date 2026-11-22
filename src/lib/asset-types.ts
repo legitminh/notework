@@ -1,4 +1,3 @@
-import { blankImage, imageFormats } from './images';
 import { serializeDrawing } from './drawing';
 import { cleanFilename } from './filenames';
 import { canvasSize } from './canvas-size';
@@ -24,9 +23,8 @@ export const assetTypes: readonly AssetType[] = [
     initialFileContent: () => newVisualDocumentText(canvasSize()) },
   { id: 'folder', label: 'folder', kind: 'directory' },
   { id: 'text', label: 'text file', kind: 'file', initialContent: () => '' },
-  { id: 'svg', label: 'svg file', kind: 'file', extension: '.svg', initialContent: () => serializeDrawing([]) },
-  ...imageFormats.map((format): AssetType => ({ id: format, label: `${format} image`, kind: 'file', extension: `.${format}`,
-    initialContent: async () => new Uint8Array(await (await blankImage(format)).arrayBuffer()) }))
+  { id: 'svg', label: 'svg file', kind: 'file', extension: '.svg', initialContent: () => serializeDrawing([]) }
+  // Raster images are created as visual documents; existing PNG/JPEG/HEIC/ORA files still open and edit.
 ];
 
 export function assetName(input: string, type: AssetType) {

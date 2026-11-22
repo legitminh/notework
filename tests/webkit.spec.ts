@@ -1,4 +1,4 @@
-import { rasterPoint, alpha as rasterAlpha } from './raster-helpers';
+import { rasterPoint, alpha as rasterAlpha, seedImage } from './raster-helpers';
 import { chooseMenu } from './menu-helpers';
 import { test, expect, webkit } from '@playwright/test';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -147,9 +147,7 @@ test('WebKit raster canvas paints pixels, clears a lasso region, and saves undo/
     const page = await context.newPage();
     await page.goto(baseURL!);
     const button = (name:string) => page.getByRole('button',{name,exact:true});
-    await button('app settings').click();await button('create new file/folder').click();
-    await page.getByLabel('name',{exact:true}).fill('pixels.png');await button('create png image').click();
-    await page.getByLabel('Width in pixels').fill('400');await page.getByLabel('Height in pixels').fill('200');await button('Create canvas').click();
+    await seedImage(page,'pixels.png',400,200);
     await page.locator('[data-action="open"] button').click();
     const canvas=page.getByRole('img',{name:'Drawing canvas for pixels.png'}), pixels=canvas.locator('canvas.visual-canvas');
     await expect(pixels).toBeVisible();
