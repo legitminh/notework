@@ -37,3 +37,41 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: failure()
         with: { name: playwright-results, path: notework/test-results, retention-days: 7 }
+
+  # Reproduces local development exactly: fresh install with the sibling engine, `pnpm dev`, real page loads.
+  dev-smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: notework
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: notework }
+      - uses: actions/checkout@v4
+        with: { repository: legitminh/visual.editor, path: visual.editor }
+      - uses: pnpm/action-setup@v3
+        with: { version: 11 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 24 }
+      - run: pnpm install --reporter=append-only
+      - name: Keyflow package was built
+        run: |
+          ls -la node_modules/@legitminh/keyflow node_modules/@legitminh/keyflow/dist | head -20
+          test -f node_modules/@legitminh/keyflow/dist/styles.css
+          test -f node_modules/@legitminh/keyflow/dist/components/NumberBox.svelte
+          test -f node_modules/visual.editor/src/index.ts
+      - name: Dev server serves the app without errors
+        run: |
+          (pnpm dev --host 127.0.0.1 --port 5173 > dev.log 2>&1 &)
+          for i in $(seq 1 60); do curl -sf http://127.0.0.1:5173/ -o page.html && break; sleep 1; done
+          curl -s -o page.html -w "%{http_code}\n" http://127.0.0.1:5173/ | tee status.txt
+          grep -q 200 status.txt
+          ! grep -qi "internal server error\|cannot find module" page.html dev.log
+          tail -20 dev.log
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: Visual editor works on the dev server
+        run: pnpm exec playwright test tests/visual.spec.ts tests/raster.spec.ts --reporter=line
