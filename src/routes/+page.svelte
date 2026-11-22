@@ -917,7 +917,7 @@
             <p class="muted">Zero-based line index in spare margins: gray/gray = 0, transparent/gray = 1, gray/transparent = 2, transparent/transparent = 3.</p>
             <h3>keyboard</h3>
             <Action label={`key labels: ${keypath_visibility.visible ? 'shown' : 'hidden'}`} onSelect={() => keypath_visibility.toggle()} />
-            <p class="muted">Shown by default on computers and hidden on phones and tablets. Shortcuts keep working while labels are hidden.</p>
+            <p class="muted">Shown by default on computers and hidden on phones and tablets. Key colors stay, and shortcuts keep working while labels are hidden.</p>
             <ChoiceMenu label="shortcut input space" value={shortcutAlphabet}
               choices={[{ id: 'alphanumeric', label: 'Alphanumeric (A–Z, 0–9)' }, { id: 'letters', label: 'Letters (A–Z)' }]}
               onchange={(value) => {

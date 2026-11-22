@@ -197,6 +197,8 @@ test('key labels show on computers and can be hidden from app settings', async (
   await button(page, 'key labels: shown').click();
   await expect(button(page, 'key labels: hidden')).toBeVisible();
   await expect(page.locator('.pending_route')).toHaveCount(0);
+  // Key colors remain as an indicator without the labels.
+  await expect(button(page, 'key labels: hidden').locator('.colored')).toHaveCount(1);
   expect(await page.evaluate(() => localStorage.getItem('notework:keyflow:keypath_visible'))).toBe('false');
   await page.reload();
   await expect(button(page, 'app settings')).toBeEnabled();
