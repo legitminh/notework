@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
-  import { get_input_frame, active_input_frame, min_box, SubKeyframe, HorizontalSlider, BoundedText, type SubKeyframeController } from '@legitminh/keyflow';
+  import { get_input_frame, active_input_frame, min_box, SubKeyframe, HorizontalSlider, BoundedText, TextBox, type SubKeyframeController } from '@legitminh/keyflow';
   import { CanvasRenderer, InputController, ViewTransform, fromPointerEvent, sanitizeBrush, BRUSH_IMPORT_EXTENSIONS,
     rotateQuad, scaleQuad, translateQuad, moveCorner, moveEdge, edgeMidpoint, quadCenter,
     type VisualEditor, type Brush, type Rect, type Quad } from 'visual.editor';
@@ -300,7 +300,7 @@
     if (!editor.doc.brushes.includes(reference)) editor.addBrush(reference, brush, true);
     editor.setState(kind === 'eraser' ? { eraser: reference, eraserSize: brush.size } : { brush: reference, brushSize: brush.size, brushOpacity: brush.opacity });
   }
-  let brushEdited = $state(false), brushBusy = $state(false);
+  let brushEdited = $state(false), brushBusy = $state(false), configureOpen = $state(false);
   function editBrush(kind: 'brush' | 'eraser', patch: Partial<Brush>) {
     const reference = kind === 'eraser' ? eraserRef : brushRef, current = kind === 'eraser' ? currentEraser : currentBrush;
     if (!reference) return;
@@ -328,6 +328,16 @@
   function addPaletteColor() { if (!editor.doc.config.palette.includes(color)) editor.setConfig({ palette: [...editor.doc.config.palette, color] }); }
   function removePaletteColor(value: string) { editor.setConfig({ palette: editor.doc.config.palette.filter((item) => item !== value) }); }
   const shortName = (brush: Brush) => brush.name.replace(/^[a-z]\)\s*/, '');
+  /** Per-brush settings, edited with Keyflow sliders (percentages / degrees for readability). */
+  const brushSettings: { key: string; label: string; unit: string; min: number; max: number; speed: number; get: (b: Brush) => number; set: (v: number) => Partial<Brush> }[] = [
+    { key: 'hardness', label: 'Hardness', unit: '%', min: 0, max: 100, speed: 50, get: (b) => b.hardness * 100, set: (v) => ({ hardness: v / 100 }) },
+    { key: 'flow', label: 'Flow', unit: '%', min: 1, max: 100, speed: 50, get: (b) => b.flow * 100, set: (v) => ({ flow: v / 100 }) },
+    { key: 'spacing', label: 'Spacing', unit: '%', min: 1, max: 100, speed: 50, get: (b) => b.spacing * 100, set: (v) => ({ spacing: v / 100 }) },
+    { key: 'smoothing', label: 'Smoothing', unit: '%', min: 0, max: 95, speed: 50, get: (b) => b.smoothing * 100, set: (v) => ({ smoothing: v / 100 }) },
+    { key: 'minSize', label: 'Min size', unit: '%', min: 0, max: 100, speed: 50, get: (b) => b.minSize * 100, set: (v) => ({ minSize: v / 100 }) },
+    { key: 'ratio', label: 'Roundness', unit: '%', min: 5, max: 100, speed: 50, get: (b) => b.ratio * 100, set: (v) => ({ ratio: v / 100 }) },
+    { key: 'angle', label: 'Angle', unit: '°', min: -180, max: 180, speed: 90, get: (b) => b.angle, set: (v) => ({ angle: v }) }
+  ];
 
   // ------------------------------------------------------------------ layers
   const kindLabel = (kind: string) => kind === 'vector' ? 'vector' : 'raster';
@@ -517,19 +527,21 @@
         </div>
       {/if}
     </section>
-    <details class="menu-group brush-config">
-      <summary class="menu-label">Configure {shortName(brush)}</summary>
-      <label class="range">Hardness <input type="range" min="0" max="100" value={Math.round(brush.hardness * 100)} oninput={(e) => editBrush(kind, { hardness: Number(e.currentTarget.value) / 100 })} /></label>
-      <label class="range">Flow <input type="range" min="1" max="100" value={Math.round(brush.flow * 100)} oninput={(e) => editBrush(kind, { flow: Number(e.currentTarget.value) / 100 })} /></label>
-      <label class="range">Spacing <input type="range" min="1" max="100" value={Math.round(brush.spacing * 100)} oninput={(e) => editBrush(kind, { spacing: Number(e.currentTarget.value) / 100 })} /></label>
-      <label class="range">Smoothing <input type="range" min="0" max="95" value={Math.round(brush.smoothing * 100)} oninput={(e) => editBrush(kind, { smoothing: Number(e.currentTarget.value) / 100 })} /></label>
-      <label class="range">Min size <input type="range" min="0" max="100" value={Math.round(brush.minSize * 100)} oninput={(e) => editBrush(kind, { minSize: Number(e.currentTarget.value) / 100 })} /></label>
-      <label class="range">Roundness <input type="range" min="5" max="100" value={Math.round(brush.ratio * 100)} oninput={(e) => editBrush(kind, { ratio: Number(e.currentTarget.value) / 100 })} /></label>
-      <label class="range">Angle <input type="range" min="-180" max="180" value={Math.round(brush.angle)} oninput={(e) => editBrush(kind, { angle: Number(e.currentTarget.value) })} /></label>
-      <label><input type="checkbox" checked={brush.sizePressure} onchange={(e) => editBrush(kind, { sizePressure: e.currentTarget.checked })} /> Pressure → size</label>
-      <label><input type="checkbox" checked={brush.opacityPressure} onchange={(e) => editBrush(kind, { opacityPressure: e.currentTarget.checked })} /> Pressure → opacity</label>
-      <label><input type="checkbox" checked={brush.flowPressure} onchange={(e) => editBrush(kind, { flowPressure: e.currentTarget.checked })} /> Pressure → flow</label>
-    </details>
+    <section class="menu-group brush-config">
+      <div class="menu-row"><Control onclick={() => configureOpen = !configureOpen} aria-expanded={configureOpen} aria-pressed={configureOpen}>Configure {shortName(brush)}</Control></div>
+      {#if configureOpen}
+      {#each brushSettings as setting (setting.key)}
+        <div class="setting-row"><span class="menu-label">{setting.label} {Math.round(setting.get(brush))}{setting.unit}</span>
+          <HorizontalSlider value={Math.round(setting.get(brush))} min={setting.min} max={setting.max} step={1} speed={setting.speed} label={`${shortName(brush)} ${setting.label.toLowerCase()}`}
+            onchange={(next: number) => editBrush(kind, setting.set(next))} /></div>
+      {/each}
+      <div class="menu-row">
+        <Control onclick={() => editBrush(kind, { sizePressure: !brush.sizePressure })} aria-pressed={brush.sizePressure}>Pressure → size</Control>
+        <Control onclick={() => editBrush(kind, { opacityPressure: !brush.opacityPressure })} aria-pressed={brush.opacityPressure}>Pressure → opacity</Control>
+        <Control onclick={() => editBrush(kind, { flowPressure: !brush.flowPressure })} aria-pressed={brush.flowPressure}>Pressure → flow</Control>
+      </div>
+      {/if}
+    </section>
   </div>
 {/snippet}
 
@@ -614,8 +626,9 @@
             </section>
             {#if documentMode}
               <section class="menu-group">
-                <label class="range">Name <input value={activeLayer.entry.name ?? ''} aria-label="Layer name"
-                  onchange={(e) => layerAction(() => editor.updateLayer(activeLayer!.id, { name: e.currentTarget.value.trim() || undefined }))} /></label>
+                <div class="setting-row"><span class="menu-label">Name</span>
+                  <TextBox singleLine value={activeLayer.entry.name ?? ''} label="Layer name" placeholder="unnamed"
+                    onexit={(text) => { const layer = editor.activeLayer; if (layer && (text.trim() || undefined) !== layer.entry.name) layerAction(() => editor.updateLayer(layer.id, { name: text.trim() || undefined })); }} /></div>
                 <p class="menu-label">{activeLayer.entry.file} · {kindLabel(activeLayer.entry.kind)}</p>
               </section>
             {/if}
@@ -668,7 +681,12 @@
 </div>
 
 <style>
-  .visual-bar { position: relative; flex: none; z-index: 4; }
+  /* Every line of the editor UI is one min-box high, as in Keyflow: text, buttons, labels and fields. */
+  .visual-bar { position: relative; flex: none; z-index: 4; font-size: calc(var(--min-box) * .8); line-height: var(--min-box); }
+  .visual-bar :global(.editor-controls), .visual-bar :global(button) { font-size: inherit; }
+  .visual-bar :global(button) { line-height: var(--min-box); }
+  /* Bordered toolbar buttons subtract their 1px borders so the whole button is one min-box. */
+  .visual-bar :global(.editor-controls button) { line-height: calc(var(--min-box) - 2px); }
   .visual-tools { flex-wrap: nowrap !important; overflow-x: auto; overflow-y: hidden; align-items: center; scrollbar-width: thin; }
   .visual-tools > :global(*) { flex: none; }
   .visual-title { font-weight: 600; padding-inline: 4px; display: inline-flex; align-items: center; }
@@ -676,7 +694,7 @@
   .transform-slider { display: inline-flex; align-items: center; gap: 2px; }
   .transform-slider :global(.keyflow-slider) { padding: 0 .25rem; gap: .4rem; }
   .transform-slider :global([role=slider]) { min-width: 7rem; }
-  .outside-prompt { font-size: 13px; padding-inline: 6px; color: #c92a2a; }
+  .outside-prompt { padding-inline: 6px; color: #c92a2a; }
   /* Menus cover the toolbar edge to edge, fill each row before wrapping, and grow down as far as there is room. */
   .visual-bar :global(.visual-menu) { position: absolute; top: 0; left: 0; right: 0; z-index: 10; }
   /* Height is left to Keyflow, which extends the panel down to the usable viewport and only then scrolls. */
@@ -685,9 +703,7 @@
   .menu-flow { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: flex-start; }
   .menu-group { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
   .menu-row { flex-direction: row; flex-wrap: wrap; gap: 4px; align-items: center; }
-  .menu-label { margin: 0; font-size: 13px; white-space: nowrap; }
-  .range { display: flex; gap: 8px; align-items: center; font-size: 13px; white-space: nowrap; }
-  .range input[type=range] { flex: 1; min-width: 6rem; }
+  .menu-label { margin: 0; white-space: nowrap; }
   .swatches, .brush-list { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; max-width: 34rem; }
   .swatch-control :global(button) { padding: 2px; min-width: 0; }
   .swatch { display: block; width: 22px; height: 22px; border-radius: 4px; background: var(--swatch); border: 1px solid var(--tertiary); }
@@ -697,14 +713,11 @@
   .swatch-control.chosen .swatch::after { content: ''; position: absolute; left: 50%; top: 50%; width: 8px; height: 8px; transform: translate(-50%, -50%);
     border-radius: 50%; background: #fff; box-shadow: 0 0 0 1.5px #000; }
   .swatch-control.small.chosen .swatch::after { width: 6px; height: 6px; }
-  .brush-config { font-size: 13px; }
-  .brush-config summary { cursor: pointer; }
+  .setting-row { display: flex; align-items: center; gap: .5ch; flex-wrap: wrap; }
   /* Dense menus: keep panels short so most of the canvas stays reachable underneath. */
-  .visual-bar :global(.visual-menu) { font-size: 13px; }
-  .brush-list :global(button), .menu-row :global(button) { font-size: 13px; }
   .menu-flow :global(.keyflow-slider) { padding: 0 .25rem; gap: .4rem; }
-  .visual-missing { flex: none; border: 1px solid #c92a2a; border-radius: 4px; padding: 4px 8px; font-size: 14px; }
-  .visual-missing p { margin: 2px 0; }
+  .visual-missing { flex: none; border: 1px solid #c92a2a; border-radius: 4px; padding: 0 .5ch; font-size: calc(var(--min-box) * .8); line-height: var(--min-box); }
+  .visual-missing p { margin: 0; }
   .raster-surface { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow: hidden !important; }
   .raster-surface > :global(*) { flex-shrink: 0; }
   .raster-viewport { position: relative; flex: 1 1 auto !important; min-height: 64px; overflow: hidden; touch-action: none; overscroll-behavior: contain; background: color-mix(in srgb, var(--primary) 8%, var(--background)); isolation: isolate; }

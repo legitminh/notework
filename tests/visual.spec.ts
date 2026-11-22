@@ -37,7 +37,10 @@ test('visual documents are page folders whose layers are separate assets, and re
   // Brush settings: select Brush again to open size, color wheel and brush types.
   await button(page, 'Brush').click();
   await expect(page.getByRole('slider', { name: /^Color wheel/ })).toBeVisible();
-  await page.getByLabel('Hex color').fill('#e03131'); await page.getByLabel('Hex color').press('Enter');
+  // Keyflow single-line textbox: open it, type, Enter commits.
+  await button(page, 'Hex color').click();
+  await page.getByRole('textbox', { name: 'Hex color', exact: true }).press('ControlOrMeta+a');
+  await page.keyboard.type('#e03131'); await page.keyboard.press('Enter');
   await button(page, 'Basic-1').click();
   await expect(button(page, 'Basic-1')).toHaveAttribute('aria-pressed', 'true');
   await page.keyboard.press('Escape');
@@ -149,4 +152,30 @@ test('vector lasso selects strokes fully inside, then Transform moves only them'
   await button(page, 'Brush').click();
   const ys = await canvas.evaluate((node) => (node as unknown as { visualEditor: { activeLayer: { vector: { strokes: { points: number[] }[] } } } }).visualEditor.activeLayer.vector.strokes.map((stroke) => Math.round(stroke.points[1])).sort((a, b) => a - b));
   expect(Math.abs(ys[0] - 90)).toBeLessThanOrEqual(2); expect(Math.abs(ys[1] - 150)).toBeLessThanOrEqual(2);
+});
+
+test('visual editor settings are Keyflow controls: number boxes, sliders, toggles and single-line text', async ({ page }) => {
+  await createVisual(page, 'keys');
+  const canvas = await openMain(page, 'keys');
+  const state = () => canvas.evaluate((node) => (node as unknown as { visualEditor: { state: { color: string }; currentBrush: { sizePressure: boolean }; activeLayer: { entry: { name?: string } } } }).visualEditor);
+  await button(page, 'Brush').click();
+  await button(page, 'RGB').click();
+  await button(page, 'Red value').click();
+  await page.getByRole('textbox', { name: 'Red value', exact: true }).press('ControlOrMeta+a');
+  await page.keyboard.type('300'); await page.keyboard.press('Enter');
+  expect((await canvas.evaluate((node) => (node as unknown as { visualEditor: { state: { color: string } } }).visualEditor.state.color)).slice(0, 3)).toBe('#ff');
+  await page.getByRole('button', { name: /Configure / }).click();
+  await button(page, 'Pressure → size').click();
+  expect(await canvas.evaluate((node) => (node as unknown as { visualEditor: { currentBrush: { sizePressure: boolean } } }).visualEditor.currentBrush.sizePressure)).toBe(true);
+  await page.keyboard.press('Escape');
+  await button(page, 'Layer').click();
+  await button(page, 'Layer name').click();
+  await page.getByRole('textbox', { name: 'Layer name', exact: true }).press('ControlOrMeta+a');
+  await page.keyboard.type('Ink lines'); await page.keyboard.press('Enter');
+  expect(await canvas.evaluate((node) => (node as unknown as { visualEditor: { activeLayer: { entry: { name?: string } } } }).visualEditor.activeLayer.entry.name)).toBe('Ink lines');
+  void state;
+  // One min-box per line: toolbar buttons are exactly one min-box tall.
+  const [minBox, height] = await page.evaluate(() => [parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--min-box')),
+    document.querySelector<HTMLElement>('.visual-tools button')!.getBoundingClientRect().height]);
+  expect(Math.abs(height - minBox)).toBeLessThanOrEqual(2);
 });

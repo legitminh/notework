@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { HorizontalSlider, NumberBox, TextBox } from '@legitminh/keyflow';
   import Control from './Control.svelte';
   let { value, onchange, size = 184 }: { value: string; onchange: (hex: string) => void; size?: number } = $props();
 
@@ -31,6 +32,9 @@
   });
   const rgb = $derived(hsvToRgb(...hsv).map(Math.round) as [number, number, number]);
   let mode = $state<'hsv' | 'rgb'>('hsv');
+  // The hex field edits a draft; it follows the current colour whenever it is not being edited.
+  let hexDraft = $state('');
+  $effect(() => { hexDraft = value; });
 
   function commit(next: HSV) {
     hsv = next;
@@ -128,22 +132,29 @@
     <span class="ring-marker" style:left={`${hueMarker[0]}px`} style:top={`${hueMarker[1]}px`} style:width={`${OUTER - INNER + 2}px`} style:height={`${OUTER - INNER + 2}px`}></span>
   </div>
   <div class="channels">
-    <div class="editor-controls">
+    <div class="channel-row">
       <Control onclick={() => mode = 'hsv'} aria-pressed={mode === 'hsv'}>HSV</Control>
       <Control onclick={() => mode = 'rgb'} aria-pressed={mode === 'rgb'}>RGB</Control>
       <span class="swatch current" style:background={value} aria-hidden="true"></span>
     </div>
+    <!-- Keyflow sliders and number boxes: every channel is reachable from the keyboard. -->
     {#if mode === 'hsv'}
-      <label>H <input type="range" min="0" max="359" value={Math.round(hsv[0])} oninput={(e) => commit([Number(e.currentTarget.value), hsv[1], hsv[2]])} class="hue-range" aria-label="Hue" /><span>{Math.round(hsv[0])}°</span></label>
-      <label>S <input type="range" min="0" max="100" value={Math.round(hsv[1] * 100)} oninput={(e) => commit([hsv[0], Number(e.currentTarget.value) / 100, hsv[2]])} aria-label="Saturation" /><span>{Math.round(hsv[1] * 100)}%</span></label>
-      <label>V <input type="range" min="0" max="100" value={Math.round(hsv[2] * 100)} oninput={(e) => commit([hsv[0], hsv[1], Number(e.currentTarget.value) / 100])} aria-label="Value" /><span>{Math.round(hsv[2] * 100)}%</span></label>
+      <div class="channel-row"><span class="channel">H</span><HorizontalSlider value={Math.round(hsv[0])} min={0} max={359} step={1} speed={120} label="Hue" onchange={(hue: number) => commit([hue, hsv[1], hsv[2]])} />
+        <NumberBox value={Math.round(hsv[0])} min={0} max={359} step={1} width="4ch" label="Hue value" onchange={(hue: number) => commit([hue, hsv[1], hsv[2]])} /></div>
+      <div class="channel-row"><span class="channel">S</span><HorizontalSlider value={Math.round(hsv[1] * 100)} min={0} max={100} step={1} speed={50} label="Saturation" onchange={(sat: number) => commit([hsv[0], sat / 100, hsv[2]])} />
+        <NumberBox value={Math.round(hsv[1] * 100)} min={0} max={100} step={1} width="4ch" label="Saturation value" onchange={(sat: number) => commit([hsv[0], sat / 100, hsv[2]])} /></div>
+      <div class="channel-row"><span class="channel">V</span><HorizontalSlider value={Math.round(hsv[2] * 100)} min={0} max={100} step={1} speed={50} label="Value" onchange={(val: number) => commit([hsv[0], hsv[1], val / 100])} />
+        <NumberBox value={Math.round(hsv[2] * 100)} min={0} max={100} step={1} width="4ch" label="Value value" onchange={(val: number) => commit([hsv[0], hsv[1], val / 100])} /></div>
     {:else}
-      {#each ['R', 'G', 'B'] as channel, index}
-        <label>{channel} <input type="range" min="0" max="255" value={rgb[index]} oninput={(e) => setRgb(index, Number(e.currentTarget.value))} aria-label={['Red', 'Green', 'Blue'][index]} />
-          <input type="number" min="0" max="255" value={rgb[index]} onchange={(e) => setRgb(index, Number(e.currentTarget.value))} aria-label={`${['Red', 'Green', 'Blue'][index]} value`} /></label>
+      {#each ['Red', 'Green', 'Blue'] as channel, index (channel)}
+        <div class="channel-row"><span class="channel">{channel[0]}</span><HorizontalSlider value={rgb[index]} min={0} max={255} step={1} speed={120} label={channel} onchange={(next: number) => setRgb(index, next)} />
+          <NumberBox value={rgb[index]} min={0} max={255} step={1} width="4ch" label={`${channel} value`} onchange={(next: number) => setRgb(index, next)} /></div>
       {/each}
     {/if}
-    <label>Hex <input class="hex" value={value} aria-label="Hex color" onchange={(e) => { const hex = e.currentTarget.value.trim(); if (/^#?[0-9a-f]{6}$/i.test(hex)) { const next = rgbToHsv(...hexToRgb(hex)); commit([next[1] && next[2] ? next[0] : hsv[0], next[1], next[2]]); } else e.currentTarget.value = value; }} /></label>
+    <div class="channel-row"><span class="channel">Hex</span>
+      <TextBox singleLine bind:value={hexDraft} label="Hex color" spellcheck={false}
+        onexit={(text) => { const hex = text.trim(); if (/^#?[0-9a-f]{6}$/i.test(hex)) { const next = rgbToHsv(...hexToRgb(hex)); commit([next[1] && next[2] ? next[0] : hsv[0], next[1], next[2]]); } hexDraft = lastValue || value; }} />
+    </div>
   </div>
 </div>
 
@@ -155,12 +166,9 @@
   .triangle-marker, .ring-marker { position: absolute; transform: translate(-50%, -50%); border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px #000; pointer-events: none; box-sizing: border-box; }
   .triangle-marker { width: 12px; height: 12px; }
   .ring-marker { background: transparent; }
-  .channels { display: grid; gap: 2px; min-width: 11rem; font-size: 12px; }
-  .channels :global(button) { font-size: 12px; }
-  .channels label { display: flex; align-items: center; gap: 6px; }
-  .channels input[type=range] { flex: 1; min-width: 6rem; }
-  .channels input[type=number] { width: 4.2em; }
-  .hex { width: 6.5em; font-family: var(--font-mono); padding: 2px 4px; min-height: 0; height: auto; }
-  .hue-range { accent-color: var(--primary); }
-  .swatch { display: inline-block; width: 28px; height: 28px; border-radius: 4px; border: 1px solid var(--tertiary); }
+  .channels { display: grid; gap: 0; min-width: 0; }
+  .channel-row { display: flex; align-items: center; gap: .4ch; line-height: var(--min-box); }
+  .channel { display: inline-block; min-width: 3ch; }
+  .channel-row :global(.keyflow-slider) { padding: 0; gap: .3ch; --slider-length: 8rem; }
+  .swatch { display: inline-block; width: var(--min-box); height: calc(var(--min-box) * .7); border-radius: 4px; border: 1px solid var(--tertiary); }
 </style>
