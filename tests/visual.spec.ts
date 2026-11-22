@@ -97,6 +97,8 @@ test('the brush library is created under app.asset with the Krita basic pack', a
 });
 
 test('toolbar is one row: title, editor, exit, tools, undo/redo, layer, export; menus overlay it', async ({ page }) => {
+  // Menus extend down as far as there is room; a tall window leaves canvas visible below the brush panel.
+  await page.setViewportSize({ width: 1600, height: 1600 });
   await createVisual(page, 'a-long-document-name');
   await openMain(page, 'a-long-document-name');
   const bar = page.getByRole('group', { name: 'Drawing toolbar' });
@@ -166,8 +168,11 @@ test('visual editor settings are Keyflow controls: number boxes, sliders, toggle
   expect((await canvas.evaluate((node) => (node as unknown as { visualEditor: { state: { color: string } } }).visualEditor.state.color)).slice(0, 3)).toBe('#ff');
   // Configure is a nested Keyflow input frame with its own trigger and Back.
   await page.getByRole('button', { name: /^Configure / }).click();
+  const pressure = () => canvas.evaluate((node) => (node as unknown as { visualEditor: { currentBrush: { sizePressure: boolean } } }).visualEditor.currentBrush.sizePressure);
+  const before = await pressure();
   await button(page, 'Pressure → size').click();
-  expect(await canvas.evaluate((node) => (node as unknown as { visualEditor: { currentBrush: { sizePressure: boolean } } }).visualEditor.currentBrush.sizePressure)).toBe(true);
+  expect(await pressure()).toBe(!before);
+  await expect(button(page, 'Pressure → size')).toHaveAttribute('aria-pressed', String(!before));
   await page.keyboard.press('Escape');
   await expect(button(page, 'Pressure → size')).toHaveCount(0);
   await expect(page.getByRole('slider', { name: 'Pen size', exact: true })).toBeVisible();

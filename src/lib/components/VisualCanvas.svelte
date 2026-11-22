@@ -302,10 +302,15 @@
   }
   let brushEdited = $state(false), brushBusy = $state(false);
   function editBrush(kind: 'brush' | 'eraser', patch: Partial<Brush>) {
-    const reference = kind === 'eraser' ? eraserRef : brushRef, current = kind === 'eraser' ? currentEraser : currentBrush;
-    if (!reference) return;
+    const current = kind === 'eraser' ? currentEraser : currentBrush;
+    let reference = kind === 'eraser' ? eraserRef : brushRef;
+    if (!reference) {
+      // A built-in default with no brush file (e.g. plain images): edit an in-memory copy.
+      reference = `builtin:${current.name}`;
+      editor.setState(kind === 'eraser' ? { eraser: reference } : { brush: reference });
+    }
     editor.addBrush(reference, sanitizeBrush({ ...current, ...patch }), editor.doc.brushes.includes(reference));
-    brushEdited = true;
+    brushEdited = !reference.startsWith('builtin:');
   }
   async function saveBrushFile(kind: 'brush' | 'eraser') {
     const reference = kind === 'eraser' ? eraserRef : brushRef;
@@ -523,7 +528,7 @@
       {#if library}
         <div class="menu-row">
           <Control onclick={() => { importKind = kind; brushImport?.click(); }} disabled={brushBusy}>Import brush…</Control>
-          {#if (kind === 'eraser' ? eraserRef : brushRef)}<Control onclick={() => { void saveBrushFile(kind); }} disabled={brushBusy || !brushEdited}>Save brush file</Control>{/if}
+          {#if !(kind === 'eraser' ? eraserRef : brushRef)?.startsWith('builtin:') && (kind === 'eraser' ? eraserRef : brushRef)}<Control onclick={() => { void saveBrushFile(kind); }} disabled={brushBusy || !brushEdited}>Save brush file</Control>{/if}
         </div>
       {/if}
     </section>
