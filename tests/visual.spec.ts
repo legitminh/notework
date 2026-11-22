@@ -192,3 +192,52 @@ test('visual editor settings are Keyflow controls: number boxes, sliders, toggle
     document.querySelector<HTMLElement>('.visual-tools button')!.getBoundingClientRect().height]);
   expect(Math.abs(height - minBox)).toBeLessThanOrEqual(2);
 });
+
+test('pressing Lasso or Transform again turns it off', async ({ page }) => {
+  await createVisual(page, 'toggles');
+  const canvas = await openMain(page, 'toggles');
+  const tool = () => canvas.evaluate((node) => (node as unknown as { visualEditor: { state: { tool: string } } }).visualEditor.state.tool);
+  await drag(page, canvas, [[150, 100], [250, 100]]);
+  await button(page, 'Eraser').click();
+  await button(page, 'Lasso').click();
+  await expect(button(page, 'Lasso')).toHaveAttribute('aria-pressed', 'true');
+  await button(page, 'Lasso').click();
+  await expect(button(page, 'Lasso')).toHaveAttribute('aria-pressed', 'false');
+  expect(await tool()).toBe('eraser');
+  await button(page, 'Brush').click();
+  await button(page, 'Transform').click();
+  await expect(page.getByRole('slider', { name: 'Rotate', exact: true })).toBeVisible();
+  await button(page, 'Transform').click();
+  await expect(page.getByRole('slider', { name: 'Rotate', exact: true })).toHaveCount(0);
+  await expect(button(page, 'Transform')).toHaveAttribute('aria-pressed', 'false');
+  expect(await tool()).toBe('brush');
+  // Moving content off the canvas still asks before Transform turns off.
+  await button(page, 'Transform').click();
+  await drag(page, canvas, [[200, 100], [390, 100]]);
+  await button(page, 'Transform').click();
+  await expect(button(page, 'Crop to canvas')).toBeVisible();
+  await button(page, 'Crop to canvas').click();
+  await expect(button(page, 'Transform')).toHaveAttribute('aria-pressed', 'false');
+});
+
+test('brush configuration stays open while autosave runs, and the colour channels wrap beside the wheel', async ({ page }) => {
+  await createVisual(page, 'config');
+  const canvas = await openMain(page, 'config');
+  const dirty = () => canvas.evaluate((node) => (node as unknown as { visualEditor: { dirty: boolean } }).visualEditor.dirty);
+  await button(page, 'Brush').click();
+  // Colour panel: wheel on the left, every channel control inside the menu's width (no horizontal overflow).
+  const fits = await page.evaluate(() => {
+    const panel = document.querySelector('.color-wheel-panel')!, menu = panel.closest('.subkeyframe-viewport')!;
+    const right = Math.max(...[...panel.querySelectorAll('.channels > *')].map((node) => node.getBoundingClientRect().right));
+    return { overflow: menu.scrollWidth > menu.clientWidth, inside: right <= menu.getBoundingClientRect().right + 1 };
+  });
+  expect(fits).toEqual({ overflow: false, inside: true });
+  await page.getByRole('button', { name: /^Configure / }).click();
+  const slider = page.locator('.brush-config-menu .keyflow-slider').first();
+  const box = (await slider.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await page.mouse.down();
+  await page.mouse.move(box.x + box.width * .3, box.y + box.height / 2, { steps: 5 }); await page.mouse.up();
+  expect(await dirty()).toBe(true);
+  await expect.poll(dirty, { timeout: 20_000 }).toBe(false);
+  await expect(button(page, 'Pressure → size')).toBeVisible();
+});

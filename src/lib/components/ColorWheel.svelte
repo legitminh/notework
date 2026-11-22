@@ -157,7 +157,7 @@
 
 <style>
   /* Wheel on the left; the channel stream fills the rest of the line beside it. */
-  .color-wheel-panel { display: flex; gap: 1ch; align-items: flex-start; flex: 1 1 100%; min-width: 0; }
+  .color-wheel-panel { display: flex; gap: 1ch; align-items: center; flex: 1 1 100%; min-width: 0; max-width: 100%; }
   .wheel { position: relative; flex: none; touch-action: none; border-radius: 50%; cursor: crosshair; }
   .wheel:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
   .wheel-surface { position: absolute; inset: 0; display: block; }

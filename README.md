@@ -217,8 +217,8 @@ When you open a document you get one toolbar above the canvas. It holds the **ti
 * **Brush / Eraser**: select the active tool again to open its panel. Brush size and opacity use Keyflow's horizontal sliders, whose step buttons get shortcuts that work even when the buttons are scrolled out of view. The brush panel also has a colour wheel (a hue ring around a turning saturation/value triangle, plus HSV and RGB sliders and hex), the palette, recent colours, brush types, and settings for each brush. These panels stay open while you paint; press Back or Escape to close them. Every menu extends down as far as the screen allows and only scrolls when it runs out of room. All settings are Keyflow controls (sliders, toggles, `NumberBox` and single-line `TextBox` fields), so the whole editor works from the keyboard, and every line of its UI is one min-box high.
 * **Raster layers** paint with a Krita-style brush engine: opacity, flow, hardness, spacing, and pressure for size, opacity and flow. The eraser removes pixels.
 * **Vector layers** store strokes. The eraser removes whole strokes, and the **lasso** selects only strokes that lie entirely inside it.
-* **Lasso** draws a high-contrast selection outline. Drag inside it or by its corners to move or resize the selected content. **Clear** deletes it.
-* **Transform** acts on the lasso selection, or on the whole active layer if nothing is selected. Turn on **All canvas** to transform every layer at once.
+* **Lasso** draws a high-contrast selection outline. Drag inside it or by its corners to move or resize the selected content. **Clear** deletes it. Press **Lasso** again to go back to the brush or eraser you were using; the selection stays.
+* **Transform** acts on the lasso selection, or on the whole active layer if nothing is selected. Turn on **All canvas** to transform every layer at once. Press **Transform** again to apply the transform and turn the tool off.
   * Drag a corner to stretch or shear (perspective).
   * Drag an edge midpoint to scale along that axis.
   * Drag inside to move.

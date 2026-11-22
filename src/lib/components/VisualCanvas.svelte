@@ -229,12 +229,15 @@
     transformTool = false; resetTransformSliders(); redraw();
     return true;
   }
+  let lastPaintTool: 'brush' | 'eraser' = editor.state.tool === 'eraser' ? 'eraser' : 'brush';
+  $effect(() => { const current = tool; if (current === 'brush' || current === 'eraser') lastPaintTool = current; });
   async function chooseTool(next: CanvasTool) {
     input.interrupt();
     // Re-selecting the active brush/eraser opens its panel; coming back from pan/transform only switches.
     const reselect = !panTool && !transformTool && next === editor.state.tool;
     if (next === 'transform') {
-      if (transformTool) return;
+      // Pressing Transform again turns it off (committing, or asking about content outside the canvas).
+      if (transformTool) { if (await finishTransform()) syncInputOptions(); return; }
       panTool = false;
       if (!editor.beginTransformSession(allCanvas)) { notice = allCanvas ? 'The canvas is empty.' : 'Nothing to transform on this layer.'; return; }
       transformTool = true; resetTransformSliders(); notice = ''; redraw(); return;
@@ -242,7 +245,10 @@
     if (!await finishTransform()) return;
     if (next === 'pan') { panTool = !panTool; syncInputOptions(); return; }
     panTool = false;
-    if (reselect && (next === 'brush' || next === 'eraser')) {
+    if (reselect && next === 'lasso') {
+      // Pressing Lasso again turns it off: back to the last brush or eraser (any selection stays).
+      editor.setState({ tool: lastPaintTool });
+    } else if (reselect && (next === 'brush' || next === 'eraser')) {
       usingTools = true; void (next === 'brush' ? brushMenu : eraserMenu)?.enter();
     } else editor.setState({ tool: next });
     syncInputOptions();
@@ -573,7 +579,7 @@
   </div>
 
   <!-- Input-frame menus overlay the whole toolbar and flow left to right, wrapping as needed. -->
-  <SubKeyframe label="Editor" showTrigger={false} enterTrigger={null} bind:this={editorMenu} class="visual-menu" onclose={resumeEditing} disabled={saving || publishing}>
+  <SubKeyframe label="Editor" showTrigger={false} enterTrigger={null} bind:this={editorMenu} class="visual-menu" onclose={resumeEditing} disabled={publishing}>
     {#snippet children()}
       <div class="stream">
           <Control onclick={() => zoomBy(1 / 1.25)}>Zoom out</Control>
@@ -588,17 +594,17 @@
       </div>
     {/snippet}
   </SubKeyframe>
-  <SubKeyframe label="Brush settings" showTrigger={false} enterTrigger={null} bind:this={brushMenu} class="visual-menu persistent-menu" closeOnOutside={false} onclose={resumeEditing} disabled={saving || publishing}>
+  <SubKeyframe label="Brush settings" showTrigger={false} enterTrigger={null} bind:this={brushMenu} class="visual-menu persistent-menu" closeOnOutside={false} onclose={resumeEditing} disabled={publishing}>
     {#snippet children()}{@render brushPanel('brush')}{/snippet}
   </SubKeyframe>
-  <SubKeyframe label="Eraser settings" showTrigger={false} enterTrigger={null} bind:this={eraserMenu} class="visual-menu persistent-menu" closeOnOutside={false} onclose={resumeEditing} disabled={saving || publishing}>
+  <SubKeyframe label="Eraser settings" showTrigger={false} enterTrigger={null} bind:this={eraserMenu} class="visual-menu persistent-menu" closeOnOutside={false} onclose={resumeEditing} disabled={publishing}>
     {#snippet children()}{@render brushPanel('eraser')}{/snippet}
   </SubKeyframe>
   {#if layered}
-    <SubKeyframe label="Layers" showTrigger={false} enterTrigger={null} bind:this={layerMenu} class="visual-menu" onclose={resumeEditing} disabled={saving || publishing}>
+    <SubKeyframe label="Layers" showTrigger={false} enterTrigger={null} bind:this={layerMenu} class="visual-menu" onclose={resumeEditing} disabled={publishing}>
       {#snippet children()}
         <div class="stream">
-            <ChoiceMenu label="active layer" value={String([...layers].reverse().findIndex((item) => item.id === activeLayer?.id))} disabled={saving || publishing}
+            <ChoiceMenu label="active layer" value={String([...layers].reverse().findIndex((item) => item.id === activeLayer?.id))} disabled={publishing}
               choices={[...layers].reverse().map((item, index) => ({ id: String(index), label: `${item.entry.name ?? item.entry.file}${documentMode ? ` · ${kindLabel(item.entry.kind)}` : ''}${item.missing ? ' (missing)' : ''}${item.entry.visible ? '' : ' (hidden)'}` }))}
               onchange={(index) => layerAction(() => editor.setActiveLayer([...layers].reverse()[Number(index)].id))} />
             <Control onclick={() => layerAction(() => editor.addLayer('raster', `Layer ${editor.layers.length + 1}`))} disabled={layers.length >= 100}>Add layer</Control>
@@ -697,6 +703,9 @@
   /* Horizontal component stream: inline items wrap like text; a break item forces a new line. */
   .stream { display: flex; flex-wrap: wrap; align-items: center; gap: 0 .6ch; }
   .stream > :global(*) { flex: none; }
+  /* The colour panel takes its own full line (wheel left, channel stream wrapping to its right). This
+     must out-rank the rule above whatever order the two components' styles load in. */
+  .stream > :global(.color-wheel-panel.color-wheel-panel) { flex: 1 1 100%; min-width: 0; }
   .stream-label { white-space: nowrap; }
   /* A label stays on the same line as its value box. */
   .pair { display: inline-flex; align-items: center; gap: .6ch; white-space: nowrap; }
