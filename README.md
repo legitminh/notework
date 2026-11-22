@@ -211,12 +211,25 @@ The organizer lists one layer per line. Lines lower in the file are drawn on top
 
 `\image_editor[\r[…]\v[…]\c[…]\s[…]\b[…]]` is an equivalent compact form. Every layer is a normal asset, so it shows up in the file tree and you can open, move, version or replace it on its own. If a layer file is missing, the editor names it in a notice and keeps its reference, so restoring the file restores the layer. The editor saves your tool, colour, brush, sizes, palette and active layer in the organizer, so the document reopens the way you left it.
 
+When you open a document you get a single toolbar row above the canvas. It holds the **title**, capped at 16 characters and scrolling sideways when longer, then **Editor**, **Exit**, **Brush**, **Eraser**, **Lasso**, **Transform**, **Undo**, **Redo**, **Layer** and **Export**. If the row is wider than the screen, it scrolls sideways. Menus open over the whole toolbar and lay their controls out left to right, wrapping to a new line only when a row is full, so the canvas below stays as large as possible.
+
+* **Editor**: zoom out, zoom in, pan, fit canvas, **Raw text**, plus the canvas resolution, zoom and save state. You can also pan with the right or middle mouse button, the space bar, or two fingers.
+* **Brush / Eraser**: select the active tool again to open its panel. Brush size and opacity use Keyflow's horizontal sliders, whose step buttons get shortcuts that work even when the buttons are scrolled out of view. The brush panel also has a colour wheel (hue ring with a saturation/value square, plus HSV and RGB sliders and hex), the palette, recent colours, brush types, and settings for each brush. These panels stay open while you paint; press Back or Escape to close them.
 * **Raster layers** paint with a Krita-style brush engine: opacity, flow, hardness, spacing, and pressure for size, opacity and flow. The eraser removes pixels.
-* **Vector layers** store strokes. The eraser removes whole strokes, and the lasso moves, resizes or deletes the selected strokes.
-* **Brush and eraser:** select the active Brush or Eraser again to open its panel. The panel has size, opacity, a colour wheel (hue ring with a saturation/value square, plus HSV and RGB sliders and hex), the document palette, recent colours, the brush type, and per-brush settings. **Save brush file** writes changed settings back to the brush file.
+* **Vector layers** store strokes. The eraser removes whole strokes, and the **lasso** selects only strokes that lie entirely inside it.
+* **Lasso** draws a high-contrast selection outline. Drag inside it or by its corners to move or resize the selected content. **Clear** deletes it.
+* **Transform** acts on the lasso selection, or on the whole active layer if nothing is selected. Turn on **All canvas** to transform every layer at once.
+  * Drag a corner to stretch or shear (perspective).
+  * Drag an edge midpoint to scale along that axis.
+  * Drag inside to move.
+  * While Transform is active, the toolbar also shows a **Rotate** slider and a **Scale** slider. The Scale slider ranges from ½× to 2× and returns to 1× after each adjustment.
+  * If content ends up outside the canvas, leaving the tool asks whether to keep it outside, crop it to the canvas, or keep transforming.
+  * The whole transform is one undo step.
+* **Layer**: active layer, add raster or vector layers, delete, show/hide, raise/lower, an opacity slider, and rename. Layer changes are undoable along with painting. Undo stores only the 128 px tiles each operation touched, capped by `history` frames and `history_mb`.
 * **Brush library:** `app.asset/editor.visual/brushes` is created in browser storage at Home the first time you open a visual document, and it's filled with the Krita basic pack. **Import brush…** converts Krita `.kpp`, GIMP `.vbr`, MyPaint `.myb` and `.vbrush` files into the library. Brush references are ordinary file references, so you can move brushes into a cloud folder or a GitHub folder and point documents at them.
-* **Layers** panel: add raster or vector layers, delete, show/hide, raise/lower, opacity and rename. Layer changes are undoable along with painting. Undo stores only the 128 px tiles each operation touched, capped by `history` frames and `history_mb`.
-* **Raw text** saves your work, then opens `sketch.visual` in the text editor. Exit and open the file again to return to the canvas.
+* **Raw text** saves your work, then opens `sketch.visual` in the text editor. **Visual editor** in that toolbar saves the text and returns to the canvas.
+
+Navigation previews show SVG files, including vector layers, as pictures rather than code.
 
 PNG, JPEG, HEIC and ORA images open in the same engine and save in their own format.
 
