@@ -167,7 +167,7 @@
   .triangle-marker { width: 12px; height: 12px; }
   .ring-marker { background: transparent; }
   .channels { display: grid; gap: 0; min-width: 0; }
-  .channel-row { display: flex; align-items: center; gap: .4ch; line-height: var(--min-box); }
+  .channel-row { display: flex; flex-wrap: wrap; align-items: center; gap: .4ch; line-height: var(--min-box); }
   .channel { display: inline-block; min-width: 3ch; }
   .channel-row :global(.keyflow-slider) { padding: 0; gap: .3ch; --slider-length: 8rem; }
   .swatch { display: inline-block; width: var(--min-box); height: calc(var(--min-box) * .7); border-radius: 4px; border: 1px solid var(--tertiary); }

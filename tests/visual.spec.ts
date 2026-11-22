@@ -96,7 +96,7 @@ test('the brush library is created under app.asset with the Krita basic pack', a
   await expect(button(page, 'eraser-soft.vbrush')).toBeVisible();
 });
 
-test('toolbar is one row: title, editor, exit, tools, undo/redo, layer, export; menus overlay it', async ({ page }) => {
+test('toolbar streams title, editor, exit, tools, undo/redo, layer, export and folds like text; menus overlay it', async ({ page }) => {
   // Menus extend down as far as there is room; a tall window leaves canvas visible below the brush panel.
   await page.setViewportSize({ width: 1600, height: 1600 });
   await createVisual(page, 'a-long-document-name');
@@ -108,9 +108,13 @@ test('toolbar is one row: title, editor, exit, tools, undo/redo, layer, export; 
   // The title is bounded to 16 characters and scrolls.
   const title = bar.locator('.keyflow-bounded-text');
   expect(await title.evaluate((node) => node.scrollWidth > node.clientWidth)).toBe(true);
-  // Toolbar items stay on one line.
-  const tops = await bar.locator(':scope > *').evaluateAll((nodes) => [...new Set(nodes.filter((node) => (node as HTMLElement).offsetParent).map((node) => Math.round(node.getBoundingClientRect().top / 10)))]);
-  expect(tops.length).toBeLessThanOrEqual(2);
+  // Horizontal component stream: nothing overflows sideways; items fold onto new lines instead.
+  expect(await bar.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
+  await page.setViewportSize({ width: 500, height: 1600 });
+  const lines = await bar.locator(':scope > *').evaluateAll((nodes) => new Set(nodes.filter((node) => (node as HTMLElement).offsetParent).map((node) => Math.round(node.getBoundingClientRect().top))).size);
+  expect(lines).toBeGreaterThan(1);
+  expect(await bar.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
+  await page.setViewportSize({ width: 1600, height: 1600 });
   // Brush settings stay open while painting on the canvas.
   await button(page, 'Brush').click();
   await expect(page.getByRole('slider', { name: 'Pen size', exact: true })).toBeVisible();

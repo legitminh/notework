@@ -694,11 +694,12 @@
   .visual-bar :global(button) { line-height: var(--min-box); }
   /* Bordered toolbar buttons subtract their 1px borders so the whole button is one min-box. */
   .visual-bar :global(.editor-controls button) { line-height: calc(var(--min-box) - 2px); }
-  .visual-tools { flex-wrap: nowrap !important; overflow-x: auto; overflow-y: hidden; align-items: center; scrollbar-width: thin; }
+  /* Horizontal component stream: items flow left to right and fold onto the next line like text. */
+  .visual-tools { flex-wrap: wrap !important; align-items: center; row-gap: 0; }
   .visual-tools > :global(*) { flex: none; }
   .visual-title { font-weight: 600; padding-inline: 4px; display: inline-flex; align-items: center; }
   .visual-title.unsaved::after { content: '•'; margin-left: 4px; opacity: .7; }
-  .transform-slider { display: inline-flex; align-items: center; gap: 2px; }
+  .transform-slider { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px; }
   .transform-slider :global(.keyflow-slider) { padding: 0 .25rem; gap: .4rem; }
   .transform-slider :global([role=slider]) { min-width: 7rem; }
   .outside-prompt { padding-inline: 6px; color: #c92a2a; }
@@ -710,7 +711,7 @@
   .menu-flow { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: flex-start; }
   .menu-group { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
   .menu-row { flex-direction: row; flex-wrap: wrap; gap: 4px; align-items: center; }
-  .menu-label { margin: 0; white-space: nowrap; }
+  .menu-label { margin: 0; }
   .swatches, .brush-list { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; max-width: 34rem; }
   .swatch-control :global(button) { padding: 2px; min-width: 0; }
   .swatch { display: block; width: 22px; height: 22px; border-radius: 4px; background: var(--swatch); border: 1px solid var(--tertiary); }
