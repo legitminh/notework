@@ -1,0 +1,145 @@
+name: Native apps
+
+# Builds the Tauri app (macOS, Windows, Linux, iOS) around the unchanged web build.
+# Runs only when the native app changes, on version tags, or by hand, so the web CI and
+# GitHub Pages deploy are unaffected.
+on:
+  pull_request:
+    paths: ['native/**', '.github/workflows/native.yml']
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest, target: mac, rust-targets: 'aarch64-apple-darwin,x86_64-apple-darwin' }
+          - { os: windows-latest, target: win, rust-targets: '' }
+          - { os: ubuntu-22.04, target: linux, rust-targets: '' }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: notework }
+      # Notework links the sibling engine checkout (`link:../visual.editor`).
+      - uses: actions/checkout@v4
+        with: { repository: legitminh/visual.editor, path: visual.editor }
+      - uses: pnpm/action-setup@v3
+        with: { version: 11 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 24 }
+      - uses: dtolnay/rust-toolchain@stable
+        with: { targets: '${{ matrix.rust-targets }}' }
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: notework/native/src-tauri }
+      - name: Linux build dependencies
+        if: matrix.target == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+      - name: Install web app
+        working-directory: notework
+        run: pnpm install
+      - name: Install native app
+        working-directory: notework/native
+        run: pnpm install
+      - name: Build ${{ matrix.target }} app
+        working-directory: notework/native
+        run: pnpm build:${{ matrix.target }}
+      - name: Zip macOS app
+        if: matrix.target == 'mac'
+        working-directory: notework/native/src-tauri/target/universal-apple-darwin/release/bundle/macos
+        run: ditto -c -k --keepParent Notework.app "$GITHUB_WORKSPACE/Notework-mac-universal.app.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: notework-${{ matrix.target }}
+          path: |
+            Notework-mac-universal.app.zip
+            notework/native/src-tauri/target/**/release/bundle/dmg/*.dmg
+            notework/native/src-tauri/target/**/release/bundle/nsis/*.exe
+            notework/native/src-tauri/target/**/release/bundle/appimage/*.AppImage
+            notework/native/src-tauri/target/**/release/bundle/deb/*.deb
+          if-no-files-found: error
+          retention-days: 14
+
+  ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: notework }
+      - uses: actions/checkout@v4
+        with: { repository: legitminh/visual.editor, path: visual.editor }
+      - uses: pnpm/action-setup@v3
+        with: { version: 11 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 24 }
+      - uses: dtolnay/rust-toolchain@stable
+        with: { targets: 'aarch64-apple-ios,aarch64-apple-ios-sim' }
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: notework/native/src-tauri }
+      - name: Install XcodeGen
+        run: brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
+      - name: Install web app
+        working-directory: notework
+        run: pnpm install
+      - name: Install native app
+        working-directory: notework/native
+        run: pnpm install
+      - name: Build iOS app (simulator, unsigned)
+        working-directory: notework/native
+        run: pnpm build:ios
+      - name: Package simulator app
+        working-directory: notework/native/src-tauri/gen/apple
+        run: |
+          app="$(find . -path '*iphonesimulator*' -name '*.app' -type d -prune | head -1)"
+          [ -n "$app" ] || app="$(find . -name '*.app' -type d -prune | head -1)"
+          echo "packaging $app"
+          ditto -c -k --keepParent "$app" "$GITHUB_WORKSPACE/notework-ios-simulator.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: notework-ios-simulator
+          path: notework-ios-simulator.zip
+          if-no-files-found: error
+          retention-days: 14
+
+  # A v* tag publishes the desktop builds as a GitHub release.
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: desktop
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { path: artifacts }
+      - name: Name release files
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          mkdir release
+          find artifacts/notework-mac -name 'Notework-mac-universal.app.zip' -exec cp {} "release/notework-$v-macos-universal.app.zip" \;
+          find artifacts/notework-mac -name '*.dmg' -exec cp {} "release/notework-$v-macos-universal.dmg" \;
+          find artifacts/notework-win -name '*.exe' -exec cp {} "release/notework-$v-windows-x64-setup.exe" \;
+          find artifacts/notework-linux -name '*.deb' -exec cp {} "release/notework-$v-ubuntu-amd64.deb" \;
+          find artifacts/notework-linux -name '*.AppImage' -exec cp {} "release/notework-$v-linux-x86_64.AppImage" \;
+          ls -la release
+          test "$(ls release | wc -l)" -eq 5
+      - name: Write release notes
+        run: |
+          cat > notes.md <<'NOTES'
+          native notework apps built with Tauri from the same web app as the PWA.
+
+          - **macos** (universal, macOS 11+): open the .dmg and drag notework into applications. the app is ad hoc signed, not notarized, so on first launch right-click it and choose open, or run `xattr -dr com.apple.quarantine /Applications/Notework.app`.
+          - **windows** (x64): run the setup .exe. it is not code signed yet, so SmartScreen may ask you to choose more info → run anyway. WebView2 is installed if missing.
+          - **ubuntu** (amd64): `sudo apt install ./notework-*-ubuntu-amd64.deb`, or make the .AppImage executable and run it.
+
+          add existing folder/file opens notework's own folder browser to connect folders on your computer. each app keeps its own browser storage, separate from the PWA. the web app and PWA stay available at https://legitminh.github.io/notework/.
+          NOTES
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" release/* --repo "$GITHUB_REPOSITORY" --title "notework $GITHUB_REF_NAME" --notes-file notes.md --verify-tag

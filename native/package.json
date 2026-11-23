@@ -1,0 +1,24 @@
+{
+  "name": "notework-native",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Native macOS, Windows, Linux and iOS app (Tauri v2) around the Notework web build.",
+  "homepage": "https://github.com/legitminh/notework",
+  "scripts": {
+    "tauri": "tauri",
+    "web": "node scripts/build-web.mjs",
+    "desktop": "tauri dev",
+    "build:desktop": "tauri build",
+    "build:mac": "tauri build --target universal-apple-darwin",
+    "build:win": "tauri build",
+    "build:linux": "tauri build",
+    "ios:init": "tauri ios init --ci",
+    "ios:dev": "tauri ios dev",
+    "ios:open": "tauri ios init --ci && tauri ios build --open",
+    "build:ios": "node scripts/build-ios.mjs"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.12.6"
+  },
+  "packageManager": "pnpm@11.25.0"
+}

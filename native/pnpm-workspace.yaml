@@ -1,0 +1,8 @@
+# The native shell is its own pnpm workspace so the web app's install,
+# lockfile and build stay exactly as they are.
+packages:
+  - '.'
+# Xcode runs `pnpm tauri ios xcode-script` with a trimmed environment; never let
+# that reinstall or purge node_modules mid-build.
+verifyDepsBeforeRun: false
+confirmModulesPurge: false

@@ -1,3 +1,4 @@
+import { isNativeApp } from './native-fs';
 export interface HandleBase {
   name: string;
   kind: 'file' | 'directory';
@@ -30,8 +31,7 @@ declare global {
 }
 
 export const supportsFilesystem = () =>
-  typeof window !== 'undefined' && window.isSecureContext &&
-  !!window.showDirectoryPicker;
+  isNativeApp() || (typeof window !== 'undefined' && window.isSecureContext && !!window.showDirectoryPicker);
 
 export function explainError(error: unknown): string {
   if (error instanceof DOMException) {

@@ -1,6 +1,7 @@
 import { emptyWorkspace, Workspace, type Source, type WorkspaceData } from './workspace';
 import { clearRepository } from './github/storage';
 import { GitHubDirectory, GitHubRepository } from './github/repository';
+import { reviveNative } from './native-fs';
 
 let database: Promise<IDBDatabase> | undefined;
 function openDatabase(): Promise<IDBDatabase> {
@@ -25,7 +26,7 @@ function storedWorkspace(data: WorkspaceData): StoredWorkspace {
 export function snapshotWorkspace(data: WorkspaceData): WorkspaceData {
   const handles = data.sources.map((source) => source.handle);
   const metadata = structuredClone({ ...data, sources: data.sources.map(({ handle: _handle, ...source }) => source) });
-  return { ...metadata, sources: metadata.sources.map((source, index) => ({ ...source, handle: handles[index] })) };
+  return { ...metadata, sources: metadata.sources.map((source, index) => ({ ...source, handle: handles[index], physicalParent: reviveNative(source.physicalParent) })) };
 }
 
 async function restoreSource(source: StoredSource): Promise<Source> {
@@ -35,7 +36,8 @@ async function restoreSource(source: StoredSource): Promise<Source> {
   }
   if (source.storage !== 'browser') {
     if (!source.handle) throw new Error('missing machine resource handle.');
-    return { ...source, handle: source.handle };
+    // Native app handles are stored as plain paths; browser handles clone as themselves.
+    return { ...source, handle: reviveNative(source.handle), physicalParent: reviveNative(source.physicalParent) };
   }
   const uri = new URL(source.uri!);
   const path = uri.pathname.split('/').filter(Boolean).map(decodeURIComponent);
