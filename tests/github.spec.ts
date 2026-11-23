@@ -1118,3 +1118,43 @@ test('root removal aborts an in-flight sync read and does not recreate its queue
     });
   })).toEqual([]);
 });
+
+test('GitHub login through the relay links an allowed repository and is remembered', async ({ page }) => {
+  await github(page, { 'note.txt': 'Original' });
+  const relay = 'https://notework-github-login.totallylegitperson-example.workers.dev';
+  const json = (body: unknown) => ({ status: 200, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*' }, body: JSON.stringify(body) });
+  const forms: string[] = [];
+  await page.route(`${relay}/login/device/code`, (route) => { forms.push(route.request().postData() ?? ''); return route.fulfill(json(
+    { device_code: 'device', user_code: 'ABCD-1234', verification_uri: 'https://github.com/login/device', interval: 5, expires_in: 900 })); });
+  let polls = 0;
+  await page.route(`${relay}/login/oauth/access_token`, (route) => { forms.push(route.request().postData() ?? ''); return route.fulfill(json(
+    ++polls < 2 ? { error: 'authorization_pending' } : { access_token: 'test-token', token_type: 'bearer' })); });
+  await page.route('https://api.github.com/user', (route) => route.fulfill(json({ login: 'octo' })));
+  await page.route(/^https:\/\/api\.github\.com\/user\/installations\?/, (route) => route.fulfill(json({ installations: [{ id: 7 }] })));
+  await page.route(/^https:\/\/api\.github\.com\/user\/installations\/7\/repositories/, (route) => route.fulfill(json({ total_count: 2, repositories: [
+    { name: 'notebook', owner: { login: 'example' }, default_branch: 'main', private: true, archived: false, permissions: { push: true } },
+    { name: 'archive', owner: { login: 'example' }, default_branch: 'main', private: false, archived: true, permissions: { push: true } }
+  ] })));
+
+  await page.goto('/');
+  await action(page, 'app settings').click(); await action(page, 'link resource').click();
+  await action(page, 'GitHub').click();
+  await expect(page.getByLabel('personal access token', { exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'log in with GitHub', exact: true }).click();
+  await expect(page.locator('.device-code')).toHaveText('ABCD-1234');
+  await expect(page.getByText('logged in as octo')).toBeVisible({ timeout: 20_000 });
+  expect(forms[0]).toBe('client_id=Iv23liQC2jMk0ctskelI');
+  expect(forms.at(-1)).toContain('grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Adevice_code');
+
+  await expect(page.getByRole('checkbox', { name: 'example/archive · read-only' })).toBeDisabled();
+  await page.getByRole('checkbox', { name: 'example/notebook · private' }).check();
+  await page.getByRole('button', { name: 'link repository', exact: true }).click();
+  await expect(action(page, 'notebook/')).toBeEnabled();
+
+  // The login is remembered: reopening shows the account and marks the linked repository.
+  await page.reload();
+  await action(page, 'app settings').click(); await action(page, 'link resource').click();
+  await action(page, 'GitHub').click();
+  await expect(page.getByText('logged in as octo')).toBeVisible();
+  await expect(page.getByRole('checkbox', { name: 'example/notebook · private · linked' })).toBeDisabled();
+});

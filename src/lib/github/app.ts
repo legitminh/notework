@@ -15,7 +15,7 @@ export const GITHUB_APP = {
   /** The `<slug>` in github.com/apps/<slug>. */
   slug: 'minh-notework',
   /** HTTPS origin of the login relay for the web app, without a trailing slash. */
-  relay: ''
+  relay: 'https://notework-github-login.totallylegitperson-example.workers.dev'
 };
 
 export interface GitHubAccount { token: string; login: string }
