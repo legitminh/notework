@@ -59,7 +59,15 @@ a { color: inherit; text-underline-offset: .15em; }
 .editor-controls button:is(:hover, :focus-visible) .shortcut-hint { display: block; }
 .editor-controls button:focus-visible { outline-offset: -3px; }
 .editor-exit .editor-controls { flex-wrap: wrap; }
-.editing-view { height: 100dvh; min-height: 0; overflow: hidden; padding-bottom: calc(var(--min-box) / 4); }
+/* An open editor is pinned to the visible viewport, so its toolbar can't be scrolled or
+   zoomed away; only the editor area below the toolbar scrolls. */
+html.editor-locked, html.editor-locked body { overflow: hidden; overscroll-behavior: none; }
+.editing-view {
+  position: fixed; top: var(--visible-top, 0px); left: var(--visible-left, 0px);
+  width: var(--visible-width, 100%); height: var(--visible-height, 100dvh);
+  min-height: 0; overflow: hidden; overscroll-behavior: none; touch-action: pan-x pan-y;
+  padding-bottom: calc(var(--min-box) / 4);
+}
 .document-editor, .standalone-drawing-editor {
   display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden;
 }
@@ -128,7 +136,7 @@ a { color: inherit; text-underline-offset: .15em; }
 .cancel-relocate kbd { font: inherit; color: var(--tertiary); }
 
 :root { --keyboard-height: min(38dvh, 320px); }
-.virtual-keyboard-open .editing-view { height: calc(100dvh - var(--keyboard-height)); }
+.virtual-keyboard-open .editing-view { height: calc(var(--visible-height, 100dvh) - var(--keyboard-height)); }
 .virtual-keyboard-open main:not(.editing-view) { padding-bottom: 80px; }
 .virtual-keyboard-open dialog { max-height: calc(100dvh - var(--keyboard-height) - 24px); margin-top: 12px; }
 .line-index { position: relative; --line-left: #888; --line-right: #888; }

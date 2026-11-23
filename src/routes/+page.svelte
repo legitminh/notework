@@ -33,6 +33,7 @@
   import TextEditor from '../lib/components/TextEditor.svelte';
   import StandaloneDrawing from '../lib/components/StandaloneDrawing.svelte';
   import { isVisualName } from '../lib/visual-documents';
+  import { lockEditorViewport } from '../lib/editor-viewport';
   import { renameResource } from '../lib/rename-resource';
   import { stripFilenameEditingArtifacts } from '../lib/filenames';
   import { relocateResource } from '../lib/relocate-resource';
@@ -336,6 +337,13 @@
     const routeId = page.state.notework ?? ROOT;
     if (loading) return;
     untrack(() => { if (!editing && routeId !== currentId && routeId !== pendingHistory) void navigate(routeId, false); });
+  });
+
+  // Open editors keep their toolbar in view; only the editor area scrolls.
+  $effect(() => {
+    if (!editing || !current) return;
+    state_viewport.viewport?.scrollTo({ top: 0 });
+    return lockEditorViewport();
   });
 
   // Keep the product's native scrolling policy outside the Keyflow library.

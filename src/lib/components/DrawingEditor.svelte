@@ -537,7 +537,7 @@
       <svg bind:this={canvas} class:image-canvas={!!backgroundHref} class:eraser={tool === 'eraser'} class:moving class="drawing-canvas" role="img" aria-label={`Drawing canvas for ${name}`} tabindex="-1"
         viewBox={`0 0 ${DRAWING_WIDTH} ${canvasHeight}`} preserveAspectRatio="xMinYMin meet"
         width={DRAWING_WIDTH} height={canvasHeight}
-        style:touch-action={penOnly ? 'pan-x pan-y pinch-zoom' : 'none'} onpointerdown={begin}
+        style:touch-action={penOnly ? 'pan-x pan-y' : 'none'} onpointerdown={begin}
         onlostpointercapture={lostCapture}>
         {#if backgroundHref}<image href={backgroundHref} width={DRAWING_WIDTH} height={imageHeight} pointer-events="none" />{/if}
         {#if editableHref && erasing}

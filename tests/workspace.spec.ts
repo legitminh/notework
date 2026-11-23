@@ -852,6 +852,32 @@ test('long lines wrap by default without changing saved text, and settings can t
   await expect(editor).toHaveText(line);
 });
 
+test('editor toolbar stays in view: only the area below it scrolls and page zoom is blocked', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 600 });
+  const meta = () => page.locator('meta[name="viewport"]').getAttribute('content');
+  const original = await meta();
+  await createNote(page, 'pinned.txt');
+  const editor = page.getByRole('textbox', { name: 'Edit pinned.txt', exact: true });
+  await editor.fill(Array.from({ length: 200 }, (_, line) => `line ${line}`).join('\n'));
+  const bar = page.getByRole('group', { name: 'Editor toolbar' });
+  const top = async () => (await bar.boundingBox())!.y;
+  const pinned = await top();
+  expect(pinned).toBeGreaterThanOrEqual(0);
+  // Wheel over the toolbar or the text never moves the toolbar.
+  await bar.hover(); await page.mouse.wheel(0, 800);
+  await editor.hover(); await page.mouse.wheel(0, 800);
+  await expect.poll(() => page.locator('.editor-scroll').evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
+  expect(await top()).toBe(pinned);
+  // Outer scroll containers can't carry the editor away either.
+  await page.evaluate(() => { window.scrollTo(0, 400); document.querySelector('.viewport')!.scrollTop = 400; });
+  await expect.poll(top).toBe(pinned);
+  await expect(page.locator('main.editing-view')).toHaveCSS('touch-action', 'pan-x pan-y');
+  expect(await meta()).toContain('maximum-scale=1');
+  await toolbar(page, 'Exit').click();
+  expect(await meta()).toBe(original);
+  await expect(page.locator('html')).not.toHaveClass(/editor-locked/);
+});
+
 test('optional Vim mode persists, handles normal commands, and saves with :w', async ({ page }) => {
   await button(page, 'app settings').click(); await button(page, 'text editor').click();
   const setting = button(page, 'Vim mode: off');
@@ -2715,7 +2741,7 @@ test('drawing touch gestures undo, redo, pan and zoom; stylus-only mode persists
   await expect(button(page, 'draw with only physical stylus: enabled')).toBeVisible();
   await page.reload();
   await button(page, 'gestures.svg').click(); await openEditor(page);
-  await expect(canvas).toHaveCSS('touch-action', 'manipulation');
+  await expect(canvas).toHaveCSS('touch-action', 'pan-x pan-y');
   box = (await canvas.boundingBox())!;
   await page.mouse.move(box.x + 200, box.y + 50); await page.mouse.down();
   await page.mouse.move(box.x + 250, box.y + 100); await page.mouse.up();

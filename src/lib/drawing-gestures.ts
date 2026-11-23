@@ -64,8 +64,9 @@ export function drawingGestures(canvas: SVGSVGElement, layer: HTMLElement, viewp
       if (origin && Math.hypot(touch.clientX - origin.x, touch.clientY - origin.y) > 12) moved = true;
     }
     const current = pair(event.touches);
-    // In stylus-only mode fingers use the browser's native pan/pinch handling.
-    if (!current || usedPen || penDown || actions.stylusOnly()) return;
+    // In stylus-only mode one finger pans natively; two fingers zoom the drawing here
+    // rather than zooming the whole page (which would push the toolbar out of view).
+    if (!current || usedPen || penDown) return;
     if (event.cancelable) event.preventDefault();
     if (previous && moved && fingerTouches(event.touches).length === 2) {
       const nextZoom = Math.max(1, Math.min(4, zoom * current.distance / Math.max(1, previous.distance)));
