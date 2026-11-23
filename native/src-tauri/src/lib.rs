@@ -1,11 +1,13 @@
 //! Tauri shell for the Notework web build (macOS, Windows, Linux, iOS).
 //!
 //! The window loads the same static build the PWA ships, from Tauri's own app
-//! origin. There are no Tauri commands or capabilities, so the page gets no IPC
-//! and nothing exposes the host filesystem. Machine folders still go through the
-//! browser's own folder picker where the platform's web engine has one.
+//! origin. The only commands are the machine folder ones in `fs`: the page lists
+//! names to choose folders in Notework's own folder browser, and reads and writes
+//! contents only below folders the person chose.
+mod fs;
+
 use tauri::webview::NewWindowResponse;
-use tauri::{Url, WebviewUrl, WebviewWindowBuilder};
+use tauri::{Manager, Url, WebviewUrl, WebviewWindowBuilder};
 
 /// Pages served by the app itself: the bundled build, or the Vite dev server in debug builds.
 fn is_app(url: &Url) -> bool {
@@ -111,7 +113,23 @@ pub fn run() {
     #[cfg(target_os = "macos")]
     let builder = builder.menu(menu);
     builder
+        .invoke_handler(tauri::generate_handler![
+            fs::fs_places,
+            fs::fs_browse,
+            fs::fs_parent,
+            fs::fs_search,
+            fs::fs_grant,
+            fs::fs_granted,
+            fs::fs_list,
+            fs::fs_stat,
+            fs::fs_read,
+            fs::fs_write,
+            fs::fs_mkdir,
+            fs::fs_create,
+            fs::fs_remove,
+        ])
         .setup(|app| {
+            app.manage(fs::Grants::load(app.handle()));
             // Linux starts blank so the storage features are on before the app's first load.
             #[cfg(target_os = "linux")]
             let start = WebviewUrl::External("about:blank".parse().expect("valid url"));

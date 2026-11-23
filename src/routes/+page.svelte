@@ -38,6 +38,8 @@
   import { stripFilenameEditingArtifacts } from '../lib/filenames';
   import { relocateResource } from '../lib/relocate-resource';
   import LocalPicker from '../lib/components/LocalPicker.svelte';
+  import NativeFolderBrowser from '../lib/components/NativeFolderBrowser.svelte';
+  import { isNativeApp } from '../lib/native-fs';
   import { Workspace, ROOT, nodeId, parentId, storageLabel, type StateNode } from '../lib/workspace';
   import { GitHubDirectory, GitHubRepository, type GitHubConflict, type ResolveGitHubConflict } from '../lib/github/repository';
   import { GitHubApiError, type GitHubConnection } from '../lib/github/api';
@@ -1053,7 +1055,11 @@
   {#if globalSearch}<GlobalSearch {workspace} from={searchFrom} everywhere={searchEverywhere} scopeLabel={searchLabel} {graphRevision} relocating={!!relocateTarget}
     onChoose={chooseGlobalLocation} onSelect={selectGlobalResult} onClose={() => { globalSearch = false; }} />{/if}
   {#if picking}
-    <LocalPicker onSelect={add} onCancel={() => { picking = false; }} />
+    {#if isNativeApp()}
+      <NativeFolderBrowser onSelect={add} onCancel={() => { picking = false; }} />
+    {:else}
+      <LocalPicker onSelect={add} onCancel={() => { picking = false; }} />
+    {/if}
   {/if}
   {#if githubConflict}
     <GitHubConflictDialog conflict={githubConflict.conflict} onChoose={finishGitHubConflict} {stylusOnly} autosaveMs={autosaveSeconds * 1000} />

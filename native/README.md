@@ -42,7 +42,7 @@ Set `NOTEWORK_SKIP_WEB_BUILD=1` to bundle an existing `../build` without rebuild
 
 To install the macOS build locally, open the `.dmg` and drag Notework into Applications, or copy `src-tauri/target/universal-apple-darwin/release/bundle/macos/Notework.app` to `/Applications`.
 
-How it works: `src-tauri/src/lib.rs` opens one window on the bundled web build at Tauri's app origin (`tauri://localhost`, or `https://tauri.localhost` on Windows). The app defines no Tauri commands or capabilities, so the page has no IPC and nothing exposes the host filesystem. Links to other sites open in the system browser. On Windows and Linux there is no app menu, so every Ctrl shortcut reaches Notework (Vim's Ctrl+R and Ctrl+W included). On macOS the menu has only the app, Edit (cut, copy, paste, select all), View and Window menus; undo and redo stay with the editor.
+How it works: `src-tauri/src/lib.rs` opens one window on the bundled web build at Tauri's app origin (`tauri://localhost`, or `https://tauri.localhost` on Windows). Its only commands are the machine folder ones in `src-tauri/src/fs.rs`, used by `src/lib/native-fs.ts` and the folder browser in `src/lib/components/NativeFolderBrowser.svelte`. Links to other sites open in the system browser. On Windows and Linux there is no app menu, so every Ctrl shortcut reaches Notework (Vim's Ctrl+R and Ctrl+W included). On macOS the menu has only the app, Edit (cut, copy, paste, select all), View and Window menus; undo and redo stay with the editor.
 
 ## iOS
 
@@ -61,7 +61,7 @@ NOTEWORK_IOS_DEVICE=1 pnpm build:ios   # signed device build (.ipa)
 
 Tauri uses each platform's own web engine, so features depend on it:
 
-- **Machine folders** need the File System Access folder picker, which only Chromium has. They work on Windows. On macOS, Linux and iOS (WebKit) Notework offers browser documents (OPFS) and GitHub folders only.
+- **Machine folders** work on every platform. The app has no system folder dialog: **add existing folder/file** opens Notework's own folder browser, which lists the computer's places (home, desktop, documents, downloads, drives or volumes), navigates with `..` like Notework itself, works with keyboard navigation, and searches names below the current folder. Notework reads and saves files only below the folders and files you select there; the grants are kept in the app's data folder. On iOS the browser shows the app's own documents folder, which is also visible in the Files app.
 - **Browser documents (OPFS)** work everywhere. WebKitGTK ships the Storage API and OPFS turned off, so the Linux app turns them on before the page loads. On macOS and iOS, saving needs WebKit's writable file streams, so use macOS 26 / iOS 26 or newer.
 - **Storage is per app.** Each native app has its own browser storage, separate from the PWA in your browser. Browser documents made in the PWA do not appear in the app; export them or keep them in a GitHub folder to share them.
 - **Offline**: every file is bundled in the app, so it works offline without the service worker.
