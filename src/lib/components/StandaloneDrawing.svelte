@@ -79,7 +79,8 @@
   <DrawingEditor {initialPoint} bind:this={drawingEditor} {stylusOnly} {autosaveMs} name={node.name} initial={resource.strokes} initialDraft={hasDrawingDraft(resource)} {onExit} onExport={exportDrawing}
     onSave={async (strokes, requestWrite) => { resource = await saveDrawing(resource!, strokes, requestWrite); }}
     onCommit={node.storage === 'github' ? async () => {
-      if (resource?.handle instanceof GitHubFile) await sync.enqueue(node, resource.handle);
+      const handle = resource?.handle;
+      if (handle instanceof GitHubFile) void sync.defer(() => sync.enqueue(node, handle));
     } : undefined} />
   </div>
   {/if}

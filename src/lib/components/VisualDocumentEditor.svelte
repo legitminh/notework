@@ -65,7 +65,7 @@
     <VisualCanvas bind:this={canvas} bind:usingTools {editor} name={resource.handle.name} documentMode layered {missingBrushes}
       library={{ import: (file) => importBrushFile(context.workspace, file), save: (reference, brush) => saveBrush(context, reference, brush) }}
       initialDraft={github && context.pendingGitHub.size > 0} {stylusOnly} {autosaveMs} {surfaceTarget} {initialPoint}
-      onSave={persist} onCommit={github ? () => publishVisualDocument(context, (node, file) => sync.enqueue(node, file)) : undefined}
+      onSave={persist} onCommit={github ? async () => { void sync.defer(() => publishVisualDocument(context, (node, file) => sync.enqueue(node, file))); } : undefined}
       {onExit} {onDelete} {onRawText} onExport={() => { void exportImage().catch((cause) => error = cause); }} />
   {:else if error}<Control onclick={onExit}>exit</Control><StorageNotice {error} />
   {:else}<ImageLoading />{/if}

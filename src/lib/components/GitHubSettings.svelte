@@ -30,7 +30,7 @@
 
 <section class="panel" aria-labelledby="github-heading">
   <h2 id="github-heading">GitHub repositories</h2>
-  <p class="muted">connect a repository as a folder under home. use Cmd/Ctrl+S to sync a draft while you keep editing, or exit to finish syncing before you leave.</p>
+  <p class="muted">connect a repository as a folder under home. use Cmd/Ctrl+S to save a draft in this browser while you keep editing. exiting an editor syncs it to GitHub in the background without waiting.</p>
   <ol>
     <li><a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer">create a fine-grained personal access token on GitHub</a>.</li>
     <li>choose the repository owner and select only the repository you want to connect. under repository permissions, click <strong>Add permissions</strong>, select <strong>Contents</strong>, then choose <strong>Read and write</strong>.</li>

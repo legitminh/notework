@@ -638,7 +638,7 @@ test('drawing saves stay local until Exit publishes all strokes in one commit', 
   await expect.poll(() => repo.content('ink.svg')?.match(/<polyline/g)).toHaveLength(2);
 });
 
-test('exiting an inline drawing publishes the asset while the note stays in editing mode', async ({ page }) => {
+test('entering an inline drawing syncs the changed note and exiting publishes the asset in the background', async ({ page }) => {
   const original = '\\svgpage[ink.svg]\nText below';
   const repo = await github(page, { 'note.txt': original, 'ink.svg': serializeDrawing([]) });
   await connect(page);
@@ -654,15 +654,18 @@ test('exiting an inline drawing publishes the asset while the note stays in edit
   await page.mouse.move(box.x + 90, box.y + 75, { steps: 4 }); await page.mouse.up();
   await page.keyboard.press('Control+s');
   await expect(page.getByText(/drawing draft saved in this browser/)).toBeVisible();
-  await expect.poll(() => repo.messages).toEqual([]);
+  // Entering the drawing queued the changed note; the drawing itself stays local.
+  await expect.poll(() => repo.messages).toEqual(['edit: note.txt']);
+  await expect.poll(() => repo.content('note.txt')).toBe(original + ' with edits');
   await exit(page, 'drawing toolbar').click();
   await expect(note).toBeEditable();
-  await expect.poll(() => repo.messages).toEqual(['edit: ink.svg']);
+  await expect.poll(() => repo.messages).toEqual(['edit: note.txt', 'edit: ink.svg']);
   await expect.poll(() => repo.content('ink.svg')).toContain('<polyline');
-  await expect.poll(() => repo.content('note.txt')).toBe(original);
   await expect(syncProgress(page)).toHaveCount(0);
   // The note caches this drawing resource across separate edits. Its earlier
   // publication must become the base for another edit on this same device.
+  // Leaving the drawing puts the cursor on its page command; move off it to show the preview.
+  await note.press('ControlOrMeta+End');
   await page.getByRole('button', { name: 'edit drawing ink.svg' }).click();
   await expect(canvas).toBeVisible();
   const second = (await canvas.boundingBox())!;
@@ -675,7 +678,38 @@ test('exiting an inline drawing publishes the asset while the note stays in edit
   await exit(page).click();
   await expect(action(page, 'open')).toBeVisible();
   await expect.poll(() => repo.content('note.txt')).toBe(original + ' with edits');
-  await expect.poll(() => repo.messages).toEqual(['edit: ink.svg', 'edit: ink.svg', 'edit: note.txt']);
+  await expect.poll(() => repo.messages).toEqual(['edit: note.txt', 'edit: ink.svg', 'edit: ink.svg']);
+});
+
+test('a new drawing in an unsynced note exits immediately while both sync silently in the background', async ({ page }) => {
+  const repo = await github(page, { 'note.txt': 'Start' });
+  await connect(page);
+  await openNote(page);
+  const note = editor(page, 'note.txt');
+  await note.press('ControlOrMeta+End');
+  await page.keyboard.insertText('\n\\svgpage[fresh.svg]\n');
+  const held = repo.holdPublish();
+  await page.getByRole('button', { name: 'edit drawing fresh.svg' }).click();
+  const canvas = page.getByRole('img', { name: 'drawing canvas for fresh.svg' });
+  try {
+    await held.started;
+    await expect(canvas).toBeVisible();
+    // Sync stays quiet while editing, even while the note's publish is in flight.
+    await expect(syncProgress(page)).toHaveCount(0);
+    const box = (await canvas.boundingBox())!;
+    await page.mouse.move(box.x + 25, box.y + 30); await page.mouse.down();
+    await page.mouse.move(box.x + 90, box.y + 75, { steps: 4 }); await page.mouse.up();
+    await exit(page, 'drawing toolbar').click();
+    await expect(canvas).toHaveCount(0);
+    await expect(note).toBeEditable();
+    await expect(syncProgress(page)).toHaveCount(0);
+  } finally { held.resume(); }
+  await expect.poll(() => repo.content('fresh.svg')).toContain('<polyline');
+  await expect.poll(() => repo.content('note.txt')).toBe('Start\n\\svgpage[fresh.svg]\n');
+  await expect(page.getByRole('button', { name: 'review GitHub conflict', exact: true })).toHaveCount(0);
+  await exit(page).click();
+  await expect(action(page, 'open')).toBeVisible();
+  await expect(syncProgress(page)).toHaveCount(0);
 });
 
 test('failed writes retain the draft across reload and accept an upstream deletion without recreating it', async ({ page }) => {
@@ -913,10 +947,15 @@ test('choosing upstream during conflict review preserves a newer draft’s origi
   await editor(page, 'note.txt').fill('Newer local draft');
   await editor(page, 'note.txt').press('Control+s');
   await expect(page.getByText('draft saved in this browser · exit to sync to GitHub', { exact: true })).toBeVisible();
+  // Sync stays silent while editing; its review is offered from nav mode.
+  await expect(review).toHaveCount(0);
+  await page.reload();
+  await action(page, 'notebook/').click();
   await review.click();
   const dialog = page.getByRole('dialog', { name: 'GitHub conflict' });
   await dialog.getByRole('button', { name: 'keep GitHub version', exact: true }).click();
   await expect(page.locator('.sync-progress')).toHaveCount(0);
+  await openNote(page);
   await expect(editor(page, 'note.txt')).toHaveText('Newer local draft');
   await exit(page).click();
   await expect(review).toBeVisible();
@@ -927,6 +966,28 @@ test('choosing upstream during conflict review preserves a newer draft’s origi
   await expect.poll(() => repo.content('note.txt')).toBe('Newer local draft');
 });
 
+
+test('a conflict on one file does not hold back syncing other files', async ({ page }) => {
+  const repo = await github(page, { 'note.txt': 'Original', 'ink.svg': serializeDrawing([]) });
+  await connect(page); await openNote(page);
+  await editor(page, 'note.txt').fill('Local edit');
+  repo.upstream({ 'note.txt': 'Upstream edit' });
+  await exit(page).click();
+  await expect(page.getByRole('button', { name: 'review GitHub conflict', exact: true })).toBeVisible();
+  await action(page, 'home').click();
+  await action(page, 'notebook/').click();
+  await openNote(page, 'ink.svg');
+  const canvas = page.getByRole('img', { name: 'drawing canvas for ink.svg' });
+  await expect(canvas).toBeVisible();
+  const box = (await canvas.boundingBox())!;
+  await page.mouse.move(box.x + 25, box.y + 30); await page.mouse.down();
+  await page.mouse.move(box.x + 90, box.y + 75, { steps: 4 }); await page.mouse.up();
+  await exit(page, 'drawing toolbar').click();
+  await expect(action(page, 'open')).toBeVisible();
+  await expect.poll(() => repo.content('ink.svg')).toContain('<polyline');
+  expect(repo.content('note.txt')).toBe('Upstream edit');
+  await expect(page.getByRole('button', { name: 'review GitHub conflict', exact: true })).toBeVisible();
+});
 
 test('search orders GitHub files by actual edit dates instead of blob identities', async ({ page }) => {
   await github(page, { 'a-old.txt': 'Old', 'z-new.txt': 'New' });

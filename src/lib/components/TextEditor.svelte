@@ -293,9 +293,24 @@
     if (!view || saving || githubPublishing || inlineDrawing || openingDrawing || followingLink) return;
     openingDrawing = true; error = '';
     try {
-      const resource = newDrawings.has(page.name) ? undefined : await (previews.get(page.name) ?? loadDrawingReference(workspace, node, handle, page.name, await catalog()));
+      let resource = newDrawings.has(page.name) ? undefined : await (previews.get(page.name) ?? loadDrawingReference(workspace, node, handle, page.name, await catalog()));
       if (!resource && !canCreateSiblingDrawing(page.name)) throw new Error(`drawing resource “${page.name}” could not be found.`);
       if (!active || githubPublishing || !view.state.field(pageWidgets.field).pages.some((item) => item.from === page.from && item.name === page.name)) return;
+      if (handle instanceof GitHubFile) {
+        if (!resource && page.name.toLowerCase().endsWith('.svg')) {
+          // Give a new drawing its own local draft first, so the note's queued
+          // sync links to it instead of racing to create the same file.
+          resource = await saveSiblingDrawing(workspace, node, handle, page.name, [], false);
+          newDrawings.delete(page.name);
+          previews.set(page.name, Promise.resolve(resource));
+          catalogRequest = undefined;
+        }
+        // Entering the drawing is a transition: sync the changed note silently.
+        if (resource && (dirty || githubPending)) void queueGitHubSync(handle).catch((cause) => {
+          // The note is still open; its autosave retries once the drawing closes.
+          console.warn('notework: could not save the note draft before drawing.', cause);
+        });
+      }
       const host = document.createElement('div');
       host.className = 'inline-drawing-host';
       view.dispatch({ effects: [
@@ -340,12 +355,16 @@
   }
 
   async function commitInlineDrawing() {
-    const resource = inlineDrawing?.resource;
-    if (!resource || !(resource.handle instanceof GitHubFile)) return;
+    // Leaving the drawing must never wait on sync. Capture it before the editor
+    // closes, then queue its draft in the background.
+    const resource = inlineDrawing?.resource, name = inlineDrawing?.page.name;
+    if (!resource || !name || !(resource.handle instanceof GitHubFile)) return;
     const file = resource.handle;
-    const target = await resolveFileReference(workspace, node, inlineDrawing!.page.name, await catalog());
-    if (target) await sync.enqueue(target, file);
-    else throw new Error('save the note reference before syncing this drawing.');
+    void sync.defer(async () => {
+      const target = await resolveFileReference(workspace, node, name, await catalog()).catch(() => undefined);
+      // Only text jobs use the node; a drawing job publishes its draft by path.
+      await sync.enqueue(target ?? node, file);
+    });
   }
 
   async function deleteInlineDrawing() {
@@ -485,16 +504,25 @@
     return { snapshot, draft: repository.draft(path) };
   }
 
+  /**
+   * Save the note's draft locally, then queue its GitHub sync as a silent
+   * background job. Transitions wait only for the local draft.
+   */
+  async function queueGitHubSync(file: GitHubFile) {
+    const { snapshot } = await withGitHubDraft(() => writeGitHubDraft(file));
+    const createTokens = [...wikiTokens(snapshot, false)].filter((token) => !savedTokens.has(token) || requestedCreates.has(token));
+    const createPages = [...svgPageNames(snapshot)].filter((name) => !savedPages.has(name) || newDrawings.has(name));
+    // The queued job creates these files; opening one later must find it, not create it again.
+    for (const name of createPages) if (newDrawings.delete(name)) previews.delete(name);
+    void sync.defer(() => sync.enqueue(node, file, true, createTokens, createPages));
+  }
+
   async function publishGitHub(file: GitHubFile) {
     githubPublishing = true; queuePersisted = false; error = ''; clearAutosave();
     const editor = view!;
     editor.dispatch({ effects: textLock.reconfigure([EditorState.readOnly.of(true), EditorView.editable.of(false)]) });
     try {
-      const { snapshot } = await withGitHubDraft(() => writeGitHubDraft(file));
-      const tokens = wikiTokens(snapshot), pages = svgPageNames(snapshot);
-      await sync.enqueue(node, file, true,
-        [...wikiTokens(snapshot, false)].filter((token) => !savedTokens.has(token) || requestedCreates.has(token)),
-        [...pages].filter((name) => !savedPages.has(name) || newDrawings.has(name)));
+      await queueGitHubSync(file);
       queuePersisted = true;
       if (active) await finishExit();
     } catch (cause) { error = cause; }
@@ -511,11 +539,8 @@
     }
     if (saving) return false;
     if (handle instanceof GitHubFile) {
-      try {
-        const { snapshot } = await withGitHubDraft(() => writeGitHubDraft(handle as GitHubFile));
-        await sync.enqueue(node, handle, true, [...wikiTokens(snapshot, false)].filter((token) => !savedTokens.has(token)),
-          [...svgPageNames(snapshot)].filter((name) => !savedPages.has(name)));
-      } catch (cause) { error = cause; return false; }
+      try { await queueGitHubSync(handle); }
+      catch (cause) { error = cause; return false; }
     } else await save(false, false);
     return !dirty;
   }

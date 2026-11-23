@@ -16,6 +16,7 @@ export class BackgroundSync {
   conflict = $state(false);
   private jobs = new Map<string, GitHubSyncJob[]>();
   private saving = Promise.resolve();
+  private deferred = Promise.resolve();
   private stopped = false;
   private working?: Promise<void>;
   private retryAt = 0;
@@ -63,6 +64,19 @@ export class BackgroundSync {
     this.count();
   }
 
+  /**
+   * Queue sync work from an editor transition without blocking it. The local
+   * draft is the source of truth, so a failure here stays silent: the draft is
+   * kept and the next transition or Exit queues it again.
+   */
+  defer(task: () => Promise<unknown>) {
+    const next = this.deferred.then(task).then(() => {}, (error) => {
+      console.warn('notework: could not queue a GitHub sync job; the draft stays in this browser.', error);
+    });
+    this.deferred = next;
+    return next;
+  }
+
   retry(review = false) { this.retryAt = 0; void this.run(review); }
   stop() { this.stopped = true; }
   private run(review = false): Promise<void> {
@@ -74,11 +88,16 @@ export class BackgroundSync {
   private async drain(review: boolean) {
     this.running = true; this.problem = undefined; this.conflict = false;
     let workingId: string | undefined;
+    let conflicted = false;
     try {
       for (const [id] of this.jobs) {
         workingId = id;
+        // A conflict on one file must not hold back other files (for example a
+        // drawing and the note that embeds it). Later jobs for the same path
+        // still wait so edits publish in order.
+        const blocked = new Set<string>();
         let job: GitHubSyncJob | undefined;
-        while (!this.stopped && (job = this.jobs.get(id)?.[0])) {
+        while (!this.stopped && (job = this.jobs.get(id)?.find((item) => !blocked.has(item.path)))) {
           const repository = this.repository(id);
           if (!repository) break;
           // Web Locks also prevent two tabs from publishing the same queued job.
@@ -89,7 +108,13 @@ export class BackgroundSync {
             job = latest;
             return this.publish(repository, latest, review);
           };
-          const rebase = await repository.exclusive(publish);
+          let rebase: boolean | undefined;
+          try { rebase = await repository.exclusive(publish); }
+          catch (error) {
+            if (review || !(error instanceof ConflictPending)) throw error;
+            blocked.add(job.path); conflicted = true;
+            continue;
+          }
           await this.saving;
           if (this.repository(id) !== repository) break;
           const queue = await updateSyncJobs(id, (jobs) => jobs.filter((item) => item.id !== job!.id).map((item) =>
@@ -98,13 +123,14 @@ export class BackgroundSync {
           review = false;
         }
       }
+      if (conflicted) throw new ConflictPending();
     } catch (error) {
       if (workingId && !this.repository(workingId)) {
         setTimeout(() => this.retry(), 0);
         return;
       }
       this.conflict = error instanceof ConflictPending || error instanceof GitHubEditCancelled;
-      this.problem = this.conflict ? 'A GitHub file changed. Review the versions when convenient; your draft is safe.' : error;
+      this.problem = this.conflict ? 'a GitHub file changed. review the versions when convenient; your draft is safe.' : error;
       this.retryAt = this.conflict ? Infinity : Date.now() + 30_000;
     } finally { this.running = false; }
   }

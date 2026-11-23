@@ -1036,7 +1036,8 @@
     </div>
   </dialog>
   <AppKeyboard enabled={virtualKeyboard} choice={keyboardChoice} />
-  <GitHubSyncProgress />
+  <!-- Sync stays silent while editing; nav mode shows progress because the app may be closed from there. -->
+  {#if !(editing && current)}<GitHubSyncProgress />{/if}
   {#if heldModifier && !globalSearch && !contentSearch && !searchMenu}<aside class="modifier-hints" aria-label="Command and Control shortcuts">C · copy &nbsp; V · paste &nbsp; F · search text in folder children &nbsp; P · search file in folder children &nbsp; Shift+F · search text in all files &nbsp; Shift+P · search file in all files &nbsp; S · save</aside>{/if}
   {#if searchMenu}<SearchMenu onChoose={beginSearch} onClose={closeSearchMenu} />{/if}
   {#if contentSearch && contentIndex}<ContentSearchDialog {workspace} index={contentIndex} from={searchFrom}

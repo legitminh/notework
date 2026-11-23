@@ -31,7 +31,7 @@
   }
   async function commit() {
     const handle = (current ?? resource).handle;
-    if (handle instanceof GitHubFile) await sync.enqueue(node, handle);
+    if (handle instanceof GitHubFile) void sync.defer(() => sync.enqueue(node, handle));
   }
   async function exportPng(image: ImageDocument) {
     const blob = await canvasBlob(await composite(image));
