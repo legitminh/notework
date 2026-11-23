@@ -120,6 +120,10 @@ App settings shows estimated usage/quota and a **keep browser storage** action u
 
 OPFS supports streamed text/binary storage. The UI exposes decodable text, Notework SVG drawings, and PNG/JPEG/HEIC/ORA images.
 
+## Native apps
+
+Notework also builds as a native app for macOS, Windows, Linux (Electron) and iOS (Capacitor). The shells live in [`native/`](native/README.md) as a separate pnpm workspace that wraps the same `pnpm build` output, so the web app, PWA, and GitHub Pages deploy are unchanged. See [native/README.md](native/README.md) for build commands, platform differences, and signing.
+
 ## Keyflow dependency
 
 Components and CSS are imported from `@legitminh/keyflow`, installed directly from GitHub at a pinned commit. No library source is copied here. When working on the integration or keyboard UI, check for a newer upstream version and update if available after reviewing its changes. The update command also replaces the exact Keyflow tarball URL in `pnpm-workspace.yaml`'s `allowBuilds` entry so its build script can run on a clean install.

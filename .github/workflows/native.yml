@@ -1,0 +1,85 @@
+name: Native apps
+
+# Builds the desktop (Electron) and iOS (Capacitor) shells around the unchanged web build.
+# Runs only when the native shells change, on version tags, or by hand, so the web CI and
+# GitHub Pages deploy are unaffected.
+on:
+  pull_request:
+    paths: ['native/**', '.github/workflows/native.yml']
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest, target: mac }
+          - { os: windows-latest, target: win }
+          - { os: ubuntu-latest, target: linux }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: notework }
+      # Notework links the sibling engine checkout (`link:../visual.editor`).
+      - uses: actions/checkout@v4
+        with: { repository: legitminh/visual.editor, path: visual.editor }
+      - uses: pnpm/action-setup@v3
+        with: { version: 11 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 24 }
+      - name: Install web app
+        working-directory: notework
+        run: pnpm install
+      - name: Install native shells
+        working-directory: notework/native
+        run: pnpm install
+      - name: Build ${{ matrix.target }} app
+        working-directory: notework/native
+        run: pnpm build:${{ matrix.target }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: notework-${{ matrix.target }}
+          path: |
+            notework/native/dist/*.dmg
+            notework/native/dist/*.zip
+            notework/native/dist/*.exe
+            notework/native/dist/*.AppImage
+            notework/native/dist/*.deb
+          if-no-files-found: error
+          retention-days: 14
+
+  ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: notework }
+      - uses: actions/checkout@v4
+        with: { repository: legitminh/visual.editor, path: visual.editor }
+      - uses: pnpm/action-setup@v3
+        with: { version: 11 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 24 }
+      - name: Install web app
+        working-directory: notework
+        run: pnpm install
+      - name: Install native shells
+        working-directory: notework/native
+        run: pnpm install
+      - name: Build iOS app (simulator, unsigned)
+        working-directory: notework/native
+        run: pnpm build:ios
+      - name: Package simulator app
+        working-directory: notework/native/dist/ios/Build/Products/Debug-iphonesimulator
+        run: ditto -c -k --keepParent App.app "$GITHUB_WORKSPACE/notework-ios-simulator.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: notework-ios-simulator
+          path: notework-ios-simulator.zip
+          if-no-files-found: error
+          retention-days: 14

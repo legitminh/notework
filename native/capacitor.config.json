@@ -1,0 +1,10 @@
+{
+  "appId": "io.github.legitminh.notework",
+  "appName": "Notework",
+  "webDir": "../build",
+  "ios": {
+    "path": "ios",
+    "contentInset": "never",
+    "scheme": "App"
+  }
+}

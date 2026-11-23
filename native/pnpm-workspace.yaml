@@ -1,0 +1,7 @@
+# The native shells are their own pnpm workspace so the web app's install,
+# lockfile and build stay exactly as they are.
+packages:
+  - '.'
+allowBuilds:
+  electron: true
+  electron-winstaller: false
