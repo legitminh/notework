@@ -26,7 +26,8 @@ test('settings screens support shortcuts, categories, Escape and focus restorati
   // Settings replace the home screen rather than layering over it.
   await expect(page.getByRole('navigation', { name: 'state navigation' })).toHaveCount(0);
   await expect(button(page, 'create new file/folder')).toBeVisible();
-  await expect(button(page, 'add existing folder/file')).toBeVisible();
+  await expect(button(page, 'link resource')).toBeVisible();
+  await expect(button(page, 'add existing folder/file')).toHaveCount(0);
   await expect(choiceMenu(page, 'color theme')).toHaveCount(0);
 
   await button(page, 'appearance').click();

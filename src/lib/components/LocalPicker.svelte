@@ -106,7 +106,7 @@
 
 <dialog use:dialogShortcuts bind:this={dialog} class="local-picker" aria-labelledby="picker-title"
   oncancel={(event) => { event.preventDefault(); if (!busy) onCancel(); }}>
-  <h2 id="picker-title">add existing folder/file</h2>
+  <h2 id="picker-title">link from local filesystem</h2>
   <p class="muted">select items to observe. only their handles are remembered on this device; nothing is uploaded.</p>
   <section class="drop-zone" aria-label="drop files or folders" ondragover={dragOver} ondrop={drop}>
     <p>drop files or folders here</p>

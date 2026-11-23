@@ -154,3 +154,6 @@ export function reviveNative<T>(value: T): T {
   if (plain.kind !== 'file' && plain.kind !== 'directory') return value;
   return nativeHandle({ path: plain.path, kind: plain.kind }) as unknown as T;
 }
+
+/** One GitHub device-flow login request, sent by the app because GitHub's login pages refuse browser requests. Returns GitHub's JSON. */
+export const githubLogin = (step: 'code' | 'token', params: Record<string, string>) => call<string>('github_login', { step, params });

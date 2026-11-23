@@ -166,7 +166,7 @@
   let panelElement = $state<HTMLDivElement>();
   type SettingsSection = 'sources' | 'appearance' | 'keyboard' | 'text-editor' | 'image-editor' | 'saving' | 'export';
   const settingsSections: { id: SettingsSection; label: string; description: string }[] = [
-    { id: 'sources', label: 'sources and storage', description: 'choose which files and folders are directly reachable from home, and manage connected sources.' },
+    { id: 'sources', label: 'link resource', description: 'link a folder or file from this computer or a GitHub repository, choose what home shows, and manage linked resources.' },
     { id: 'appearance', label: 'appearance', description: 'color theme and type size.' },
     { id: 'keyboard', label: 'keyboard', description: 'key labels, shortcut keys, and the virtual keyboard.' },
     { id: 'text-editor', label: 'text editor', description: 'line display, Vim mode, wrapping, and pretty display.' },
@@ -787,27 +787,42 @@
     await persist();
   }
 
-  async function connectGitHub(owner: string, repo: string, branch: string, token: string) {
-    if (busy) return false;
-    busy = true; githubError = '';
+  async function linkRepository(owner: string, repo: string, branch: string, token: string) {
     const id = crypto.randomUUID();
     try {
       const repository = await GitHubRepository.connect(id, owner, repo, branch, token);
       if (githubSources.some(({ github }) => github && github.owner.toLowerCase() === owner.toLowerCase() &&
         github.repo.toLowerCase() === repo.toLowerCase() && github.branch === repository.connection.branch)) {
-        throw new Error('this repository branch is already connected. use update token to change its credentials.');
+        throw new Error(`${owner}/${repo} is already linked. use update token to change its credentials.`);
       }
       const node = workspace.connectGitHub(repository);
       try { await saveWorkspace(workspace.data); }
       catch (error) { workspace.forget(node); throw error; }
-      await refresh();
+    } catch (error) {
+      await clearRepository(id).catch(() => {});
+      throw error;
+    }
+  }
+
+  async function connectGitHub(owner: string, repo: string, branch: string, token: string) {
+    return linkGitHub([{ owner, repo, branch }], token);
+  }
+
+  /** Link each chosen repository on its default branch; stop at the first failure and keep the ones already linked. */
+  async function linkGitHub(repositories: { owner: string; repo: string; branch: string }[], token: string) {
+    if (busy || !repositories.length) return false;
+    busy = true; githubError = '';
+    try {
+      for (const { owner, repo, branch } of repositories) await linkRepository(owner, repo, branch, token);
       panel = null;
       return true;
     } catch (error) {
-      await clearRepository(id).catch(() => {});
       githubError = error;
       return false;
-    } finally { busy = false; }
+    } finally {
+      busy = false;
+      await refresh();
+    }
   }
 
   function clearGitHubError(id: string) {
@@ -1079,7 +1094,10 @@
       <h1 id="settings-heading">{section.label}</h1>
       <p class="muted">{section.description}</p>
       {#if settingsSection === 'sources'}
-        <Action label="GitHub repositories" onSelect={() => { void showGitHubSettings(); }} disabled={loading || busy} />
+        {#if isNativeApp() || supported}
+          <Action label="local filesystem" onSelect={() => { panel = null; picking = true; }} disabled={!supported || loading || busy} />
+        {/if}
+        <Action label="GitHub" onSelect={() => { void showGitHubSettings(); }} disabled={loading || busy} />
         {#if isNativeApp()}
           <p class="muted">native storage · new items at home are saved in Notework’s own folder on this device.</p>
         {:else if capacity}
@@ -1190,7 +1208,6 @@
     <section class="panel" aria-labelledby="settings-heading">
       <h1 id="settings-heading">app settings</h1>
       <Action label="create new file/folder" onSelect={startCreating} disabled={loading || busy || !canCreateHere} />
-      <Action label="add existing folder/file" onSelect={() => { panel = null; picking = true; }} disabled={!supported || busy} />
       <h2>settings</h2>
       {#each settingsSections as section (section.id)}
         <Action label={section.label} onSelect={() => { void showSettings(section.id); }} />
@@ -1199,7 +1216,7 @@
   {/if}
 {/snippet}
 {#snippet githubContents()}
-  <Action label={current ? `back to configure ${resourceType}` : 'back to sources and storage'} keys={current || relocateTarget ? undefined : 'esc'} onSelect={() => { if (current) void togglePanel('configure'); else void showSettings('sources'); }} disabled={busy || loading} />
+  <Action label={current ? `back to configure ${resourceType}` : 'back to link resource'} keys={current || relocateTarget ? undefined : 'esc'} onSelect={() => { if (current) void togglePanel('configure'); else void showSettings('sources'); }} disabled={busy || loading} />
   <GitHubSettings sources={githubSources} {busy} error={githubError}
-    onConnect={connectGitHub} onUpdate={reconnectGitHub} onDisconnect={disconnectGitHub} />
+    onConnect={connectGitHub} onLink={linkGitHub} onUpdate={reconnectGitHub} onDisconnect={disconnectGitHub} />
 {/snippet}

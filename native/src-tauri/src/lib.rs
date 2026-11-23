@@ -1,11 +1,12 @@
 //! Tauri shell for the Notework web build (macOS, Windows, Linux, iOS).
 //!
 //! The window loads the same static build the PWA ships, from Tauri's own app
-//! origin. The only commands are the machine folder ones in `fs`: the page lists
+//! origin. Besides the GitHub login requests in `github`, the commands are the machine folder ones in `fs`: the page lists
 //! names to choose folders in Notework's own folder browser, and reads and writes
 //! contents only below folders the person chose and in native storage, the app's
 //! own documents folder.
 mod fs;
+mod github;
 
 use tauri::webview::NewWindowResponse;
 use tauri::{Manager, Url, WebviewUrl, WebviewWindowBuilder};
@@ -129,6 +130,7 @@ pub fn run() {
             fs::fs_mkdir,
             fs::fs_create,
             fs::fs_remove,
+            github::github_login,
         ])
         .setup(|app| {
             app.manage(fs::Grants::load(app.handle()));
