@@ -139,3 +139,7 @@ export async function updateSyncJobs(id: string, update: (jobs: GitHubSyncJob[])
     tx.onabort = () => reject(tx.error ?? new Error('could not persist the GitHub sync queue.'));
   });
 }
+
+/** The GitHub App login, shared by every repository linked through it. */
+export const readAccount = () => get<{ token: string; login: string }>('account');
+export const storeAccount = (account?: { token: string; login: string }) => put('account', account);

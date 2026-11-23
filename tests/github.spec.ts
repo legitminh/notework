@@ -167,11 +167,12 @@ async function pressShortcut(page: Page, button: Locator) {
 
 async function connect(page: Page, keyboard = false) {
   await page.goto('/');
-  await action(page, 'app settings').click(); await action(page, 'sources and storage').click();
-  await action(page, 'GitHub repositories').click();
+  await action(page, 'app settings').click(); await action(page, 'link resource').click();
+  await action(page, 'GitHub').click();
+  await page.getByRole('button', { name: 'use a personal access token instead', exact: true }).click();
   await page.getByLabel('repository', { exact: true }).fill('https://github.com/example/notebook');
   const token = page.getByLabel('personal access token', { exact: true });
-  const connect = page.getByRole('button', { name: 'connect repository', exact: true });
+  const connect = page.getByRole('button', { name: 'link repository', exact: true });
   await token.fill('test-token');
   if (keyboard) {
     await token.press('Tab');
@@ -192,9 +193,10 @@ test('setup instructions fit a narrow screen and GitHub form actions have keyboa
   const repo = await github(page, { 'note.txt': 'Original' });
   await connect(page, true);
   await action(page, 'home').click();
-  await action(page, 'app settings').click(); await action(page, 'sources and storage').click();
-  await action(page, 'GitHub repositories').click();
-  const list = page.getByRole('region', { name: 'GitHub repositories' }).getByRole('list');
+  await action(page, 'app settings').click(); await action(page, 'link resource').click();
+  await action(page, 'GitHub').click();
+  await page.getByRole('button', { name: 'use a personal access token instead', exact: true }).click();
+  const list = page.getByRole('region', { name: 'GitHub', exact: true }).getByRole('list');
   await expect(list).toContainText('Add permissions, select Contents');
   expect(await list.evaluate((list) => {
     const bounds = list.getBoundingClientRect();
@@ -1054,7 +1056,7 @@ test('removing a GitHub root forgets credentials, caches and failed sync jobs ac
   repo.refuse(true);
   await exit(page).click();
   await expect(page.locator('.sync-progress')).toContainText('GitHub refused');
-  await action(page, 'home').click(); await action(page, 'app settings').click(); await action(page, 'sources and storage').click();
+  await action(page, 'home').click(); await action(page, 'app settings').click(); await action(page, 'link resource').click();
   await page.getByRole('button', { name: 'remove notebook from root', exact: true }).click();
   await expect(page.getByRole('button', { name: 'remove notebook from root', exact: true })).toHaveCount(0);
   await expect(page.locator('.sync-progress')).toHaveCount(0);
@@ -1098,7 +1100,7 @@ test('root removal aborts an in-flight sync read and does not recreate its queue
   await page.getByRole('button', { name: 'retry GitHub sync', exact: true }).click();
   await started;
   try {
-    await action(page, 'home').click(); await action(page, 'app settings').click(); await action(page, 'sources and storage').click();
+    await action(page, 'home').click(); await action(page, 'app settings').click(); await action(page, 'link resource').click();
     await page.getByRole('button', { name: 'remove notebook from root', exact: true }).click();
     await expect(page.getByRole('button', { name: 'remove notebook from root', exact: true })).toHaveCount(0);
     await expect(page.locator('.sync-progress')).toHaveCount(0);

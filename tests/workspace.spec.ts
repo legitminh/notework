@@ -111,8 +111,8 @@ async function connectDocuments(page: Page) {
 }
 
 async function chooseItems(page: Page, names: string[]) {
-  await button(page, 'add existing folder/file').click();
-  const picker = page.getByRole('dialog', { name: 'add existing folder/file' });
+  await button(page, 'link resource').click(); await button(page, 'local filesystem').click();
+  const picker = page.getByRole('dialog', { name: 'link from local filesystem' });
   await picker.getByRole('button', { name: 'browse location…', exact: true }).click();
   for (const name of names) {
     const folder = name.endsWith('/');
@@ -390,7 +390,7 @@ test('removing a folder from root excludes cached files, old links, and link sug
   await openAllFileSearch(page); await dialog.getByRole('searchbox').fill('notes');
   await expect(dialog.locator('.search-status')).toContainText('1 result found');
   await dialog.getByRole('button', { name: 'exit search', exact: true }).click();
-  await button(page, 'app settings').click(); await button(page, 'sources and storage').click();
+  await button(page, 'app settings').click(); await button(page, 'link resource').click();
   await page.getByRole('button', { name: 'remove Documents from root', exact: true }).click();
   await button(page, 'close app settings').click();
   for (const entry of ['button', 'shortcut'] as const) {
@@ -416,7 +416,7 @@ test('removing a folder from root excludes cached files, old links, and link sug
   await openAllFileSearch(page); await dialog.getByRole('searchbox').fill('notes');
   await expect(dialog.locator('.search-status')).toContainText('0 results found');
   await dialog.getByRole('button', { name: 'exit search', exact: true }).click();
-  await button(page, 'app settings').click(); await button(page, 'sources and storage').click();
+  await button(page, 'app settings').click(); await button(page, 'link resource').click();
   await expect(page.getByRole('button', { name: 'add Documents to root', exact: true })).toHaveCount(0);
   await button(page, 'back to app settings').click();
   await chooseItems(page, ['Documents/']);
@@ -532,7 +532,7 @@ test('restored grants request permission only on explicit reconnect and handle d
   await connectDocuments(page);
   await page.evaluate(() => { localStorage.setItem('test-permission', 'prompt'); localStorage.setItem('test-deny', 'yes'); });
   await page.reload();
-  await button(page, 'app settings').click(); await button(page, 'sources and storage').click();
+  await button(page, 'app settings').click(); await button(page, 'link resource').click();
   await expect(page.getByText('Documents · needs permission')).toBeVisible();
   await button(page, 'reconnect Documents').click();
   await expect(page.getByRole('alert')).toContainText('was not granted');
@@ -544,7 +544,7 @@ test('restored grants request permission only on explicit reconnect and handle d
 
 test('picker cancellation and denial keep home empty', async ({ page }) => {
   await button(page, 'app settings').click();
-  await button(page, 'add existing folder/file').click();
+  await button(page, 'link resource').click(); await button(page, 'local filesystem').click();
   const picker = page.getByRole('dialog');
   await page.evaluate(() => localStorage.setItem('test-cancel', 'yes'));
   await picker.getByRole('button', { name: 'browse location…', exact: true }).click();
@@ -554,7 +554,7 @@ test('picker cancellation and denial keep home empty', async ({ page }) => {
   await picker.getByRole('button', { name: 'browse location…', exact: true }).click();
   await expect(picker.getByRole('alert')).toContainText('access is not available');
   await picker.getByRole('button', { name: 'cancel', exact: true }).click();
-  await button(page, 'app settings').click(); await button(page, 'sources and storage').click();
+  await button(page, 'app settings').click(); await button(page, 'link resource').click();
   await expect(page.getByText('home has no items. Connect a source here or create an item from home.')).toBeVisible();
 });
 
@@ -572,7 +572,10 @@ test('one chooser observes mixed files/folders without storing or uploading cont
     };
   });
   await button(page, 'app settings').click();
-  await expect(button(page, 'add existing folder/file')).toHaveCount(1);
+  await expect(button(page, 'add existing folder/file')).toHaveCount(0);
+  await button(page, 'link resource').click();
+  await expect(button(page, 'local filesystem')).toHaveCount(1);
+  await button(page, 'back to app settings').click();
   await expect(button(page, 'add existing folder to root')).toHaveCount(0);
   await expect(button(page, 'add existing file to root')).toHaveCount(0);
   await chooseItems(page, ['Documents/', 'outside.txt']);
@@ -605,7 +608,7 @@ test('one chooser observes mixed files/folders without storing or uploading cont
 
 test('dropped handles identify mixed selections automatically and cancel remembers nothing', async ({ page }) => {
   await button(page, 'app settings').click();
-  await button(page, 'add existing folder/file').click();
+  await button(page, 'link resource').click(); await button(page, 'local filesystem').click();
   const picker = page.getByRole('dialog');
   await picker.getByRole('button', { name: 'browse location…', exact: true }).click();
   await expect(picker.getByRole('checkbox', { name: 'select Documents folder', exact: true })).toBeVisible();
@@ -646,7 +649,7 @@ test('dropped handles identify mixed selections automatically and cancel remembe
 
 test('chooser navigates folders and remembers the selected file rather than its browsing location', async ({ page }) => {
   await button(page, 'app settings').click();
-  await button(page, 'add existing folder/file').click();
+  await button(page, 'link resource').click(); await button(page, 'local filesystem').click();
   const picker = page.getByRole('dialog');
   await picker.getByRole('button', { name: 'browse location…', exact: true }).click();
   await picker.getByRole('button', { name: 'Documents/', exact: true }).click();
@@ -666,7 +669,7 @@ test('chooser navigates folders and remembers the selected file rather than its 
 
 test('removing root transitions keeps local files intact', async ({ page }) => {
   await connectDocuments(page);
-  await button(page, 'app settings').click(); await button(page, 'sources and storage').click();
+  await button(page, 'app settings').click(); await button(page, 'link resource').click();
   await page.getByRole('button', { name: 'remove Documents from root', exact: true }).click();
   await expect(button(page, 'Documents/')).toHaveCount(0);
   const exists = await page.evaluate(async () => {
@@ -704,7 +707,9 @@ test('unsupported browser explains filesystem requirements', async ({ page }) =>
   await page.reload();
   await expect(page.getByText('local filesystem access needs Chrome or Edge', { exact: false })).toBeVisible();
   await button(page, 'app settings').click();
-  await expect(button(page, 'add existing folder/file')).toBeDisabled();
+  await button(page, 'link resource').click();
+  await expect(button(page, 'local filesystem')).toHaveCount(0);
+  await expect(button(page, 'GitHub')).toBeEnabled();
 });
 
 test('file content decides text visibility, including PDF source and hidden binary images', async ({ page }) => {
@@ -717,7 +722,7 @@ test('file content decides text visibility, including PDF source and hidden bina
   await toolbar(page, 'exit').click();
   await button(page, '..').click(); await button(page, '..').click();
   await button(page, 'app settings').click();
-  await button(page, 'add existing folder/file').click();
+  await button(page, 'link resource').click(); await button(page, 'local filesystem').click();
   const picker = page.getByRole('dialog');
   await picker.getByRole('button', { name: 'browse location…', exact: true }).click();
   await expect(picker.getByRole('checkbox', { name: 'select outside.txt file', exact: true })).toBeVisible();
@@ -1179,7 +1184,7 @@ test('write denial keeps edits open for export and a later saving exit', async (
 });
 
 test('non-text bytes and .git are hidden while text with any extension remains editable', async ({ page }) => {
-  await button(page, 'app settings').click(); await button(page, 'add existing folder/file').click();
+  await button(page, 'app settings').click(); await button(page, 'link resource').click(); await button(page, 'local filesystem').click();
   const picker = page.getByRole('dialog');
   await picker.getByRole('button', { name: 'browse location…', exact: true }).click();
   await expect(picker.getByRole('checkbox', { name: 'select text.bin file', exact: true })).toBeVisible();
@@ -3182,8 +3187,8 @@ test('Keyflow picker shortcuts are scoped, disabled actions stay unregistered, a
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await button(page, 'app settings').click();
-  await button(page, 'add existing folder/file').click();
-  const picker = page.getByRole('dialog', { name: 'add existing folder/file' });
+  await button(page, 'link resource').click(); await button(page, 'local filesystem').click();
+  const picker = page.getByRole('dialog', { name: 'link from local filesystem' });
   const observe = picker.getByRole('button', { name: 'observe selection', exact: true });
   await expect(observe).toBeDisabled();
   await expect(observe.locator('.pending_route')).toHaveCount(0);
@@ -3438,7 +3443,7 @@ test('a warm content index excludes removed roots until they are explicitly reco
     await dialog.getByRole('button', { name: 'exit search', exact: true }).click();
   }
   await find('1 matching file');
-  await button(page, 'app settings').click(); await button(page, 'sources and storage').click();
+  await button(page, 'app settings').click(); await button(page, 'link resource').click();
   await page.getByRole('button', { name: 'remove Documents from root', exact: true }).click();
   await button(page, 'close app settings').click();
   await find('0 matching files');

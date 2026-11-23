@@ -80,8 +80,8 @@ test.afterEach(async ({ page }) => {
 test('native app chooses machine folders in Notework’s own folder browser, with search', async ({ page }) => {
   await page.goto('/');
   await button(page, 'app settings').click();
-  await button(page, 'add existing folder/file').click();
-  const browser = page.getByRole('dialog', { name: 'add existing folder/file' });
+  await button(page, 'link resource').click(); await button(page, 'local filesystem').click();
+  const browser = page.getByRole('dialog', { name: 'link from local filesystem' });
   await expect(browser.getByRole('button', { name: 'browse location…' })).toHaveCount(0);
 
   // Keyboard navigation works in the browser like everywhere else in Notework.
@@ -129,8 +129,8 @@ test('native folders create and save machine files through the app', async ({ pa
   await page.goto('/');
   await page.evaluate(() => localStorage.setItem('native-grants', JSON.stringify(['/home/test/notes'])));
   await button(page, 'app settings').click();
-  await button(page, 'add existing folder/file').click();
-  const browser = page.getByRole('dialog', { name: 'add existing folder/file' });
+  await button(page, 'link resource').click(); await button(page, 'local filesystem').click();
+  const browser = page.getByRole('dialog', { name: 'link from local filesystem' });
   await button(browser, 'home/').click();
   await button(browser, 'notes/').click();
   await browser.locator('.file-navigation-row', { hasText: 'this folder: notes/' }).locator('[data-action="select"] button').click();

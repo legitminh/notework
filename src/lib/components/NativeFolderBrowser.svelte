@@ -125,9 +125,9 @@
 </script>
 
 <InputFrame active name="folder browser">
-  <dialog use:dialogShortcuts bind:this={dialog} class="local-picker folder-browser" aria-label="add existing folder/file"
+  <dialog use:dialogShortcuts bind:this={dialog} class="local-picker folder-browser" aria-label="link from local filesystem"
     oncancel={(event) => { event.preventDefault(); if (!busy) onCancel(); }}>
-    <h2 id="folder-browser-title" tabindex="-1" bind:this={heading}>{location ? `${location.name}/` : 'add existing folder/file'}</h2>
+    <h2 id="folder-browser-title" tabindex="-1" bind:this={heading}>{location ? `${location.name}/` : 'link from local filesystem'}</h2>
     <p class="path">{location ? `${location.path} · computer · folder` : 'computer · choose a place to browse'}</p>
     <p class="muted">select folders or files to observe. Notework reads and saves only what you select; nothing is uploaded.</p>
 
