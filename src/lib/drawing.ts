@@ -1,8 +1,18 @@
 export type Point = readonly [number, number];
-export type Stroke = readonly Point[] & { width?: number; erase?: boolean };
+/** Optional paint for a stroke. Without a color a stroke is "ink", which follows the theme. */
+export type StrokePaint = { color?: string; opacity?: number };
+export type Stroke = readonly Point[] & { width?: number; erase?: boolean } & StrokePaint;
 export const strokeWidth = (stroke: Stroke) => stroke.width ?? STROKE_WIDTH;
-export const sizedStroke = (points: readonly Point[], width: number, erase = false): Stroke =>
-  Object.assign([...points], { width, erase });
+export const isHexColor = (value: unknown): value is string => typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value);
+/** The paint a stroke carries, normalized: ink and full opacity are omitted. */
+export function strokePaint(stroke: StrokePaint): StrokePaint {
+  const paint: StrokePaint = {};
+  if (isHexColor(stroke.color)) paint.color = stroke.color.toLowerCase();
+  if (typeof stroke.opacity === 'number' && stroke.opacity > 0 && stroke.opacity < 1) paint.opacity = Math.round(stroke.opacity * 100) / 100;
+  return paint;
+}
+export const sizedStroke = (points: readonly Point[], width: number, erase = false, paint: StrokePaint = {}): Stroke =>
+  Object.assign([...points], { width, erase }, erase ? {} : strokePaint(paint));
 export type Drawing = readonly Stroke[];
 
 export const DRAWING_WIDTH = 1024;
@@ -10,6 +20,8 @@ export const DRAWING_WIDTH = 1024;
 // Store both axes in page units so neither viewport width nor font size changes them.
 export const DRAWING_PAGE_HEIGHT = DRAWING_WIDTH * 16 / 32;
 export const STROKE_WIDTH = 3;
+/** The color "ink" strokes are saved with; editors show ink in the theme's text color. */
+export const INK_COLOR = '#202733';
 const header = '<svg xmlns="http://www.w3.org/2000/svg" data-notework-drawing="1"';
 export const svgPagePattern = /^[ \t]*\\(?:svg|png|jpeg|heic|ora|visual)page\[([^\[\]\r\n]+)\][ \t]*$/i;
 
@@ -26,8 +38,12 @@ export function strokePoints(stroke: Stroke) {
 
 export function serializeDrawing(strokes: Drawing) {
   const height = Math.max(1, drawingBottom(strokes));
-  const lines = strokes.map((stroke) => `  <polyline points="${strokePoints(stroke)}" stroke-width="${strokeWidth(stroke)}"/>`).join('\n');
-  return `${header} width="${DRAWING_WIDTH}" height="${height}" viewBox="0 0 ${DRAWING_WIDTH} ${height}" preserveAspectRatio="xMinYMin meet">\n<g fill="none" stroke="#202733" stroke-width="${STROKE_WIDTH}" stroke-linecap="round" stroke-linejoin="round">\n${lines}\n</g>\n</svg>\n`;
+  const lines = strokes.map((stroke) => {
+    const { color, opacity } = strokePaint(stroke);
+    const paint = `${color ? ` stroke="${color}"` : ''}${opacity !== undefined ? ` stroke-opacity="${opacity}"` : ''}`;
+    return `  <polyline points="${strokePoints(stroke)}" stroke-width="${strokeWidth(stroke)}"${paint}/>`;
+  }).join('\n');
+  return `${header} width="${DRAWING_WIDTH}" height="${height}" viewBox="0 0 ${DRAWING_WIDTH} ${height}" preserveAspectRatio="xMinYMin meet">\n<g fill="none" stroke="${INK_COLOR}" stroke-width="${STROKE_WIDTH}" stroke-linecap="round" stroke-linejoin="round">\n${lines}\n</g>\n</svg>\n`;
 }
 
 export async function isDrawingFile(file: File) {
@@ -53,7 +69,10 @@ export async function readDrawing(file: File): Promise<Drawing> {
     });
     const width = Number(line.getAttribute('stroke-width') ?? svg.firstElementChild!.getAttribute('stroke-width') ?? STROKE_WIDTH);
     if (!Number.isFinite(width) || width <= 0 || width > DRAWING_WIDTH) throw new Error('This drawing contains an invalid pen size.');
-    return sizedStroke(points, width);
+    const color = line.getAttribute('stroke'), opacity = line.getAttribute('stroke-opacity');
+    if (color !== null && !isHexColor(color)) throw new Error('This drawing contains an invalid stroke color.');
+    if (opacity !== null && !(Number(opacity) > 0 && Number(opacity) <= 1)) throw new Error('This drawing contains an invalid stroke opacity.');
+    return sizedStroke(points, width, false, { color: color ?? undefined, opacity: opacity === null ? undefined : Number(opacity) });
   });
 }
 

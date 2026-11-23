@@ -2585,7 +2585,7 @@ test('SVG page lasso traces touch input and moves, resizes, and clears only encl
   expect(await preview.locator('polyline').evaluateAll((lines) => lines.map((line) => line.getAttribute('points')))).toEqual(initial.slice(2));
 });
 
-test('lasso release closes open traces, adds their union, and reselecting Lasso resets the area', async ({ page, context }) => {
+test('lasso release closes open traces, adds their union, and pressing Lasso again turns it off', async ({ page, context }) => {
   await startCreate(page);
   await page.getByLabel('name', { exact: true }).fill('additive-lasso.svg');
   await button(page, 'create svg file').click();
@@ -2636,10 +2636,12 @@ test('lasso release closes open traces, adds their union, and reselecting Lasso 
   await expect(selected).toHaveCount(4);
 
   await lasso.click();
-  await expect(lasso).toHaveAttribute('aria-pressed', 'true');
+  await expect(lasso).toHaveAttribute('aria-pressed', 'false');
   await expect(area).toHaveCount(0);
   await expect(clear).toHaveCount(0);
   expect(await coordinates()).toEqual(initial);
+  await lasso.click();
+  await expect(lasso).toHaveAttribute('aria-pressed', 'true');
   await trace([310, 85], [[360, 85], [360, 150]], [310, 150]);
   await clear.click();
   expect(await coordinates()).toEqual(initial.slice(0, -1));

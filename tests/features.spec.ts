@@ -418,7 +418,8 @@ test('pen size uses a nested Keyflow slider, remains scoped, and survives SVG sa
   const slider = page.getByRole('slider', { name: 'Pen size', exact: true });
   await expect(slider).toBeVisible();
   const old = Number(await slider.getAttribute('aria-valuenow'));
-  await page.keyboard.down('ArrowUp'); await page.waitForTimeout(150); await page.keyboard.up('ArrowUp');
+  // The same persistent positional slider controls as visual documents.
+  await page.getByRole('button', { name: /Increase Pen size$/ }).click();
   await expect.poll(async () => Number(await slider.getAttribute('aria-valuenow'))).toBeGreaterThan(old);
   const size = Number(await slider.getAttribute('aria-valuenow'));
   await page.keyboard.press('Escape');
@@ -428,6 +429,79 @@ test('pen size uses a nested Keyflow slider, remains scoped, and survives SVG sa
   await drawTools(page).getByRole('button', { name: 'Exit', exact: true }).click();
   await action(page, 'open').click();
   await expect(page.locator('.drawing-canvas > polyline')).toHaveAttribute('stroke-width', String(size));
+});
+
+test('SVG drawings share the visual document color wheel, palette and recent colors, and keep stroke colors', async ({ page }) => {
+  await create(page, 'colors.svg', 'svg file'); await action(page, 'open').click();
+  const tools = drawTools(page);
+  const strokes = page.locator('.drawing-canvas > polyline');
+  // Ink is the default and follows the theme.
+  await stroke(page);
+  await expect(strokes.first()).toHaveAttribute('stroke', 'currentColor');
+  await tools.getByRole('button', { name: 'Brush', exact: true }).click();
+  await expect(page.getByRole('slider', { name: /^Color wheel/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Use ink color (follows theme)', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('button', { name: 'Use color #c92a2a', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Use color #c92a2a', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  // The hex field adds a new color that can join the palette.
+  await page.getByRole('button', { name: 'Hex color', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Hex color', exact: true }).press('ControlOrMeta+a');
+  await page.keyboard.type('#0ca678'); await page.keyboard.press('Enter');
+  await page.getByRole('button', { name: 'Add current color to palette', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Use color #0ca678', exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
+  const canvas = page.getByRole('img', { name: /^Drawing canvas for / });
+  const box = (await canvas.boundingBox())!;
+  await page.mouse.move(box.x + 40, box.y + 160); await page.mouse.down();
+  await page.mouse.move(box.x + 200, box.y + 180, { steps: 5 }); await page.mouse.up();
+  await expect(strokes.nth(1)).toHaveAttribute('stroke', '#0ca678');
+  await tools.getByRole('button', { name: 'Brush', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Use recent color #0ca678', exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await tools.getByRole('button', { name: 'Exit', exact: true }).click();
+  // Saved as standard SVG paint, so the preview and reopened editor keep it.
+  const saved = new TextDecoder().decode(new Uint8Array((await bytes(page, 'colors.svg'))!));
+  expect(saved).toMatch(/<polyline points="[^"]+" stroke-width="3"\/>/);
+  expect(saved).toMatch(/stroke="#0ca678"/);
+  await action(page, 'open').click();
+  await expect(strokes.nth(1)).toHaveAttribute('stroke', '#0ca678');
+  await expect(strokes.first()).toHaveAttribute('stroke', 'currentColor');
+  // The palette and pen color persist for every SVG drawing in this browser.
+  await page.reload(); await action(page, 'colors.svg').click(); await action(page, 'open').click();
+  await drawTools(page).getByRole('button', { name: 'Brush', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Use color #0ca678', exact: true })).toHaveAttribute('aria-pressed', 'true');
+});
+
+test('SVG lasso works like visual documents: Clear, Deselect, Delete key, and Lasso again turns it off', async ({ page }) => {
+  await create(page, 'select.svg', 'svg file'); await action(page, 'open').click();
+  const tools = drawTools(page);
+  const canvas = page.getByRole('img', { name: /^Drawing canvas for / });
+  const strokes = canvas.locator('polyline');
+  const box = (await canvas.boundingBox())!;
+  for (const dx of [60, 260]) {
+    await page.mouse.move(box.x + dx, box.y + 60); await page.mouse.down();
+    await page.mouse.move(box.x + dx + 40, box.y + 80, { steps: 3 }); await page.mouse.up();
+  }
+  await expect(strokes).toHaveCount(2);
+  const lasso = async (left: number) => {
+    await page.mouse.move(box.x + left, box.y + 30); await page.mouse.down();
+    for (const [dx, dy] of [[left + 100, 30], [left + 100, 120], [left, 120], [left, 30]]) await page.mouse.move(box.x + dx, box.y + dy);
+    await page.mouse.up();
+  };
+  await tools.getByRole('button', { name: 'Lasso', exact: true }).click();
+  await lasso(40);
+  await expect(tools.getByRole('button', { name: 'Clear selected strokes', exact: true })).toBeVisible();
+  await tools.getByRole('button', { name: 'Deselect', exact: true }).click();
+  await expect(canvas.locator('.lasso-frame')).toHaveCount(0);
+  await expect(tools.getByRole('button', { name: 'Deselect', exact: true })).toHaveCount(0);
+  await lasso(240);
+  await canvas.focus();
+  await page.keyboard.press('Delete');
+  await expect(strokes).toHaveCount(1);
+  await expect(canvas.locator('.lasso-dashes').first()).toHaveCSS('stroke', 'rgb(17, 17, 17)');
+  await tools.getByRole('button', { name: 'Lasso', exact: true }).click();
+  await expect(tools.getByRole('button', { name: 'Lasso', exact: true })).toHaveAttribute('aria-pressed', 'false');
+  await expect(tools.getByRole('button', { name: 'Brush', exact: true })).toHaveAttribute('aria-pressed', 'true');
 });
 
 test('raster eraser removes saved pixels locally, supports undo, and keeps surrounding pixels', async ({ page }) => {

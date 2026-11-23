@@ -31,7 +31,8 @@ class SvgPageWidget extends WidgetType {
     for (const stroke of this.drawing ?? []) {
       const path = document.createElementNS(svgNamespace, 'polyline');
       path.setAttribute('points', strokePoints(stroke));
-      path.setAttribute('stroke', 'currentColor');
+      path.setAttribute('stroke', stroke.color ?? 'currentColor');
+      if (stroke.opacity !== undefined) path.setAttribute('stroke-opacity', String(stroke.opacity));
       path.setAttribute('fill', 'none');
       path.setAttribute('stroke-width', String(strokeWidth(stroke)));
       path.setAttribute('stroke-linecap', 'round');

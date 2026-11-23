@@ -101,7 +101,7 @@ export function transformSelection(strokes: Drawing, selection: Selection, box: 
     strokes: strokes.map((stroke, i) => selection.indices.has(i) ? sizedStroke(stroke.map((point): Point => {
       const [x, y] = transform(point);
       return [roundCoordinate(x), roundCoordinate(y)];
-    }), strokeWidth(stroke), stroke.erase) : stroke),
+    }), strokeWidth(stroke), stroke.erase, stroke) : stroke),
     selection: { ...selection, box, area: selection.area.map((polygon) => polygon.map((ring) => ring.map(transform))) }
   };
 }

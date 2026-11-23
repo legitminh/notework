@@ -5,7 +5,7 @@
     rotateQuad, scaleQuad, translateQuad, moveCorner, moveEdge, edgeMidpoint, quadCenter,
     type VisualEditor, type Brush, type Rect, type Quad } from 'visual.editor';
   import Control from './Control.svelte';
-  import ColorWheel from './ColorWheel.svelte';
+  import ColorPalette from './ColorPalette.svelte';
   import ChoiceMenu from './ChoiceMenu.svelte';
   import StorageNotice from './StorageNotice.svelte';
   import { preserveContentFocus } from '../editor-focus';
@@ -336,8 +336,6 @@
       notice = `Imported ${imported.brush.name}.`;
     } catch (cause) { error = cause; } finally { brushBusy = false; }
   }
-  function addPaletteColor() { if (!editor.doc.config.palette.includes(color)) editor.setConfig({ palette: [...editor.doc.config.palette, color] }); }
-  function removePaletteColor(value: string) { editor.setConfig({ palette: editor.doc.config.palette.filter((item) => item !== value) }); }
   const shortName = (brush: Brush) => brush.name.replace(/^[a-z]\)\s*/, '');
   /** Per-brush settings, edited with Keyflow sliders (percentages / degrees for readability). */
   const brushSettings: { key: string; label: string; unit: string; min: number; max: number; speed: number; get: (b: Brush) => number; set: (v: number) => Partial<Brush> }[] = [
@@ -494,27 +492,15 @@
   {@const brush = kind === 'eraser' ? currentEraser : currentBrush}
   {@const reference = kind === 'eraser' ? eraserRef : brushRef}
   <!-- Horizontal component stream: every control flows left to right and folds like text. -->
-  <div class="stream">
+  <div class="tool-stream">
     {#if kind === 'brush'}
       <span class="pair"><span class="stream-label">Pen size</span><NumberBox bind:value={penSize} min={1} max={300} step={1} width="4ch" label="Pen size value" /></span>
       <HorizontalSlider bind:value={penSize} min={1} max={300} step={1} speed={40} label="Pen size" />
       <span class="pair"><span class="stream-label">Opacity</span><NumberBox bind:value={penOpacity} min={1} max={100} step={1} width="4ch" label="Brush opacity value" format={(value) => `${value}%`} /></span>
       <HorizontalSlider bind:value={penOpacity} min={1} max={100} step={1} speed={50} label="Brush opacity" />
       <span class="stream-break" aria-hidden="true"></span>
-      <ColorWheel value={color} size={132} onchange={(value) => editor.setState({ color: value })} />
-      <span class="stream-break" aria-hidden="true"></span>
-      <span class="stream-label">Palette</span>
-      {#each paletteColors as swatch (swatch)}
-        <span class="swatch-control" class:chosen={color === swatch} style:--swatch={swatch}><Control onclick={() => editor.setState({ color: swatch })} aria-label={`Use color ${swatch}`} aria-pressed={color === swatch}><span class="swatch" aria-hidden="true"></span></Control></span>
-      {/each}
-      <Control onclick={addPaletteColor} aria-label="Add current color to palette">+</Control>
-      {#if paletteColors.includes(color)}<Control onclick={() => removePaletteColor(color)} aria-label="Remove current color from palette">−</Control>{/if}
-      {#if recentColors.length}
-        <span class="stream-label">Recent</span>
-        {#each recentColors as recent (recent)}
-          <span class="swatch-control small" class:chosen={color === recent} style:--swatch={recent}><Control onclick={() => editor.setState({ color: recent })} aria-label={`Use recent color ${recent}`}><span class="swatch" aria-hidden="true"></span></Control></span>
-        {/each}
-      {/if}
+      <ColorPalette value={color} palette={paletteColors} recent={recentColors} onchange={(value) => { if (value) editor.setState({ color: value }); }}
+        onpalettechange={(palette) => editor.setConfig({ palette })} />
     {:else}
       <span class="pair"><span class="stream-label">Eraser size</span><NumberBox bind:value={eraserSize} min={1} max={500} step={1} width="4ch" label="Eraser size value" /></span>
       <HorizontalSlider bind:value={eraserSize} min={1} max={500} step={1} speed={60} label="Eraser size" />
@@ -531,7 +517,7 @@
     <!-- A nested Keyflow input frame: its trigger and every setting inside are keyboard-routed. -->
     <SubKeyframe label={`Configure ${shortName(brush)}`} class="brush-config-menu" closeOnOutside={false}>
       {#snippet children()}
-        <div class="stream">
+        <div class="tool-stream">
           {#each brushSettings as setting (setting.key)}
             <span class="pair"><span class="stream-label">{setting.label}</span><NumberBox value={Math.round(setting.get(brush))} min={setting.min} max={setting.max} step={1} width="4ch" label={`${shortName(brush)} ${setting.label.toLowerCase()} value`}
               format={(value) => `${value}${setting.unit}`} onchange={(next: number) => editBrush(kind, setting.set(next))} /></span>
@@ -547,8 +533,8 @@
   </div>
 {/snippet}
 
-<div class="visual-bar">
-  <div class="editor-controls drawing-controls visual-tools" role="group" aria-label="Drawing toolbar" tabindex="-1" bind:this={toolbar}
+<div class="visual-bar drawing-bar">
+  <div class="editor-controls drawing-controls drawing-tools visual-tools" role="group" aria-label="Drawing toolbar" tabindex="-1" bind:this={toolbar}
     use:preserveContentFocus={() => !usingTools && document.activeElement === viewport}>
     <span class="visual-title" class:unsaved={dirty} title={statusText}><BoundedText text={title} limit={16} label={`Editing ${title}`} /></span>
     <Control onclick={() => { usingTools = true; void editorMenu?.enter(); }}>Editor</Control>
@@ -579,9 +565,9 @@
   </div>
 
   <!-- Input-frame menus overlay the whole toolbar and flow left to right, wrapping as needed. -->
-  <SubKeyframe label="Editor" showTrigger={false} enterTrigger={null} bind:this={editorMenu} class="visual-menu" onclose={resumeEditing} disabled={publishing}>
+  <SubKeyframe label="Editor" showTrigger={false} enterTrigger={null} bind:this={editorMenu} class="drawing-menu" onclose={resumeEditing} disabled={publishing}>
     {#snippet children()}
-      <div class="stream">
+      <div class="tool-stream">
           <Control onclick={() => zoomBy(1 / 1.25)}>Zoom out</Control>
           <Control onclick={() => zoomBy(1.25)}>Zoom in</Control>
           <Control onclick={() => { void chooseTool('pan'); editorMenu?.exit(); }} aria-pressed={panTool}>Pan</Control>
@@ -594,16 +580,16 @@
       </div>
     {/snippet}
   </SubKeyframe>
-  <SubKeyframe label="Brush settings" showTrigger={false} enterTrigger={null} bind:this={brushMenu} class="visual-menu persistent-menu" closeOnOutside={false} onclose={resumeEditing} disabled={publishing}>
+  <SubKeyframe label="Brush settings" showTrigger={false} enterTrigger={null} bind:this={brushMenu} class="drawing-menu persistent-menu" closeOnOutside={false} onclose={resumeEditing} disabled={publishing}>
     {#snippet children()}{@render brushPanel('brush')}{/snippet}
   </SubKeyframe>
-  <SubKeyframe label="Eraser settings" showTrigger={false} enterTrigger={null} bind:this={eraserMenu} class="visual-menu persistent-menu" closeOnOutside={false} onclose={resumeEditing} disabled={publishing}>
+  <SubKeyframe label="Eraser settings" showTrigger={false} enterTrigger={null} bind:this={eraserMenu} class="drawing-menu persistent-menu" closeOnOutside={false} onclose={resumeEditing} disabled={publishing}>
     {#snippet children()}{@render brushPanel('eraser')}{/snippet}
   </SubKeyframe>
   {#if layered}
-    <SubKeyframe label="Layers" showTrigger={false} enterTrigger={null} bind:this={layerMenu} class="visual-menu" onclose={resumeEditing} disabled={publishing}>
+    <SubKeyframe label="Layers" showTrigger={false} enterTrigger={null} bind:this={layerMenu} class="drawing-menu" onclose={resumeEditing} disabled={publishing}>
       {#snippet children()}
-        <div class="stream">
+        <div class="tool-stream">
             <ChoiceMenu label="active layer" value={String([...layers].reverse().findIndex((item) => item.id === activeLayer?.id))} disabled={publishing}
               choices={[...layers].reverse().map((item, index) => ({ id: String(index), label: `${item.entry.name ?? item.entry.file}${documentMode ? ` · ${kindLabel(item.entry.kind)}` : ''}${item.missing ? ' (missing)' : ''}${item.entry.visible ? '' : ' (hidden)'}` }))}
               onchange={(index) => layerAction(() => editor.setActiveLayer([...layers].reverse()[Number(index)].id))} />
@@ -671,47 +657,7 @@
 </div>
 
 <style>
-  /* Every line of the editor UI is one min-box high, as in Keyflow: text, buttons, labels and fields. */
-  .visual-bar { position: relative; flex: none; z-index: 4; font-size: calc(var(--min-box) * .8); line-height: var(--min-box); }
-  .visual-bar :global(.editor-controls), .visual-bar :global(button) { font-size: inherit; }
-  .visual-bar :global(button) { line-height: var(--min-box); }
-  /* Bordered toolbar buttons subtract their 1px borders so the whole button is one min-box. */
-  .visual-bar :global(.editor-controls button) { line-height: calc(var(--min-box) - 2px); }
-  /* Horizontal component stream: items flow left to right and fold onto the next line like text. */
-  .visual-tools { flex-wrap: wrap !important; align-items: center; row-gap: 0; }
-  .visual-tools > :global(*) { flex: none; }
-  .visual-title { font-weight: 600; padding-inline: 4px; display: inline-flex; align-items: center; }
-  .visual-title.unsaved::after { content: '•'; margin-left: 4px; opacity: .7; }
-  .transform-slider { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px; }
-  .transform-slider :global(.keyflow-slider) { padding: 0 .25rem; gap: .4rem; }
-  .transform-slider :global([role=slider]) { min-width: 7rem; }
   .outside-prompt { padding-inline: 6px; color: #c92a2a; }
-  /* Menus cover the toolbar edge to edge, fill each row before wrapping, and grow down as far as there is room. */
-  .visual-bar :global(.visual-menu) { position: absolute; top: 0; left: 0; right: 0; z-index: 10; }
-  /* Height is left to Keyflow, which extends the panel down to the usable viewport and only then scrolls. */
-  .visual-bar :global(.visual-menu .subkeyframe-panel) { width: 100%; box-sizing: border-box; overflow: auto;
-    background: var(--background); border-bottom: 1px solid var(--tertiary); }
-  .menu-label { margin: 0; }
-  .swatch-control :global(button) { padding: 2px; min-width: 0; }
-  .swatch { display: block; width: 22px; height: 22px; border-radius: 4px; background: var(--swatch); border: 1px solid var(--tertiary); }
-  .swatch-control.small .swatch { width: 16px; height: 16px; }
-  /* The chosen colour carries a centred dot, outlined so it shows on light and dark swatches alike. */
-  .swatch { position: relative; }
-  .swatch-control.chosen .swatch::after { content: ''; position: absolute; left: 50%; top: 50%; width: 8px; height: 8px; transform: translate(-50%, -50%);
-    border-radius: 50%; background: #fff; box-shadow: 0 0 0 1.5px #000; }
-  .swatch-control.small.chosen .swatch::after { width: 6px; height: 6px; }
-  /* Horizontal component stream: inline items wrap like text; a break item forces a new line. */
-  .stream { display: flex; flex-wrap: wrap; align-items: center; gap: 0 .6ch; }
-  .stream > :global(*) { flex: none; }
-  /* The colour panel takes its own full line (wheel left, channel stream wrapping to its right). This
-     must out-rank the rule above whatever order the two components' styles load in. */
-  .stream > :global(.color-wheel-panel.color-wheel-panel) { flex: 1 1 100%; min-width: 0; }
-  .stream-label { white-space: nowrap; }
-  /* A label stays on the same line as its value box. */
-  .pair { display: inline-flex; align-items: center; gap: .6ch; white-space: nowrap; }
-  .stream-break { flex-basis: 100% !important; height: 0; }
-  .stream :global(.keyflow-slider) { padding: 0; gap: .3ch; --slider-length: 10rem; }
-  .stream :global(.keyflow-subkeyframe) { flex-basis: 100% !important; }
   /* The nested configure menu opens in place inside the brush panel. */
   .brush-config :global(.brush-config-menu .subkeyframe-panel) { max-height: none !important; }
   /* Dense menus: keep panels short so most of the canvas stays reachable underneath. */

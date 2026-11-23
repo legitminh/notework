@@ -173,3 +173,35 @@ html.editor-locked, html.editor-locked body { overflow: hidden; overscroll-behav
 
 /* Native text selection follows the active theme (readable in dark mode). */
 ::selection { background: color-mix(in srgb, var(--primary) 30%, var(--background)); color: var(--primary); }
+
+/* Drawing toolbars, shared by SVG drawings and visual documents. Every line of the editor UI is
+   one min-box high, as in Keyflow: text, buttons, labels and fields. */
+.drawing-bar { position: relative; flex: none; z-index: 4; font-size: calc(var(--min-box) * .8); line-height: var(--min-box); }
+.drawing-bar .editor-controls, .drawing-bar button { font-size: inherit; }
+.drawing-bar button { line-height: var(--min-box); }
+/* Bordered toolbar buttons subtract their 1px borders so the whole button is one min-box. */
+.drawing-bar .editor-controls button { line-height: calc(var(--min-box) - 2px); }
+.drawing-tools { flex-wrap: wrap !important; align-items: center; row-gap: 0; }
+.drawing-tools > * { flex: none; }
+.visual-title { font-weight: 600; padding-inline: 4px; display: inline-flex; align-items: center; }
+.visual-title.unsaved::after { content: '•'; margin-left: 4px; opacity: .7; }
+.transform-slider { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px; }
+.transform-slider .keyflow-slider { padding: 0 .25rem; gap: .4rem; }
+.transform-slider [role=slider] { min-width: 7rem; }
+.menu-label { margin: 0; }
+/* Menus cover the toolbar edge to edge, fill each row before wrapping, and grow down as far as there is room.
+   Height is left to Keyflow, which extends the panel down to the usable viewport and only then scrolls. */
+.drawing-bar .drawing-menu { position: absolute; top: 0; left: 0; right: 0; z-index: 10; }
+.drawing-bar .drawing-menu .subkeyframe-panel { width: 100%; box-sizing: border-box; overflow: auto;
+  background: var(--background); border-bottom: 1px solid var(--tertiary); }
+/* Horizontal component stream: inline items wrap like text; a break item forces a new line. */
+.tool-stream { display: flex; flex-wrap: wrap; align-items: center; gap: 0 .6ch; }
+.tool-stream > * { flex: none; }
+/* The colour panel takes its own full line (wheel left, channel stream wrapping to its right). */
+.tool-stream > .color-wheel-panel.color-wheel-panel { flex: 1 1 100%; min-width: 0; }
+.stream-label { white-space: nowrap; }
+/* A label stays on the same line as its value box. */
+.pair { display: inline-flex; align-items: center; gap: .6ch; white-space: nowrap; }
+.stream-break { flex-basis: 100% !important; height: 0; }
+.tool-stream .keyflow-slider { padding: 0; gap: .3ch; --slider-length: 10rem; }
+.tool-stream .keyflow-subkeyframe { flex-basis: 100% !important; }

@@ -183,12 +183,20 @@ export async function createPdf(source: PdfSource, signal: AbortSignal): Promise
     for (const points of drawing.strokes) {
       if (!points.length) continue;
       const at = ([x, y]: readonly number[]) => ({ x: left * scale + x * unit, y: page.getHeight() - (top + drawing.top) * scale - y * unit });
+      const paint = points.color ? color(points.color) : ink, alpha = points.opacity ?? 1;
       if (points.length === 1) {
-        page.drawCircle({ ...at(points[0]), size: strokeWidth(points) / 2 * unit, color: ink });
+        page.drawCircle({ ...at(points[0]), size: strokeWidth(points) / 2 * unit, color: paint, opacity: alpha });
         continue;
       }
       const start = at(points[0]);
-      page.pushOperators(pushGraphicsState(), setStrokingColor(ink), setLineWidth(strokeWidth(points) * unit),
+      if (alpha < 1) {
+        // pdf-lib has no stroke-alpha operator of its own; draw the polyline as an SVG path with opacity.
+        const path = points.map(([x, y], i) => `${i ? 'L' : 'M'}${x * unit} ${y * unit}`).join(' ');
+        page.drawSvgPath(path, { x: left * scale, y: page.getHeight() - (top + drawing.top) * scale, borderColor: paint,
+          borderWidth: strokeWidth(points) * unit, borderOpacity: alpha, borderLineCap: LineCapStyle.Round });
+        continue;
+      }
+      page.pushOperators(pushGraphicsState(), setStrokingColor(paint), setLineWidth(strokeWidth(points) * unit),
         setLineCap(LineCapStyle.Round), setLineJoin(LineJoinStyle.Round), moveTo(start.x, start.y));
       for (const point of points.slice(1)) { const { x, y } = at(point); page.pushOperators(lineTo(x, y)); }
       page.pushOperators(stroke(), popGraphicsState());
@@ -243,6 +251,8 @@ export async function createRaster(source: PdfSource, format: 'png' | 'jpeg', si
     const unit = drawing.width / DRAWING_WIDTH;
     for (const points of drawing.strokes) {
       if (!points.length) continue;
+      context.strokeStyle = context.fillStyle = points.color ?? source.style.foreground;
+      context.globalAlpha = points.opacity ?? 1;
       context.lineWidth = strokeWidth(points) * unit;
       const at = ([x, y]: readonly number[]) => [left + x * unit, top + drawing.top + y * unit] as const;
       if (points.length === 1) {
@@ -256,6 +266,7 @@ export async function createRaster(source: PdfSource, format: 'png' | 'jpeg', si
       context.stroke();
     }
   }
+  context.globalAlpha = 1;
   signal.throwIfAborted();
   const type = format === 'png' ? 'image/png' : 'image/jpeg';
   const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob((result) =>

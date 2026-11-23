@@ -1,12 +1,14 @@
 <script lang="ts">
-  import { SubKeyframe, VerticalHoverSlider, active_input_frame, get_input_frame, type SubKeyframeController } from '@legitminh/keyflow';
+  import { SubKeyframe, HorizontalSlider, NumberBox, active_input_frame, get_input_frame, type SubKeyframeController } from '@legitminh/keyflow';
   import Control from './Control.svelte';
+  import ColorPalette from './ColorPalette.svelte';
+  import { readDrawingColors, saveDrawingColor, saveDrawingOpacity, saveDrawingPalette, saveRecentColors, pushRecentColor } from '../drawing-colors';
   import StorageNotice from './StorageNotice.svelte';
   import EditorTitle from './EditorTitle.svelte';
   import { preserveContentFocus, scrollPointIntoView } from '../editor-focus';
   import { onMount } from 'svelte';
   import { shortcutScope } from '../shortcut-scope.svelte';
-  import { DRAWING_WIDTH, DRAWING_PAGE_HEIGHT, STROKE_WIDTH, drawingBottom, strokePoints, strokeWidth, sizedStroke, touchesStroke, type Drawing, type Point } from '../drawing';
+  import { DRAWING_WIDTH, DRAWING_PAGE_HEIGHT, STROKE_WIDTH, INK_COLOR, drawingBottom, strokePoints, strokeWidth, sizedStroke, touchesStroke, type Drawing, type Point } from '../drawing';
   import { drawingGestures } from '../drawing-gestures';
   import { areaPath, dragBox, growSelection, roundCoordinate, transformSelection, type Corner, type Selection } from '../drawing-selection';
   import { WritePermissionRequired } from '../wiki';
@@ -47,11 +49,20 @@
   const moveKey = 'm';
   const corners: Corner[] = ['nw', 'ne', 'sw', 'se'];
   let tool = $state<Tool>('brush');
-  let sizeMenu = $state<SubKeyframeController>();
-  let sizeTool = $state<'brush' | 'eraser'>('brush');
-  let toolsBeforeSize = false;
+  let brushMenu = $state<SubKeyframeController>(), eraserMenu = $state<SubKeyframeController>();
+  let toolsBeforeMenu = false;
+  /** Pressing Lasso again returns to the last painting tool, as in visual documents. */
+  let lastPaintTool: 'brush' | 'eraser' = 'brush';
   let penSize = $state(STROKE_WIDTH);
   let eraserSize = $state(16);
+  // Pen color settings are shared by every SVG drawing in this browser.
+  const storedColors = readDrawingColors();
+  let penColor = $state<string | undefined>(storedColors.color);
+  let penOpacity = $state(storedColors.opacity);
+  let palette = $state.raw<string[]>(storedColors.palette);
+  let recentColors = $state.raw<string[]>(storedColors.recent);
+  const penPaint = $derived({ color: penColor, opacity: penOpacity / 100 });
+  $effect(() => { saveDrawingOpacity(penOpacity); });
   const maskPrefix = `erase-${crypto.randomUUID()}`;
   let selection = $state.raw<Selection>();
   let saving = $state(false);
@@ -68,7 +79,7 @@
   const touches = new Set<number>();
   let multiTouch = false;
   let gesture = $state.raw<Gesture>();
-  const visibleStrokes = $derived([...strokes, ...((gesture?.kind === 'brush' || (editableHref && gesture?.kind === 'eraser')) && points.length ? [sizedStroke(points, tool === 'eraser' ? eraserSize : penSize, tool === 'eraser')] : [])]);
+  const visibleStrokes = $derived([...strokes, ...((gesture?.kind === 'brush' || (editableHref && gesture?.kind === 'eraser')) && points.length ? [sizedStroke(points, tool === 'eraser' ? eraserSize : penSize, tool === 'eraser', penPaint)] : [])]);
   const erasing = $derived(visibleStrokes.some((stroke) => stroke.erase));
   let mouse: PointerEvent | undefined;
   let autosaveTimer: ReturnType<typeof setTimeout> | undefined;
@@ -178,17 +189,43 @@
   }
 
   function chooseTool(next: Tool) {
-    if (tool === next && next !== 'lasso') {
-      cancelGesture();
-      sizeTool = next;
-      toolsBeforeSize = usingTools;
-      usingTools = true;
-      void sizeMenu?.enter();
+    cancelGesture();
+    if (tool === next && next === 'lasso') {
+      // Pressing Lasso again turns it off.
+      selection = undefined;
+      tool = lastPaintTool;
       return;
     }
-    cancelGesture();
+    if (tool === next) {
+      // Re-selecting the brush or eraser opens its settings.
+      toolsBeforeMenu = usingTools;
+      usingTools = true;
+      void (next === 'brush' ? brushMenu : eraserMenu)?.enter();
+      return;
+    }
     selection = undefined;
     tool = next;
+    if (next !== 'lasso') lastPaintTool = next;
+  }
+
+  function closeMenu() {
+    usingTools = toolsBeforeMenu;
+    if (!usingTools) canvas?.focus({ preventScroll: true });
+  }
+
+  function chooseColor(color: string | undefined) {
+    penColor = color;
+    saveDrawingColor(color);
+  }
+
+  function changePalette(next: string[]) {
+    palette = next;
+    saveDrawingPalette(next);
+  }
+
+  function deselect() {
+    if (gesture) return;
+    selection = undefined;
   }
 
   function clearSelection() {
@@ -277,7 +314,11 @@
     const { input, before, kind, limit } = gesture;
     gesture = undefined;
     if (kind === 'lasso') selection = growSelection(strokes, points, frameMinimum, limit, selection);
-    else commit(before, (kind === 'brush' || (editableHref && kind === 'eraser')) && points.length ? [...strokes, sizedStroke(points, kind === 'eraser' ? eraserSize : penSize, kind === 'eraser')] : strokes);
+    else commit(before, (kind === 'brush' || (editableHref && kind === 'eraser')) && points.length ? [...strokes, sizedStroke(points, kind === 'eraser' ? eraserSize : penSize, kind === 'eraser', penPaint)] : strokes);
+    if (kind === 'brush' && points.length && penColor && recentColors[0] !== penColor) {
+      recentColors = pushRecentColor(recentColors, penColor);
+      saveRecentColors(recentColors);
+    }
     points = [];
     if (typeof input === 'number' && canvas.hasPointerCapture(input)) canvas.releasePointerCapture(input);
     if (dirty) scheduleAutosave();
@@ -427,6 +468,11 @@
           if (!event.repeat) startTransform(input, mouse && point(mouse));
           return;
         }
+        if ((key === 'delete' || key === 'backspace') && selection?.indices.size && !textInput && !usingTools) {
+          event.preventDefault();
+          clearSelection();
+          return;
+        }
         if (key !== 'escape' || event.shiftKey || usingTools) return;
         event.preventDefault();
         if (!event.repeat) {
@@ -504,28 +550,45 @@
   });
 </script>
 
-<div class="editor-controls drawing-controls" role="group" aria-label="Drawing toolbar" tabindex="-1" bind:this={toolbar}
-  use:preserveContentFocus={() => !usingTools && document.activeElement === canvas}>
-  {#if onExit}<Control onclick={exit} disabled={saving || publishing}>Exit<span class="shortcut-hint" aria-hidden="true">Ctrl+Esc</span></Control>{/if}
-  <Control onclick={() => chooseTool('brush')} aria-pressed={tool === 'brush'}>Brush<span class="shortcut-hint" aria-hidden="true">Command+B</span></Control>
-  <Control onclick={() => chooseTool('eraser')} aria-pressed={tool === 'eraser'}>Eraser</Control>
-  <SubKeyframe bind:this={sizeMenu} label={sizeTool === 'brush' ? 'Pen size' : 'Eraser size'} showTrigger={false} enterTrigger={null}
-    class="drawing-size-menu" disabled={saving || publishing || (!!shortcutScope.dialog && toolbar?.closest('dialog') !== shortcutScope.dialog)}
-    onclose={() => { usingTools = toolsBeforeSize; if (!usingTools) canvas?.focus({ preventScroll: true }); }}>
+<div class="drawing-bar">
+  <div class="editor-controls drawing-controls drawing-tools" role="group" aria-label="Drawing toolbar" tabindex="-1" bind:this={toolbar}
+    use:preserveContentFocus={() => !usingTools && document.activeElement === canvas}>
+    {#if onExit}<Control onclick={exit} disabled={saving || publishing}>Exit<span class="shortcut-hint" aria-hidden="true">Ctrl+Esc</span></Control>{/if}
+    <Control onclick={() => chooseTool('brush')} aria-pressed={tool === 'brush'}><span class="tool-color" class:ink={!penColor} style:--pen={penColor} style:opacity={penOpacity / 100} aria-hidden="true"></span>Brush<span class="shortcut-hint" aria-hidden="true">Command+B</span></Control>
+    <Control onclick={() => chooseTool('eraser')} aria-pressed={tool === 'eraser'}>Eraser</Control>
+    <Control onclick={() => chooseTool('lasso')} aria-pressed={tool === 'lasso'}>Lasso</Control>
+    {#if selection?.indices.size && !tracing}
+      <Control onclick={clearSelection} disabled={saving || publishing || !!gesture} aria-label="Clear selected strokes">Clear</Control>
+      <Control onclick={deselect} disabled={!!gesture}>Deselect</Control>
+    {/if}
+    <Control onclick={undo} disabled={!undoStack.length || saving || publishing}>Undo<span class="shortcut-hint" aria-hidden="true">Command+Z</span></Control>
+    <Control onclick={redo} disabled={!redoStack.length || saving || publishing}>Redo<span class="shortcut-hint" aria-hidden="true">Command+Shift+Z</span></Control>
+    {#if onDelete}<Control onclick={() => { cancelGesture(); void onDelete?.(); }} disabled={saving || publishing}>Delete drawing</Control>{/if}
+    {#if onExport}<Control onclick={() => onExport?.(strokes)} disabled={saving || publishing || !!gesture}>Export</Control>{/if}
+  </div>
+  <!-- The same settings panels as visual documents: size and opacity streams, color wheel and palette. -->
+  <SubKeyframe label="Brush settings" showTrigger={false} enterTrigger={null} bind:this={brushMenu} class="drawing-menu persistent-menu" closeOnOutside={false}
+    disabled={saving || publishing || (!!shortcutScope.dialog && toolbar?.closest('dialog') !== shortcutScope.dialog)} onclose={closeMenu}>
     {#snippet children()}
-      <p>{sizeTool === 'brush' ? `Pen size: ${penSize}` : `Eraser size: ${eraserSize}`}</p>
-      {#if sizeTool === 'brush'}
-        <VerticalHoverSlider bind:value={penSize} min={1} max={64} step={1} speed={20} label="Pen size" />
-      {:else}
-        <VerticalHoverSlider bind:value={eraserSize} min={1} max={128} step={1} speed={40} label="Eraser size" />
-      {/if}
+      <div class="tool-stream">
+        <span class="pair"><span class="stream-label">Pen size</span><NumberBox bind:value={penSize} min={1} max={300} step={1} width="4ch" label="Pen size value" /></span>
+        <HorizontalSlider bind:value={penSize} min={1} max={300} step={1} speed={40} label="Pen size" />
+        <span class="pair"><span class="stream-label">Opacity</span><NumberBox bind:value={penOpacity} min={1} max={100} step={1} width="4ch" label="Brush opacity value" format={(value: number) => `${value}%`} /></span>
+        <HorizontalSlider bind:value={penOpacity} min={1} max={100} step={1} speed={50} label="Brush opacity" />
+        <span class="stream-break" aria-hidden="true"></span>
+        <ColorPalette value={penColor} {palette} recent={recentColors} ink inkPreview={INK_COLOR} onchange={chooseColor} onpalettechange={changePalette} />
+      </div>
     {/snippet}
   </SubKeyframe>
-  <Control onclick={() => chooseTool('lasso')} aria-pressed={tool === 'lasso'}>Lasso</Control>
-  <Control onclick={undo} disabled={!undoStack.length || saving || publishing}>Undo<span class="shortcut-hint" aria-hidden="true">Command+Z</span></Control>
-  <Control onclick={redo} disabled={!redoStack.length || saving || publishing}>Redo<span class="shortcut-hint" aria-hidden="true">Command+Shift+Z</span></Control>
-  {#if onDelete}<Control onclick={() => { cancelGesture(); void onDelete?.(); }} disabled={saving || publishing}>Delete drawing</Control>{/if}
-  {#if onExport}<Control onclick={() => onExport?.(strokes)} disabled={saving || publishing || !!gesture}>Export</Control>{/if}
+  <SubKeyframe label="Eraser settings" showTrigger={false} enterTrigger={null} bind:this={eraserMenu} class="drawing-menu persistent-menu" closeOnOutside={false}
+    disabled={saving || publishing || (!!shortcutScope.dialog && toolbar?.closest('dialog') !== shortcutScope.dialog)} onclose={closeMenu}>
+    {#snippet children()}
+      <div class="tool-stream">
+        <span class="pair"><span class="stream-label">Eraser size</span><NumberBox bind:value={eraserSize} min={1} max={500} step={1} width="4ch" label="Eraser size value" /></span>
+        <HorizontalSlider bind:value={eraserSize} min={1} max={500} step={1} speed={60} label="Eraser size" />
+      </div>
+    {/snippet}
+  </SubKeyframe>
 </div>
 
 <div class="drawing-surface" use:portal={surfaceTarget}>
@@ -557,7 +620,7 @@
         {/if}
         {#each visibleStrokes as stroke, index}
           {#if !stroke.erase}
-            <polyline points={strokePoints(stroke)} fill="none" stroke="currentColor" opacity={strokeOpacity} stroke-width={strokeWidth(stroke)}
+            <polyline points={strokePoints(stroke)} fill="none" stroke={stroke.color ?? 'currentColor'} opacity={strokeOpacity * (stroke.opacity ?? 1)} stroke-width={strokeWidth(stroke)}
               mask={editableHref && erasing ? `url(#${maskPrefix}-${index})` : undefined}
               stroke-linecap="round" stroke-linejoin="round" data-lasso-drag={selection?.indices.has(index) && !tracing ? '' : undefined} />
           {/if}
@@ -601,7 +664,6 @@
         <div class="lasso-actions" class:inside={selection.box.top * scale < 48} class:moving
           style:left={`clamp(72px, ${(selection.box.left + selection.box.right) / 2 / DRAWING_WIDTH * 100}%, calc(100% - 72px))`}
           style:top={`${selection.box.top / canvasHeight * 100}%`}>
-          <Control onclick={clearSelection} disabled={saving || publishing || !!gesture} aria-label="Clear selected strokes">Clear</Control>
           <span class="lasso-move" use:dragFromButton title="Hold and drag, or hold M and move the mouse">
             <Control keys={moveKey} onclick={resumeEditing} disabled={saving || publishing}
               aria-label="Move selected strokes" aria-keyshortcuts="M">Move</Control>
@@ -616,20 +678,23 @@
 
 <style>
   .drawing-controls { position: relative; }
-  .drawing-controls :global(.drawing-size-menu) { position: absolute; top: 100%; left: 0; z-index: 5; }
-  .drawing-controls :global(.subkeyframe-panel) { min-width: 12rem; }
+  .tool-color { display: inline-block; width: .7em; height: .7em; margin-right: .3em; border-radius: 50%; background: var(--pen); border: 1px solid var(--tertiary); vertical-align: -.05em; }
+  .tool-color.ink { background: var(--primary); }
   .drawing-canvas-layer { position: relative; width: 100%; max-width: var(--page-max-width); }
   .drawing-canvas { max-width: 100%; }
   .drawing-canvas.image-canvas { background-image: conic-gradient(#ddd 25%, #fff 0 50%, #ddd 0 75%, #fff 0); background-size: 16px 16px; color: #202733; }
-  .lasso-contour, .lasso-area { pointer-events: none; fill: none; stroke-linejoin: round; }
-  .lasso-underlay { stroke: var(--background); stroke-width: 3; }
-  .lasso-dashes { stroke: currentColor; stroke-width: 1.5; stroke-dasharray: 5 4; animation: march .45s linear infinite; }
-  @keyframes march { to { stroke-dashoffset: -9; } }
-  .lasso-frame { fill: none; stroke: currentColor; stroke-opacity: .5; pointer-events: none; }
+  /* Selection display matches visual documents: high-contrast "marching ants" (a light halo under a
+     dark dashed line, legible on any artwork), with a blue frame and handles. */
+  .lasso-contour, .lasso-area { pointer-events: none; stroke-linejoin: round; }
+  .lasso-underlay { fill: none; stroke: #fff; stroke-width: 4; stroke-opacity: .9; }
+  .lasso-dashes { fill: rgb(28 126 214 / .08); stroke: #111; stroke-width: 2; stroke-dasharray: 6 4; animation: march .6s linear infinite; }
+  @keyframes march { to { stroke-dashoffset: -10; } }
+  @media (prefers-reduced-motion: reduce) { .lasso-dashes { animation: none; } }
+  .lasso-frame { fill: none; stroke: #1c7ed6; stroke-width: 1.5; pointer-events: none; }
   .lasso-move-zone { fill: none; stroke: transparent; stroke-width: 18px; pointer-events: stroke; }
   .lasso-move-zone, polyline[data-lasso-drag] { cursor: move; }
-  .lasso-grip { fill: var(--background); stroke: currentColor; stroke-width: 1.5; pointer-events: none; }
-  .lasso-end { fill: currentColor; stroke: var(--background); }
+  .lasso-grip { fill: #fff; stroke: #1c7ed6; stroke-width: 2; pointer-events: none; }
+  .lasso-end { fill: #1c7ed6; stroke: #fff; }
   .lasso-resize { fill: transparent; }
   .lasso-resize[data-lasso-drag="nw"], .lasso-resize[data-lasso-drag="se"] { cursor: nwse-resize; }
   .lasso-resize[data-lasso-drag="ne"], .lasso-resize[data-lasso-drag="sw"] { cursor: nesw-resize; }
