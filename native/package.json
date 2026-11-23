@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Native desktop (Electron) and iOS (Capacitor) shells for the Notework web build.",
+  "homepage": "https://github.com/legitminh/notework",
   "main": "electron/main.cjs",
   "author": "legitminh",
   "scripts": {

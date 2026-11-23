@@ -37,7 +37,7 @@ linux:
       arch: [x64]
     - target: deb
       arch: [x64]
-  maintainer: legitminh
+  maintainer: legitminh <90986973+legitminh@users.noreply.github.com>
   synopsis: A local network of text documents and folders.
 artifactName: ${productName}-${version}-${os}-${arch}.${ext}
 publish: null
