@@ -2,7 +2,9 @@ import type { LocalFile, LocalHandle } from './filesystem';
 import { assertAvailable, containingFolder, requireWrite, validFilename, wikiPattern } from './wiki';
 import { decodedChunks, encodedChunks, inspectText, type TextFormat } from './text-resource';
 import { saveWorkspace, snapshotWorkspace } from './persistence';
-import { Workspace, ROOT, nodeId, type StateNode } from './workspace';
+import { Workspace, ROOT, appOwned, nodeId, type StateNode } from './workspace';
+import { appBucket } from './create-asset';
+import { isNativeApp } from './native-fs';
 import { GitHubDirectory, GitHubFile, withGitHubRepositories, type GitHubRepository } from './github/repository';
 import { GitHubWriteUncertain } from './github/api';
 import { cleanFilename, invalidFilenameMessage } from './filenames';
@@ -62,7 +64,7 @@ async function transferResourceInternal(workspace: Workspace, source: StateNode,
   const folder = cachedParent as unknown as FileSystemDirectoryHandle | undefined
     ?? await containingFolder(workspace, source, original as LocalFile);
   if (source.storage === 'local' && !cachedParent) await requireWrite(folder);
-  const storage = relocating ? target?.storage ?? 'browser' : source.storage;
+  const storage = relocating ? target?.storage ?? (isNativeApp() ? 'native' : 'browser') : source.storage;
   let destinationFolder = folder;
   let destinationSource = source.sourceId;
   let destinationPath = source.path.length ? [...source.path.slice(0, -1), name] : [];
@@ -83,17 +85,16 @@ async function transferResourceInternal(workspace: Workspace, source: StateNode,
       if (!path || path[0] !== 'notework' || path[1] !== 'documents') throw new Error('choose an app-owned browser folder.');
     }
   } else if (relocating) {
-    if (!source.path.length && source.storage === 'browser' && workspace.data.rootIds.includes(source.id)) return { node: source, warning: '', remap: (id: string) => id };
+    if (!source.path.length && appOwned(source.storage) && workspace.data.rootIds.includes(source.id)) return { node: source, warning: '', remap: (id: string) => id };
     if ((await workspace.reachable(ROOT)).nodes.some((node) => node.id !== source.id && node.name.toLowerCase() === name.toLowerCase())) {
       throw new Error(`an item named “${name}” already exists at home.`);
     }
-    const app = await (await navigator.storage.getDirectory()).getDirectoryHandle('notework', { create: true });
-    const documents = await app.getDirectoryHandle('documents', { create: true });
-    destinationSource = crypto.randomUUID();
+    const bucket = await appBucket();
+    destinationSource = bucket.id;
     destinationPath = [];
-    destinationFolder = await documents.getDirectoryHandle(destinationSource, { create: true });
-    discardBucket = () => documents.removeEntry(destinationSource, { recursive: true });
-    destinationUri = `opfs://notework/documents/${destinationSource}/${encodeURIComponent(name)}`;
+    destinationFolder = bucket.directory;
+    discardBucket = bucket.discard;
+    destinationUri = bucket.location(name).uri;
   }
   await assertAvailable(destinationFolder, name);
   const previous = snapshotWorkspace(workspace.data);

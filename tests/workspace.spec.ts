@@ -838,7 +838,7 @@ test('long lines wrap by default without changing saved text, and settings can t
   const overflows = () => scroller.evaluate((element) => element.scrollWidth > element.clientWidth + 1);
   await expect.poll(overflows).toBe(false);
   await forceSave(page);
-  await expect(page.getByText('saved in browser storage', { exact: true })).toBeVisible();
+  await expect(page.getByText('saved in native storage', { exact: true })).toBeVisible();
   await toolbar(page, 'exit').click();
   await button(page, '..').click();
   await button(page, 'app settings').click(); await button(page, 'text editor').click();
@@ -899,7 +899,7 @@ test('optional Vim mode persists, handles normal commands, and saves with :w', a
   await expect(page.locator('.cm-search')).toHaveCount(0);
   await page.keyboard.type(':w');
   await page.keyboard.press('Enter');
-  await expect(page.getByText('saved in browser storage', { exact: true })).toBeVisible();
+  await expect(page.getByText('saved in native storage', { exact: true })).toBeVisible();
   await toolbar(page, 'find and replace').click();
   await expect(page.locator('.cm-search')).toBeVisible();
   await page.keyboard.press('Control+Escape');
@@ -916,7 +916,7 @@ test('optional Vim mode persists, handles normal commands, and saves with :w', a
   await page.keyboard.press('Escape');
   await page.keyboard.type(':w');
   await page.keyboard.press('Enter');
-  await expect(page.getByText('saved in browser storage', { exact: true })).toBeVisible();
+  await expect(page.getByText('saved in native storage', { exact: true })).toBeVisible();
   await toolbar(page, 'exit').click();
   await expect(button(page, 'vim sibling.txt')).toBeVisible();
 });
@@ -942,7 +942,7 @@ test('editor toolbar omits Save, isolates navigation, and supports find, replace
   await search.getByRole('button', { name: 'replace all', exact: true }).click();
   await expect(page.locator('.cm-content')).toHaveText('beta beta');
   await page.keyboard.press('Control+s');
-  await expect(page.getByText('saved in browser storage', { exact: true })).toBeVisible();
+  await expect(page.getByText('saved in native storage', { exact: true })).toBeVisible();
   await page.keyboard.press('Control+Escape');
   await expect(button(page, 'open')).toBeVisible();
   await expect(page.getByRole('dialog')).toHaveCount(0);
@@ -1093,7 +1093,7 @@ test('text and SVG files autosave at the configured maximum frequency', async ({
   await expect(toolbar(page, 'Save')).toHaveCount(0);
   await page.keyboard.insertText('saved by timer');
   await expect(page.getByText('unsaved changes', { exact: true })).toBeVisible();
-  await expect(page.getByText('saved in browser storage', { exact: true })).toBeVisible({ timeout: 2500 });
+  await expect(page.getByText('saved in native storage', { exact: true })).toBeVisible({ timeout: 2500 });
   await toolbar(page, 'exit').click(); await button(page, '..').click();
 
   await startCreate(page);
@@ -1232,7 +1232,7 @@ test('large notes load without truncation and render only a virtualized viewport
   expect(await page.locator('.editor-scroll').evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
   expect(await page.locator('.viewport').evaluate((element) => element.scrollTop)).toBe(0);
   await forceSave(page);
-  await expect(page.getByText('saved in browser storage', { exact: true })).toBeVisible();
+  await expect(page.getByText('saved in native storage', { exact: true })).toBeVisible();
   const file = await page.evaluate(async (id) => {
     const root = await navigator.storage.getDirectory(); const app = await root.getDirectoryHandle('notework');
     const documents = await app.getDirectoryHandle('documents'); const folder = await documents.getDirectoryHandle(id);
@@ -1260,7 +1260,7 @@ test('quota errors preserve edits and graph resources, then saving can be retrie
   await expect(toolbar(page, 'export')).toBeEnabled();
   await page.evaluate(() => localStorage.removeItem('test-quota-full'));
   await forceSave(page);
-  await expect(page.getByText('saved in browser storage', { exact: true })).toBeVisible();
+  await expect(page.getByText('saved in native storage', { exact: true })).toBeVisible();
   await page.reload(); await button(page, 'quota.txt').click(); await openEditor(page); await expect(field).toHaveText('Keep these edits.');
 });
 
@@ -1332,7 +1332,7 @@ test('wiki suggestions create a sibling on save and rename updates saved backlin
   await expect(editor).toHaveText('[[linked.txt]]');
   expect((await storedGraph(page)).sources.map((source) => source.name)).toEqual(['origin.txt']);
   await forceSave(page);
-  await expect(page.getByText('saved in browser storage', { exact: true })).toBeVisible();
+  await expect(page.getByText('saved in native storage', { exact: true })).toBeVisible();
   const graph = await storedGraph(page);
   const origin = graph.sources.find((source) => source.name === 'origin.txt')!;
   const target = graph.sources.find((source) => source.name === 'linked.txt')!;
@@ -1361,7 +1361,7 @@ test('wiki suggestions create a sibling on save and rename updates saved backlin
   await expect(editor).toHaveText('[[renamed.txt]]');
   await editor.fill('');
   await forceSave(page);
-  await expect(page.getByText('saved in browser storage', { exact: true })).toBeVisible();
+  await expect(page.getByText('saved in native storage', { exact: true })).toBeVisible();
   await toolbar(page, 'exit').click();
   await expect(button(page, 'renamed.txt')).toHaveCount(0);
 });
@@ -1372,7 +1372,7 @@ test('wiki links become clickable outside the caret and save edits before openin
   const link = editor.locator('.cm-wiki-link');
   await page.keyboard.insertText('[[click target.txt]]\nend');
   await forceSave(page);
-  await expect(page.getByText('saved in browser storage', { exact: true })).toBeVisible();
+  await expect(page.getByText('saved in native storage', { exact: true })).toBeVisible();
   await expect(link).toHaveText('[[click target.txt]]');
   await expect(link).toHaveCSS('cursor', 'pointer');
   await editor.press('ControlOrMeta+Home');
@@ -1786,7 +1786,7 @@ test('brush inserts a movable SVG page, swaps the inline toolbar, and saves an e
   // Move the directive as source text, and keep text after it.
   await editor.fill(`after\n\\svgpage[${name}]\nbefore`);
   await forceSave(page);
-  await expect(page.getByText('saved in browser storage', { exact: true })).toBeVisible();
+  await expect(page.getByText('saved in native storage', { exact: true })).toBeVisible();
   const graph = await storedGraph(page);
   const note = graph.sources.find((source) => source.name === 'sketch.txt')!;
   const drawing = graph.sources.find((source) => source.name === name)!;
@@ -2219,7 +2219,7 @@ test('Safari-style non-cloneable OPFS handles support creation, rename, save, an
   await createNote(page, 'ipad-first.txt');
   await page.keyboard.insertText('iPad notes');
   await forceSave(page);
-  await expect(page.getByText('saved in browser storage', { exact: true })).toBeVisible();
+  await expect(page.getByText('saved in native storage', { exact: true })).toBeVisible();
   await toolbar(page, 'exit').click();
   await button(page, '..').click();
   await createNote(page, 'ipad-second.txt'); // Also exercises metadata snapshots with live handles.
@@ -2254,7 +2254,7 @@ test('folder configuration rename moves descendants and rewrites links through r
   await expect(note).toBeVisible();
   await note.fill('Keep this content');
   await forceSave(page);
-  await expect(page.getByText('saved in browser storage', { exact: true })).toBeVisible();
+  await expect(page.getByText('saved in native storage', { exact: true })).toBeVisible();
   await toolbar(page, 'exit').click();
   await button(page, '..').click(); // Nested
   await button(page, '..').click(); // Project
@@ -2263,7 +2263,7 @@ test('folder configuration rename moves descendants and rewrites links through r
   const index = page.getByRole('textbox', { name: 'edit index.txt' });
   await index.fill('[[Project/Nested/note.txt]]');
   await forceSave(page);
-  await expect(page.getByText('saved in browser storage', { exact: true })).toBeVisible();
+  await expect(page.getByText('saved in native storage', { exact: true })).toBeVisible();
   await expect(toolbar(page, 'rename')).toHaveCount(0);
   await toolbar(page, 'exit').click();
   await button(page, '..').click();
@@ -2324,7 +2324,7 @@ test('SVG rename in configuration updates the inline directive and its graph tar
   const editor = page.getByRole('textbox', { name: 'edit drawing-note.txt' });
   await editor.fill('\\svgpage[ink.svg]\nText below');
   await forceSave(page);
-  await expect(page.getByText('saved in browser storage', { exact: true })).toBeVisible();
+  await expect(page.getByText('saved in native storage', { exact: true })).toBeVisible();
   await toolbar(page, 'exit').click();
   await button(page, 'ink.svg').click();
   await button(page, 'configure file').click();
@@ -2486,7 +2486,7 @@ test('drawing pages preserve geometry through rotation, inline preview, and stan
   await forceSave(page);
   await tools.getByRole('button', { name: 'exit', exact: true }).click();
   await forceSave(page);
-  await expect(page.getByText('saved in browser storage', { exact: true })).toBeVisible();
+  await expect(page.getByText('saved in native storage', { exact: true })).toBeVisible();
   for (const viewport of [{ width: 1180, height: 820 }, { width: 820, height: 1180 }]) {
     await page.setViewportSize(viewport);
     await squareFits(preview.locator('svg'));
@@ -2820,7 +2820,7 @@ test('cross-storage wiki links do not change physical children or parent navigat
   await createNote(page, 'browser-target.txt');
   await page.keyboard.insertText('Browser resource');
   await forceSave(page);
-  await expect(page.getByText('saved in browser storage', { exact: true })).toBeVisible();
+  await expect(page.getByText('saved in native storage', { exact: true })).toBeVisible();
   await toolbar(page, 'exit').click(); await button(page, '..').click();
   await connectDocuments(page); await button(page, 'Documents/').click();
   await button(page, 'readme.txt').click(); await openEditor(page);
@@ -2848,7 +2848,7 @@ test('legacy browser-backed children become links and retain their original reso
   await connectDocuments(page);
   await createNote(page, 'legacy.txt');
   await page.keyboard.insertText('Preserve browser bytes'); await forceSave(page);
-  await expect(page.getByText('saved in browser storage', { exact: true })).toBeVisible();
+  await expect(page.getByText('saved in native storage', { exact: true })).toBeVisible();
   await toolbar(page, 'exit').click(); await expect(button(page, 'open')).toBeVisible();
   await page.evaluate(async () => {
     for (const registration of await navigator.serviceWorker.getRegistrations()) await registration.unregister();
@@ -3014,7 +3014,7 @@ test('relocate across storage sources requires Yes and supports moving back to h
   await startRelocate(page); await button(page, 'home').click(); await button(page, 'Documents/').click();
   await chooseHere(page).click();
   let dialog = page.getByRole('dialog', { name: 'relocate file to computer storage?' });
-  await expect(dialog).toContainText('creates “crossing.txt” in computer storage at Documents, then deletes the original from browser storage');
+  await expect(dialog).toContainText('creates “crossing.txt” in computer storage at Documents, then deletes the original from native storage');
   await dialog.getByRole('button', { name: 'no', exact: true }).click();
   await expect(page.getByRole('complementary', { name: 'relocate' })).toBeVisible();
   expect(await page.evaluate(async () => {
@@ -3026,11 +3026,11 @@ test('relocate across storage sources requires Yes and supports moving back to h
   await expect(page.locator('.path')).toContainText('computer');
   expect((await storedGraph(page)).sources.map((source) => source.name)).toEqual(['Documents']);
   await startRelocate(page); await button(page, 'home').click(); await chooseHere(page).click();
-  dialog = page.getByRole('dialog', { name: 'relocate file to browser storage?' });
+  dialog = page.getByRole('dialog', { name: 'relocate file to native storage?' });
   await expect(dialog).toContainText('then deletes the original from computer storage');
   await dialog.getByRole('button', { name: 'yes', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'crossing.txt', exact: true })).toBeVisible();
-  await expect(page.locator('.path')).toContainText('browser storage');
+  await expect(page.locator('.path')).toContainText('native storage');
   await page.reload(); await button(page, 'Documents/').click();
   await expect(button(page, 'crossing.txt')).toHaveCount(0);
   await button(page, 'home').click(); await button(page, 'crossing.txt').click(); await openEditor(page);
@@ -3164,7 +3164,7 @@ test('relocate a separately connected folder updates ancestor-grant references a
   await page.goto('/'); await button(page, 'Adobe/').click();
   await startRelocate(page, 'folder'); await button(page, 'home').click(); await button(page, 'Archive/').click();
   await chooseHere(page).click();
-  const dialog = page.getByRole('dialog', { name: 'relocate folder to browser storage?' });
+  const dialog = page.getByRole('dialog', { name: 'relocate folder to native storage?' });
   await expect(dialog).toContainText('and all its contents');
   await dialog.getByRole('button', { name: 'yes', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Adobe/', exact: true })).toBeVisible();

@@ -40,7 +40,7 @@
   import LocalPicker from '../lib/components/LocalPicker.svelte';
   import NativeFolderBrowser from '../lib/components/NativeFolderBrowser.svelte';
   import { isNativeApp } from '../lib/native-fs';
-  import { Workspace, ROOT, nodeId, parentId, storageLabel, type StateNode } from '../lib/workspace';
+  import { Workspace, ROOT, nodeId, parentId, storageLabel, type StateNode, type Storage } from '../lib/workspace';
   import { GitHubDirectory, GitHubRepository, type GitHubConflict, type ResolveGitHubConflict } from '../lib/github/repository';
   import { GitHubApiError, type GitHubConnection } from '../lib/github/api';
   import { setGitHubRecovery } from '../lib/github/recovery';
@@ -67,7 +67,10 @@
   let busy = $state(false);
   let picking = $state(false);
   let supported = $state(true);
-  let browserDocuments = $state(false);
+  /** Whether native storage works here: the app folder on disk, or OPFS in the PWA. */
+  let appStorage = $state(false);
+  /** Where new resources at home go: native storage on disk in the app, OPFS in the PWA. */
+  const homeStorage: Storage = isNativeApp() ? 'native' : 'browser';
   let capacity = $state<{ usage: number; quota: number; persistent: boolean }>();
   let storageStatus = $state('');
   let editing = $state(false);
@@ -222,7 +225,7 @@
       contentSearch = true;
     } else globalSearch = true;
   }
-  const canCreateHere = $derived(current?.storage === 'github' || (current?.storage === 'local' ? supported : browserDocuments));
+  const canCreateHere = $derived(current?.storage === 'github' || (current?.storage === 'local' ? supported : appStorage));
   const source = $derived(workspace.data.sources.find((item) => item.id === current?.sourceId));
   const connectedSources = $derived.by(() => { graphRevision; return [...workspace.data.sources]; });
   const githubSources = $derived(connectedSources.filter((item) => item.storage === 'github'));
@@ -267,8 +270,8 @@
     autosaveSeconds = readAutosaveSeconds();
     pdfMargins = readPdfMargins();
     supported = supportsFilesystem();
-    browserDocuments = supportsBrowserDocuments();
-    if (browserDocuments) void updateStorage();
+    appStorage = isNativeApp() || supportsBrowserDocuments();
+    if (appStorage) void updateStorage();
     void (async () => {
       try { workspace = new Workspace(await loadWorkspace()); }
       catch { storageMessage = 'browser storage is unavailable. connections and settings will last only for this tab.'; }
@@ -543,7 +546,7 @@
   function chooseLocation(destination: StateNode | null) {
     if (!relocateTarget || busy || (destination && destination.kind !== 'directory')) return;
     relocateDestination = destination;
-    if (relocateTarget.storage !== (destination?.storage ?? 'browser') ||
+    if (relocateTarget.storage !== (destination?.storage ?? homeStorage) ||
       (relocateTarget.storage === 'github' && relocateTarget.sourceId !== destination?.sourceId)) relocateDialog.showModal();
     else void finishRelocate();
   }
@@ -658,16 +661,10 @@
   }
 
   async function updateStorage() {
+    // The native app keeps native storage on disk; the browser quota does not apply.
+    if (isNativeApp()) return;
     try { capacity = await storageInfo(); }
     catch (error) { storageStatus = storageError(error); }
-  }
-
-  async function retainStorage() {
-    try {
-      const granted = await navigator.storage.persist();
-      storageStatus = granted ? 'persistent storage granted. keep exported backups as well.' : 'the browser did not grant persistence. export backups of your notes.';
-      await updateStorage();
-    } catch (error) { storageStatus = storageError(error); }
   }
 
   function updatePdfMargin(side: PdfMarginSide, input: HTMLInputElement) {
@@ -1021,8 +1018,8 @@
   </dialog>
   <dialog use:dialogShortcuts class="local-picker editor-exit" bind:this={relocateDialog} aria-labelledby="relocate-heading"
     oncancel={(event) => { if (busy) event.preventDefault(); }}>
-    <h2 id="relocate-heading">relocate {relocateTarget?.kind === 'directory' ? 'folder' : 'file'} to {storageLabel(relocateDestination?.storage ?? 'browser')}?</h2>
-    <p class="muted">this creates “{relocateTarget?.name}”{relocateTarget?.kind === 'directory' ? ' and all its contents' : ''} in {storageLabel(relocateDestination?.storage ?? 'browser')} at {relocateDestination ? workspace.label(relocateDestination) : 'home'}, then deletes the original from {storageLabel(relocateTarget?.storage ?? 'browser')}.</p>
+    <h2 id="relocate-heading">relocate {relocateTarget?.kind === 'directory' ? 'folder' : 'file'} to {storageLabel(relocateDestination?.storage ?? homeStorage)}?</h2>
+    <p class="muted">this creates “{relocateTarget?.name}”{relocateTarget?.kind === 'directory' ? ' and all its contents' : ''} in {storageLabel(relocateDestination?.storage ?? homeStorage)} at {relocateDestination ? workspace.label(relocateDestination) : 'home'}, then deletes the original from {storageLabel(relocateTarget?.storage ?? homeStorage)}.</p>
     <div class="editor-controls">
       <Control onclick={() => relocateDialog.close()} disabled={busy || loading}>no</Control>
       <Control onclick={finishRelocate} disabled={busy || loading}>yes</Control>
@@ -1083,9 +1080,10 @@
       <p class="muted">{section.description}</p>
       {#if settingsSection === 'sources'}
         <Action label="GitHub repositories" onSelect={() => { void showGitHubSettings(); }} disabled={loading || busy} />
-        {#if capacity}
-          <p class="muted">{(capacity.usage / 1048576).toFixed(1)} MB used · {(capacity.quota / 1073741824).toFixed(1)} GB estimated quota · {capacity.persistent ? 'persistent storage' : 'best-effort storage'}</p>
-          <Action label="keep browser storage" onSelect={retainStorage} />
+        {#if isNativeApp()}
+          <p class="muted">native storage · new items at home are saved in Notework’s own folder on this device.</p>
+        {:else if capacity}
+          <p class="muted">native storage · {(capacity.usage / 1048576).toFixed(1)} MB used · {(capacity.quota / 1073741824).toFixed(1)} GB estimated quota · {capacity.persistent ? 'persistent storage' : 'best-effort storage'}</p>
         {/if}
         {#if storageStatus}<p class="muted" role="status">{storageStatus}</p>{/if}
 

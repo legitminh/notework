@@ -843,7 +843,7 @@ test('relocating a GitHub note to Home preserves the file before deleting the re
   await action(page, 'relocate this file').click();
   await action(page, 'home').click();
   await page.getByRole('region', { name: 'current state' }).locator('[data-action="choose"] button').click();
-  const confirm = page.getByRole('dialog', { name: 'relocate file to browser storage?' });
+  const confirm = page.getByRole('dialog', { name: 'relocate file to native storage?' });
   await confirm.getByRole('button', { name: 'yes', exact: true }).click();
   await expect(action(page, 'open')).toBeVisible();
   await expect.poll(() => repo.content('note.txt')).toBeUndefined();

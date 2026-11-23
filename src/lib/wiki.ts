@@ -1,5 +1,6 @@
 import { isMissing, type LocalDirectory, type LocalFile } from './filesystem';
-import { ROOT, type StateNode, type Workspace } from './workspace';
+import { ROOT, appOwned, type StateNode, type Workspace } from './workspace';
+import { nativeParent } from './native-fs';
 import { pageReferencePattern } from './page-pattern';
 
 export const wikiPattern = /\[\[([^\[\]\r\n]+)\]\]/g;
@@ -101,6 +102,8 @@ export async function containingFolder(workspace: Workspace, node: StateNode, fi
     for (const part of path.slice(0, -1)) directory = await directory.getDirectoryHandle(part);
     return directory;
   }
+  // A resource at home in native storage sits alone in its own app folder.
+  if (node.storage === 'native' && !node.path.length) return nativeParent(file) as unknown as FileSystemDirectoryHandle;
   if (node.path.length) {
     const parent = await workspace.handle(JSON.stringify([node.sourceId, ...node.path.slice(0, -1)]));
     if (parent.kind === 'directory') return parent as unknown as FileSystemDirectoryHandle;
@@ -139,9 +142,9 @@ export async function assertAvailable(folder: FileSystemDirectoryHandle, name: s
 }
 
 export async function connectSibling(workspace: Workspace, source: StateNode, handle: LocalFile) {
-  if (source.storage === 'browser') {
+  if (appOwned(source.storage)) {
     const node = await workspace.connect(handle, null, {
-      id: crypto.randomUUID(), storage: 'browser', uri: `${parentUri(source)}/${encodeURIComponent(handle.name)}`
+      id: crypto.randomUUID(), storage: source.storage as 'browser' | 'native', uri: `${parentUri(source)}/${encodeURIComponent(handle.name)}`
     });
     if (!node.path.length) workspace.link(ROOT, node.id);
     return node;

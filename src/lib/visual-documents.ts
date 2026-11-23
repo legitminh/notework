@@ -6,6 +6,7 @@ import type { CanvasSize } from './canvas-size';
 import type { LocalFile } from './filesystem';
 import { isMissing } from './filesystem';
 import { writeResourceContent } from './resource-content';
+import { isNativeHandle } from './native-fs';
 import { containingFolder, requireWrite, resolveFileReference, wikiCatalog } from './wiki';
 import { nodeId, ROOT, type StateNode, type Storage, type Workspace } from './workspace';
 import { GitHubDirectory, GitHubFile, gitBlobSha } from './github/repository';
@@ -14,7 +15,7 @@ import type { ImageDocument } from './images';
 /**
  * Notework host for visual.editor documents. A visual document is a page folder: `name/name.visual`
  * is the plaintext organizer, and every layer is a sibling asset (PNG raster, SVG vector) that shows
- * up in the file tree. Brushes live in `app.asset/editor.visual/brushes` (browser storage at Home)
+ * up in the file tree. Brushes live in `app.asset/editor.visual/brushes` (native storage at Home)
  * unless a document references brush files elsewhere.
  */
 type Directory = FileSystemDirectoryHandle;
@@ -91,6 +92,9 @@ async function writeFile(context: VisualContext, name: string, data: string | Ui
 
 export interface LibraryBrush { reference: string; file: string; brush: Brush }
 
+/** The brush library lives in native storage at home: on disk in the native app, OPFS in the PWA. */
+const libraryStorage = (handle: unknown): Storage => isNativeHandle(handle) ? 'native' : 'browser';
+
 async function appAssetFolder(workspace: Workspace, create: boolean): Promise<Directory | undefined> {
   for (const id of workspace.data.rootIds) {
     const node = await workspace.node(id).catch(() => undefined);
@@ -113,7 +117,7 @@ export async function brushFolder(workspace: Workspace, create = true): Promise<
     for await (const _ of folder.values()) { empty = false; break; }
     if (empty && create) for (const file of kritaBasicFiles()) {
       const handle = await folder.getFileHandle(file.name, { create: true });
-      await writeResourceContent(handle as unknown as LocalFile, 'browser', [file.text]);
+      await writeResourceContent(handle as unknown as LocalFile, libraryStorage(handle), [file.text]);
     }
     return folder;
   } catch (error) { if (missingLike(error)) return undefined; throw error; }
@@ -151,7 +155,7 @@ export async function importBrushFile(workspace: Workspace, file: File): Promise
   let name = `${base}${BRUSH_EXTENSION}`;
   for (let i = 2; taken.has(name.toLowerCase()); i++) name = `${base}-${i}${BRUSH_EXTENSION}`;
   const handle = await folder.getFileHandle(name, { create: true });
-  await writeResourceContent(handle as unknown as LocalFile, 'browser', [serializeBrush(brush)]);
+  await writeResourceContent(handle as unknown as LocalFile, libraryStorage(handle), [serializeBrush(brush)]);
   return { reference: `${BRUSH_LIBRARY}/${name}`, file: name, brush };
 }
 
@@ -162,7 +166,7 @@ export async function saveBrush(context: VisualContext, reference: string, brush
     const folder = await brushFolder(context.workspace, true);
     const handle = folder && await walk(folder, reference.slice(BRUSH_LIBRARY.length + 1), true);
     if (!handle) throw new Error('the brush file could not be written.');
-    await writeResourceContent(handle as unknown as LocalFile, 'browser', [text]);
+    await writeResourceContent(handle as unknown as LocalFile, libraryStorage(handle), [text]);
     return;
   }
   context.catalog ??= wikiCatalog(context.workspace, new AbortController().signal);

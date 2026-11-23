@@ -25,7 +25,7 @@ test('installed app shell and browser documents work offline', async ({ page, co
   await expect(editor).toBeVisible();
   await editor.click(); await page.keyboard.insertText('Notes survive offline.');
   await page.keyboard.press('ControlOrMeta+s');
-  await expect(page.getByText('saved in browser storage', { exact: true })).toBeVisible();
+  await expect(page.getByText('saved in native storage', { exact: true })).toBeVisible();
   await context.setOffline(true);
   await page.reload();
   await expect(action('offline.txt')).toBeVisible();
@@ -38,7 +38,7 @@ test('installed app shell and browser documents work offline', async ({ page, co
   await expect(editor).toHaveText('Notes survive offline.');
   await editor.click(); await page.keyboard.press('ControlOrMeta+End'); await page.keyboard.insertText(' Still writing.');
   await page.keyboard.press('ControlOrMeta+s');
-  await expect(page.getByText('saved in browser storage', { exact: true })).toBeVisible();
+  await expect(page.getByText('saved in native storage', { exact: true })).toBeVisible();
   await page.reload(); await action('offline.txt').click(); await action('open').click();
   await expect(editor).toHaveText('Notes survive offline. Still writing.');
   await page.getByRole('group', { name: 'editor toolbar' }).getByRole('button', { name: 'export', exact: true }).click();

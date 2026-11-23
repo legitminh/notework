@@ -29,6 +29,12 @@ export interface NativeEntry { name: string; path: string; kind: 'file' | 'direc
 interface NativeStat { kind: 'file' | 'directory'; size: number; modified: number }
 
 export const nativePlaces = () => call<NativePlace[]>('fs_places');
+
+let documents: Promise<NativeDirectory> | undefined;
+/** Native storage: the app's own documents folder, where new resources at home live. */
+export function nativeDocuments(): Promise<NativeDirectory> {
+  return documents ??= call<string>('fs_documents').then((path) => new NativeDirectory(path), (error) => { documents = undefined; throw error; });
+}
 /** Names in a folder, for the folder browser. Reads no file contents beyond a text check. */
 export const browseNative = (path: string) => call<NativeEntry[]>('fs_browse', { path });
 /** Names below a folder that contain `query`, for the folder browser's search. */
@@ -125,6 +131,17 @@ export class NativeDirectory extends NativeHandle implements LocalDirectory {
     if (!handle.path.startsWith(prefix)) return null;
     return handle.path.slice(prefix.length).split(/[/\\]/);
   }
+}
+
+export const isNativeHandle = (handle: unknown): handle is NativeFile | NativeDirectory => handle instanceof NativeHandle;
+
+/** The folder that contains a native file or folder. */
+export function nativeParent(handle: LocalHandle): LocalDirectory {
+  if (!(handle instanceof NativeHandle)) throw new Error('this item is not on this device.');
+  const path = handle.path.replace(/[/\\]+$/, '');
+  const cut = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+  if (cut < 0) throw new Error('this item has no containing folder.');
+  return new NativeDirectory(cut === 0 || /^[A-Za-z]:$/.test(path.slice(0, cut)) ? path.slice(0, cut + 1) : path.slice(0, cut));
 }
 
 export const nativeHandle = (entry: { path: string; kind: 'file' | 'directory' }): LocalHandle =>
