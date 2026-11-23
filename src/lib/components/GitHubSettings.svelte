@@ -30,27 +30,27 @@
 
 <section class="panel" aria-labelledby="github-heading">
   <h2 id="github-heading">GitHub repositories</h2>
-  <p class="muted">Connect a repository as a folder under Home. Use Cmd/Ctrl+S to sync a draft while you keep editing, or Exit to finish syncing before you leave.</p>
+  <p class="muted">connect a repository as a folder under home. use Cmd/Ctrl+S to sync a draft while you keep editing, or exit to finish syncing before you leave.</p>
   <ol>
-    <li><a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer">Create a fine-grained personal access token on GitHub</a>.</li>
-    <li>Choose the repository owner and select only the repository you want to connect. Under repository permissions, click <strong>Add permissions</strong>, select <strong>Contents</strong>, then choose <strong>Read and write</strong>.</li>
-    <li>Copy the token here. Use a repository with an initial commit and a branch where your account can push directly.</li>
+    <li><a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer">create a fine-grained personal access token on GitHub</a>.</li>
+    <li>choose the repository owner and select only the repository you want to connect. under repository permissions, click <strong>Add permissions</strong>, select <strong>Contents</strong>, then choose <strong>Read and write</strong>.</li>
+    <li>copy the token here. use a repository with an initial commit and a branch where your account can push directly.</li>
   </ol>
-  <p class="muted">The token is saved in this browser so Notework can connect next time. Notework sends it only to GitHub's API.</p>
+  <p class="muted">the token is saved in this browser so Notework can connect next time. Notework sends it only to GitHub's API.</p>
   <form bind:this={form} use:submitOnEnter onsubmit={connect}>
-    <label class="field">Repository <input bind:value={repository} placeholder="owner/repository" spellcheck="false" required disabled={busy} /></label>
-    <label class="field">Branch <input bind:value={branch} placeholder="Default branch" spellcheck="false" disabled={busy} /></label>
-    <label class="field">Personal access token <input bind:value={token} type="password" autocomplete="off" required disabled={busy} /></label>
-    <Control onclick={() => form.requestSubmit()} disabled={busy}>Connect repository</Control>
+    <label class="field">repository <input bind:value={repository} placeholder="owner/repository" spellcheck="false" required disabled={busy} /></label>
+    <label class="field">branch <input bind:value={branch} placeholder="default branch" spellcheck="false" disabled={busy} /></label>
+    <label class="field">personal access token <input bind:value={token} type="password" autocomplete="off" required disabled={busy} /></label>
+    <Control onclick={() => form.requestSubmit()} disabled={busy}>connect repository</Control>
   </form>
   {#if inputError || error}<StorageNotice error={inputError || error} />{/if}
   {#if sources.length}
-    <h3>Connected repositories</h3>
+    <h3>connected repositories</h3>
     {#each sources as { id, github } (id)}
       <div class="config-row">
         <span>{github?.owner}/{github?.repo} · {github?.branch}</span>
-        <Control class="small-button" onclick={() => onUpdate(id)} disabled={busy}>Update token</Control>
-        <Control class="small-button" onclick={() => onDisconnect(id)} disabled={busy}>Disconnect</Control>
+        <Control class="small-button" onclick={() => onUpdate(id)} disabled={busy}>update token</Control>
+        <Control class="small-button" onclick={() => onDisconnect(id)} disabled={busy}>disconnect</Control>
       </div>
     {/each}
   {/if}

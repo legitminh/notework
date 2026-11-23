@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 
 const action = (page: Page, name: string) => page.locator(`[data-action=${JSON.stringify(name)}] button, button[data-action=${JSON.stringify(name)}]`);
-const tools = (page: Page) => page.getByRole('group', { name: 'Editor toolbar' });
+const tools = (page: Page) => page.getByRole('group', { name: 'editor toolbar' });
 
 async function create(page: Page, name = 'folds.txt') {
   await page.goto('/');
@@ -10,21 +10,21 @@ async function create(page: Page, name = 'folds.txt') {
   await page.getByLabel('name', { exact: true }).fill(name);
   await action(page, 'create text file').click();
   await action(page, 'open').click();
-  const editor = page.getByRole('textbox', { name: `Edit ${name}`, exact: true });
+  const editor = page.getByRole('textbox', { name: `edit ${name}`, exact: true });
   await expect(editor).toBeFocused();
   return editor;
 }
 
-test('Fold keeps the parent, preserves nested folds, and never changes saved text', async ({ page }) => {
+test('fold keeps the parent, preserves nested folds, and never changes saved text', async ({ page }) => {
   const editor = await create(page);
   const source = 'Parent\n  Child\n    Grandchild\n\n  Second child\nPeer\n  Peer child\nLeaf';
   await editor.fill(source);
   await editor.press('ControlOrMeta+Home');
   await editor.press('ArrowDown');
-  await tools(page).getByRole('button', { name: 'Fold', exact: true }).click();
+  await tools(page).getByRole('button', { name: 'fold', exact: true }).click();
   await expect(editor.locator('.cm-line')).toHaveText(['Parent', '  Child ▸', '', '  Second child', 'Peer', '  Peer child', 'Leaf']);
   await editor.press('ControlOrMeta+Home');
-  await tools(page).getByRole('button', { name: 'Fold', exact: true }).click();
+  await tools(page).getByRole('button', { name: 'fold', exact: true }).click();
   await expect(editor.locator('.cm-line')).toHaveText(['Parent ▸', 'Peer', '  Peer child', 'Leaf']);
   await editor.press('ControlOrMeta+Home');
   await page.keyboard.insertText('Edited ');
@@ -33,12 +33,12 @@ test('Fold keeps the parent, preserves nested folds, and never changes saved tex
   await expect(editor.locator('.cm-line')).toHaveText(['Parent ▸', 'Peer', '  Peer child', 'Leaf']);
   for (const key of ['ArrowDown', 'ArrowUp', 'End', 'ArrowRight', 'ArrowRight', 'ArrowLeft', 'ControlOrMeta+End', 'ControlOrMeta+Home']) await editor.press(key);
   await expect(editor.locator('.cm-line')).toHaveText(['Parent ▸', 'Peer', '  Peer child', 'Leaf']);
-  await tools(page).getByRole('button', { name: 'Fold', exact: true }).click();
+  await tools(page).getByRole('button', { name: 'fold', exact: true }).click();
   await expect(editor.locator('.cm-line')).toHaveText(['Parent', '  Child ▸', '', '  Second child', 'Peer', '  Peer child', 'Leaf']);
   await editor.press('ControlOrMeta+End');
-  await tools(page).getByRole('button', { name: 'Fold', exact: true }).click();
+  await tools(page).getByRole('button', { name: 'fold', exact: true }).click();
   await expect(editor.locator('.cm-fold-arrow')).toHaveCount(1); // Leaf is not a parent.
-  await tools(page).getByRole('button', { name: 'Exit', exact: true }).click();
+  await tools(page).getByRole('button', { name: 'exit', exact: true }).click();
   await action(page, 'open').click();
   await expect(editor.locator('.cm-line')).toHaveText(source.split('\n'));
 });
@@ -49,7 +49,7 @@ test('hover arrow overlays the parent’s last character and toggles with the mo
   await editor.press('ControlOrMeta+End');
   const parent = editor.locator('.cm-line').first();
   await parent.hover({ position: { x: 10, y: 8 } });
-  const fold = page.getByRole('button', { name: 'Fold children of line 1', exact: true });
+  const fold = page.getByRole('button', { name: 'fold children of line 1', exact: true });
   await expect(fold).toBeVisible();
   const position = await parent.evaluate((element) => {
     const range = document.createRange();
@@ -64,7 +64,7 @@ test('hover arrow overlays the parent’s last character and toggles with the mo
   await fold.click();
   await expect(editor.locator('.cm-line')).toHaveText(['Parent ▸', 'Peer']);
   await parent.hover({ position: { x: 10, y: 8 } });
-  await page.getByRole('button', { name: 'Unfold children of line 1', exact: true }).click();
+  await page.getByRole('button', { name: 'unfold children of line 1', exact: true }).click();
   await expect(editor.locator('.cm-line')).toHaveText(['Parent', '\tChild', '\t  Grandchild', 'Peer']);
   await editor.locator('.cm-line').last().hover();
   await expect(page.locator('.cm-fold-hover')).toHaveCount(0);
@@ -110,7 +110,7 @@ test('hover controls follow the size and bounds of a formatted Unicode heading',
   await editor.press('ControlOrMeta+End');
   const parent = editor.locator('.cm-line').filter({ hasText: 'Parent 📝' });
   await parent.hover({ position: { x: 10, y: 15 } });
-  const toggle = page.getByRole('button', { name: 'Fold children of line 2', exact: true });
+  const toggle = page.getByRole('button', { name: 'fold children of line 2', exact: true });
   await expect(toggle).toBeVisible();
   const geometry = await parent.evaluate((line) => {
     const text = line.querySelector('.cm-pretty-text')!.firstChild!;
@@ -148,13 +148,13 @@ test('folds hide links, drawing and image previews, and embedded pages even when
   await expect(page.locator('.svg-page-preview')).toHaveCount(2);
   await expect(page.locator('.page-reference')).toHaveCount(1);
   await editor.press('ControlOrMeta+Home');
-  await tools(page).getByRole('button', { name: 'Fold', exact: true }).click();
+  await tools(page).getByRole('button', { name: 'fold', exact: true }).click();
   await expect(editor.locator('.cm-line')).toHaveText(['Parent ▸', 'Peer']);
   await expect(page.locator('.cm-wiki-link, .svg-page-preview, .page-reference')).toHaveCount(0);
   for (let i = 0; i < 8; i++) await editor.press('ArrowRight');
   await expect(page.locator('.cm-wiki-link, .svg-page-preview, .page-reference')).toHaveCount(0);
   await editor.press('ControlOrMeta+Home');
-  await tools(page).getByRole('button', { name: 'Fold', exact: true }).click();
+  await tools(page).getByRole('button', { name: 'fold', exact: true }).click();
   await expect(page.locator('.svg-page-preview')).toHaveCount(2);
   await expect(page.locator('.page-reference')).toHaveCount(1);
   expect(errors).toEqual([]);

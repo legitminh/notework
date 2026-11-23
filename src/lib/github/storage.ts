@@ -49,7 +49,7 @@ async function put(key: string, value?: unknown) {
     if (value === undefined) store.delete(key);
     else store.put(value, key);
     tx.oncomplete = () => resolve();
-    tx.onabort = () => reject(tx.error ?? new Error('Could not save the GitHub draft in this browser.'));
+    tx.onabort = () => reject(tx.error ?? new Error('could not save the GitHub draft in this browser.'));
   });
 }
 
@@ -136,6 +136,6 @@ export async function updateSyncJobs(id: string, update: (jobs: GitHubSyncJob[])
       store.put(jobs, key);
     };
     tx.oncomplete = () => resolve(jobs);
-    tx.onabort = () => reject(tx.error ?? new Error('Could not persist the GitHub sync queue.'));
+    tx.onabort = () => reject(tx.error ?? new Error('could not persist the GitHub sync queue.'));
   });
 }

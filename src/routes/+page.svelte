@@ -161,12 +161,12 @@
   let panelElement = $state<HTMLDivElement>();
   type SettingsSection = 'sources' | 'appearance' | 'keyboard' | 'text-editor' | 'image-editor' | 'saving' | 'export';
   const settingsSections: { id: SettingsSection; label: string; description: string }[] = [
-    { id: 'sources', label: 'sources and storage', description: 'Choose which files and folders are directly reachable from home, and manage connected sources.' },
-    { id: 'appearance', label: 'appearance', description: 'Color theme and type size.' },
-    { id: 'keyboard', label: 'keyboard', description: 'Key labels, shortcut keys, and the virtual keyboard.' },
-    { id: 'text-editor', label: 'text editor', description: 'Line display, Vim mode, wrapping, and pretty display.' },
-    { id: 'image-editor', label: 'image editor', description: 'Drawing input.' },
-    { id: 'saving', label: 'saving and sync', description: 'Autosave timing and GitHub update checks.' },
+    { id: 'sources', label: 'sources and storage', description: 'choose which files and folders are directly reachable from home, and manage connected sources.' },
+    { id: 'appearance', label: 'appearance', description: 'color theme and type size.' },
+    { id: 'keyboard', label: 'keyboard', description: 'key labels, shortcut keys, and the virtual keyboard.' },
+    { id: 'text-editor', label: 'text editor', description: 'line display, Vim mode, wrapping, and pretty display.' },
+    { id: 'image-editor', label: 'image editor', description: 'drawing input.' },
+    { id: 'saving', label: 'saving and sync', description: 'autosave timing and GitHub update checks.' },
     { id: 'export', label: 'export', description: 'PDF export margins.' },
   ];
   // App settings replace the home view as an in-page screen (no URL of its own), so
@@ -269,7 +269,7 @@
     if (browserDocuments) void updateStorage();
     void (async () => {
       try { workspace = new Workspace(await loadWorkspace()); }
-      catch { storageMessage = 'Browser storage is unavailable. Connections and settings will last only for this tab.'; }
+      catch { storageMessage = 'browser storage is unavailable. connections and settings will last only for this tab.'; }
       const synced = await Promise.allSettled(workspace.data.sources.map((item) => workspace.github(item.id)?.sync()));
       const failed = synced.find((result) => result.status === 'rejected' && result.reason instanceof GitHubApiError && result.reason.canReconnect)
         ?? synced.find((result) => result.status === 'rejected');
@@ -387,7 +387,7 @@
 
   async function persist() {
     try { await saveWorkspace(workspace.data); storageMessage = ''; }
-    catch { storageMessage = 'Changes work in this tab but could not be saved. Allow browser storage to remember your connections.'; }
+    catch { storageMessage = 'changes work in this tab but could not be saved. allow browser storage to remember your connections.'; }
     await refresh();
   }
 
@@ -461,7 +461,7 @@
       displayElement?.focus({ preventScroll: true });
     } catch (error) {
       if (version !== navigationVersion) return;
-      if (isMissing(error)) { workspace.forget(id); message = 'Missing resource removed from the graph.'; await refresh(); }
+      if (isMissing(error)) { workspace.forget(id); message = 'missing resource removed from the graph.'; await refresh(); }
       else message = error instanceof GitHubApiError ? error : explainError(error);
     }
   }
@@ -497,7 +497,7 @@
 
   async function openLinkedFile(id: string, location?: PreviewLocation) {
     await navigate(id, true, true, location);
-    if (currentId !== id) throw message instanceof Error ? message : new Error(typeof message === 'string' && message || 'The linked file could not be opened.');
+    if (currentId !== id) throw message instanceof Error ? message : new Error(typeof message === 'string' && message || 'the linked file could not be opened.');
   }
 
   function askRename() {
@@ -652,7 +652,7 @@
     current = null; panel = null; edges = []; children = [];
     await goto(location.pathname, { state: { notework: ROOT }, shallow: true, replace: true, reset: false });
     await persist();
-    message = reason === 'missing' ? 'Missing resource removed from the graph.' : 'This file is no longer readable as text. Its connections were kept.';
+    message = reason === 'missing' ? 'missing resource removed from the graph.' : 'this file is no longer readable as text. its connections were kept.';
   }
 
   async function updateStorage() {
@@ -663,7 +663,7 @@
   async function retainStorage() {
     try {
       const granted = await navigator.storage.persist();
-      storageStatus = granted ? 'Persistent storage granted. Keep exported backups as well.' : 'The browser did not grant persistence. Export backups of your notes.';
+      storageStatus = granted ? 'persistent storage granted. keep exported backups as well.' : 'the browser did not grant persistence. export backups of your notes.';
       await updateStorage();
     } catch (error) { storageStatus = storageError(error); }
   }
@@ -675,17 +675,17 @@
     if (!valid) return;
     pdfMargins = { ...pdfMargins, [side]: value };
     try { localStorage.setItem(PDF_MARGINS_KEY, JSON.stringify(pdfMargins)); }
-    catch { storageMessage = 'Export margins work in this tab but could not be saved in browser storage.'; }
+    catch { storageMessage = 'export margins work in this tab but could not be saved in browser storage.'; }
   }
 
   function updateAutosaveInterval(input: HTMLInputElement) {
     const value = input.valueAsNumber;
     const valid = Number.isFinite(value) && value >= MIN_AUTOSAVE_SECONDS;
-    input.setCustomValidity(valid ? '' : `Enter ${MIN_AUTOSAVE_SECONDS} second or longer.`);
+    input.setCustomValidity(valid ? '' : `enter ${MIN_AUTOSAVE_SECONDS} second or longer.`);
     if (!valid) return;
     autosaveSeconds = normalizeAutosaveSeconds(value);
     try { localStorage.setItem(AUTOSAVE_SECONDS_KEY, String(autosaveSeconds)); }
-    catch { storageMessage = 'The autosave interval works in this tab but could not be remembered.'; }
+    catch { storageMessage = 'the autosave interval works in this tab but could not be remembered.'; }
   }
 
   async function startCreating() {
@@ -715,7 +715,7 @@
     try {
       // requestPermission is called from the user's action, never during page load.
       permissions[sourceId] = await grant.handle.requestPermission({ mode: 'read' });
-      if (permissions[sourceId] !== 'granted') message = `Read access to ${grant.handle.name} was not granted. You can try reconnecting again.`;
+      if (permissions[sourceId] !== 'granted') message = `read access to ${grant.handle.name} was not granted. you can try reconnecting again.`;
       await refresh();
     } catch (error) { message = explainError(error); }
     finally { busy = false; }
@@ -796,7 +796,7 @@
       const repository = await GitHubRepository.connect(id, owner, repo, branch, token);
       if (githubSources.some(({ github }) => github && github.owner.toLowerCase() === owner.toLowerCase() &&
         github.repo.toLowerCase() === repo.toLowerCase() && github.branch === repository.connection.branch)) {
-        throw new Error('This repository branch is already connected. Use Update token to change its credentials.');
+        throw new Error('this repository branch is already connected. use update token to change its credentials.');
       }
       const node = workspace.connectGitHub(repository);
       try { await saveWorkspace(workspace.data); }
@@ -823,7 +823,7 @@
 
   async function updateGitHubToken(id: string, token: string) {
     const repository = workspace.github(id);
-    if (!repository) throw new Error('This GitHub repository is no longer connected.');
+    if (!repository) throw new Error('this GitHub repository is no longer connected.');
     await repository.replaceToken(token);
     clearGitHubError(id);
     await refresh();
@@ -836,7 +836,7 @@
   }
 
   async function disconnectGitHub(id: string) {
-    if (busy || !confirm('Disconnect this repository? Notework will remove its token, cached files, and any unpublished drafts from this browser. Files on GitHub will stay as they are.')) return;
+    if (busy || !confirm('disconnect this repository? Notework will remove its token, cached files, and any unpublished drafts from this browser. files on GitHub will stay as they are.')) return;
     busy = true; githubError = '';
     try {
       workspace.github(id)?.assertNoQueuedSync('');
@@ -920,7 +920,7 @@
               <Action label={`delete this ${resourceType}`} onSelect={confirmDelete} disabled={busy || !canDeleteCurrent} />
             {/if}
             {#if !githubRoot && !canDeleteCurrent}
-              <p class="muted">Reconnect this {resourceType} through its containing folder to delete it from Notework.</p>
+              <p class="muted">reconnect this {resourceType} through its containing folder to delete it from Notework.</p>
             {/if}
           </section>
         {:else if panel === 'github'}
@@ -969,7 +969,7 @@
 
       {#if loading}<p class="muted" role="status">opening workspace…</p>{/if}
       {#if !supported}
-        <p class="notice" role="status">Local filesystem access needs Chrome or Edge on HTTPS or localhost. Open Notework there to select files and folders from your computer.</p>
+        <p class="notice" role="status">local filesystem access needs Chrome or Edge on HTTPS or localhost. open Notework there to select files and folders from your computer.</p>
       {/if}
       {#if storageMessage}<p class="notice" role="status">{storageMessage}</p>{/if}
       {#if githubError && panel !== 'github'}<StorageNotice error={githubError} role="status" />{/if}
@@ -1005,44 +1005,44 @@
   </Document>
   <dialog use:dialogShortcuts class="local-picker editor-exit" bind:this={renameDialog} aria-labelledby="rename-title"
     oncancel={(event) => { if (busy) event.preventDefault(); }}>
-    <h2 id="rename-title">Rename {renameTarget?.kind === 'directory' ? 'folder' : 'file'}</h2>
+    <h2 id="rename-title">rename {renameTarget?.kind === 'directory' ? 'folder' : 'file'}</h2>
     <form bind:this={renameForm} use:submitOnEnter onsubmit={(event) => { event.preventDefault(); void renameCurrent(); }}>
       <label class="field">new name <input bind:value={() => renameName, (value) => {
         renameName = stripFilenameEditingArtifacts(value); renameError = '';
       }} required maxlength="255" disabled={busy || loading} /></label>
       {#if renameError}<StorageNotice error={renameError} />{/if}
       <div class="editor-controls">
-        <Control onclick={() => renameForm.requestSubmit()} disabled={busy || loading}>Rename and update links</Control>
-        <Control onclick={() => renameDialog.close()} disabled={busy || loading}>Cancel</Control>
+        <Control onclick={() => renameForm.requestSubmit()} disabled={busy || loading}>rename and update links</Control>
+        <Control onclick={() => renameDialog.close()} disabled={busy || loading}>cancel</Control>
       </div>
     </form>
   </dialog>
   <dialog use:dialogShortcuts class="local-picker editor-exit" bind:this={relocateDialog} aria-labelledby="relocate-heading"
     oncancel={(event) => { if (busy) event.preventDefault(); }}>
-    <h2 id="relocate-heading">Relocate {relocateTarget?.kind === 'directory' ? 'folder' : 'file'} to {storageLabel(relocateDestination?.storage ?? 'browser')}?</h2>
-    <p class="muted">This creates “{relocateTarget?.name}”{relocateTarget?.kind === 'directory' ? ' and all its contents' : ''} in {storageLabel(relocateDestination?.storage ?? 'browser')} at {relocateDestination ? workspace.label(relocateDestination) : 'home'}, then deletes the original from {storageLabel(relocateTarget?.storage ?? 'browser')}.</p>
+    <h2 id="relocate-heading">relocate {relocateTarget?.kind === 'directory' ? 'folder' : 'file'} to {storageLabel(relocateDestination?.storage ?? 'browser')}?</h2>
+    <p class="muted">this creates “{relocateTarget?.name}”{relocateTarget?.kind === 'directory' ? ' and all its contents' : ''} in {storageLabel(relocateDestination?.storage ?? 'browser')} at {relocateDestination ? workspace.label(relocateDestination) : 'home'}, then deletes the original from {storageLabel(relocateTarget?.storage ?? 'browser')}.</p>
     <div class="editor-controls">
-      <Control onclick={() => relocateDialog.close()} disabled={busy || loading}>No</Control>
-      <Control onclick={finishRelocate} disabled={busy || loading}>Yes</Control>
+      <Control onclick={() => relocateDialog.close()} disabled={busy || loading}>no</Control>
+      <Control onclick={finishRelocate} disabled={busy || loading}>yes</Control>
     </div>
   </dialog>
   <dialog use:dialogShortcuts class="local-picker editor-exit" bind:this={deleteDialog} aria-labelledby="delete-heading"
     onclose={() => { deleteTarget = null; }} oncancel={(event) => { if (busy) event.preventDefault(); }}>
-    <h2 id="delete-heading">Delete {deleteTarget?.name}?</h2>
-    <p class="muted">{deleteTarget?.kind === 'directory' ? 'This permanently deletes the folder and everything inside it.' : 'This permanently deletes the file.'}</p>
+    <h2 id="delete-heading">delete {deleteTarget?.name}?</h2>
+    <p class="muted">{deleteTarget?.kind === 'directory' ? 'this permanently deletes the folder and everything inside it.' : 'this permanently deletes the file.'}</p>
     <div class="editor-controls">
-      <Control onclick={() => deleteDialog.close()} disabled={busy || loading}>Cancel</Control>
-      <Control onclick={deleteCurrent} disabled={busy || loading}>Delete {deleteTarget?.kind === 'directory' ? 'folder' : 'file'}</Control>
+      <Control onclick={() => deleteDialog.close()} disabled={busy || loading}>cancel</Control>
+      <Control onclick={deleteCurrent} disabled={busy || loading}>delete {deleteTarget?.kind === 'directory' ? 'folder' : 'file'}</Control>
     </div>
   </dialog>
   <AppKeyboard enabled={virtualKeyboard} choice={keyboardChoice} />
   <GitHubSyncProgress />
-  {#if heldModifier && !globalSearch && !contentSearch && !searchMenu}<aside class="modifier-hints" aria-label="Command and Control shortcuts">C · Copy &nbsp; V · Paste &nbsp; F · Search text in folder children &nbsp; P · Search file in folder children &nbsp; Shift+F · Search text in all files &nbsp; Shift+P · Search file in all files &nbsp; S · Save</aside>{/if}
+  {#if heldModifier && !globalSearch && !contentSearch && !searchMenu}<aside class="modifier-hints" aria-label="Command and Control shortcuts">C · copy &nbsp; V · paste &nbsp; F · search text in folder children &nbsp; P · search file in folder children &nbsp; Shift+F · search text in all files &nbsp; Shift+P · search file in all files &nbsp; S · save</aside>{/if}
   {#if searchMenu}<SearchMenu onChoose={beginSearch} onClose={closeSearchMenu} />{/if}
   {#if contentSearch && contentIndex}<ContentSearchDialog {workspace} index={contentIndex} from={searchFrom}
     label={searchLabel} {graphRevision}
     onOpen={async (node, position) => {
-      if (editing && !await activeEditor?.saveForNavigation()) throw new Error('Save could not finish. Exit search to resolve the editor’s save message.');
+      if (editing && !await activeEditor?.saveForNavigation()) throw new Error('save could not finish. exit search to resolve the editor’s save message.');
       editing = false;
       await navigate(node.id);
       if (currentId === node.id) {
@@ -1083,11 +1083,11 @@
         {#if storageStatus}<p class="muted" role="status">{storageStatus}</p>{/if}
 
         <h2>root transitions</h2>
-        {#if !rootIds.length}<p class="muted">Home has no items. Connect a source here or create an item from home.</p>{/if}
+        {#if !rootIds.length}<p class="muted">home has no items. connect a source here or create an item from home.</p>{/if}
         {#each rootIds as id (id)}
-          <div class="config-row"><span>{label(id)}</span><Control class="small-button" onclick={() => remove(ROOT, id)} aria-label={`Remove ${label(id)} from root`}>remove from root</Control></div>
+          <div class="config-row"><span>{label(id)}</span><Control class="small-button" onclick={() => remove(ROOT, id)} aria-label={`remove ${label(id)} from root`}>remove from root</Control></div>
         {/each}
-        <p class="muted">Removing a transition never deletes the original file or folder.</p>
+        <p class="muted">removing a transition never deletes the original file or folder.</p>
 
         {#if connectedSources.length}
           <h2>connected sources</h2>
@@ -1110,9 +1110,9 @@
         <Action label="larger type" onSelect={() => min_box.set(Math.min(72, min_box.value + 4))} />
       {:else if settingsSection === 'keyboard'}
         <Action label={`key labels: ${keypath_visibility.visible ? 'shown' : 'hidden'}`} onSelect={() => keypath_visibility.toggle()} />
-        <p class="muted">Shown by default on computers and hidden on phones and tablets. Key colors stay, and shortcuts keep working while labels are hidden.</p>
+        <p class="muted">shown by default on computers and hidden on phones and tablets. key colors stay, and shortcuts keep working while labels are hidden.</p>
         <ChoiceMenu label="shortcut input space" value={shortcutAlphabet}
-          choices={[{ id: 'alphanumeric', label: 'Alphanumeric (A–Z, 0–9)' }, { id: 'letters', label: 'Letters (A–Z)' }]}
+          choices={[{ id: 'alphanumeric', label: 'Alphanumeric (A–Z, 0–9)' }, { id: 'letters', label: 'letters (A–Z)' }]}
           onchange={(value) => {
             shortcutAlphabet = value;
             set_available_keys(value === 'letters' ? key_presets.letters : key_presets.alphanumeric);
@@ -1127,8 +1127,8 @@
             keyboardChoice = value;
             try { localStorage.setItem('notework:keyboard-layout', value); } catch { /* Session only. */ }
           }} />
-        <p class="muted">Off by default. When enabled, use the selected Keyflow keyboard instead of the system text keyboard. Flick alpha supports directional gestures during text editing.</p>
-        <p class="muted">Use the colored key labels (when shown) or click a button. Tab and Enter also work. Scrolling is native.</p>
+        <p class="muted">off by default. when enabled, use the selected Keyflow keyboard instead of the system text keyboard. flick alpha supports directional gestures during text editing.</p>
+        <p class="muted">use the colored key labels (when shown) or click a button. Tab and Enter also work. scrolling is native.</p>
       {:else if settingsSection === 'text-editor'}
         <Action label={`line numbers: ${showLineNumbers ? 'on' : 'off'}`} onSelect={() => {
           showLineNumbers = !showLineNumbers; saveAppearancePreference('notework:line-numbers', showLineNumbers);
@@ -1136,7 +1136,7 @@
         <Action label={`line index mod 4: ${showLineIndex ? 'on' : 'off'}`} onSelect={() => {
           showLineIndex = !showLineIndex; saveAppearancePreference('notework:line-index', showLineIndex);
         }} />
-        <p class="muted">Zero-based line index in spare margins: gray/gray = 0, transparent/gray = 1, gray/transparent = 2, transparent/transparent = 3.</p>
+        <p class="muted">zero-based line index in spare margins: gray/gray = 0, transparent/gray = 1, gray/transparent = 2, transparent/transparent = 3.</p>
         <Action label={`Vim mode: ${vimMode ? 'on' : 'off'}`} onSelect={() => {
           vimMode = !vimMode;
           saveAppearancePreference('notework:vim-mode', vimMode);
@@ -1164,14 +1164,14 @@
           <input type="number" min={MIN_AUTOSAVE_SECONDS} step="1" value={autosaveSeconds}
             oninput={(event) => updateAutosaveInterval(event.currentTarget)} />
         </label>
-        <p class="muted">Default: {DEFAULT_AUTOSAVE_SECONDS} seconds. Exit saves first and queues GitHub sync in the background. Local files may ask for write access when you exit.</p>
+        <p class="muted">default: {DEFAULT_AUTOSAVE_SECONDS} seconds. exit saves first and queues GitHub sync in the background. local files may ask for write access when you exit.</p>
         <h2>GitHub updates</h2>
         <label class="field"><span>GitHub check interval (seconds)</span>
           <input type="number" min="1" step="any" value={githubPollSeconds} oninput={(event) => updateGitHubInterval(event.currentTarget)} />
         </label>
-        <p class="muted">Default: 4 seconds. Checks pause while offline or the app is hidden. Unchanged repositories use conditional requests; rate limits pause checks automatically. Open drafts are preserved.</p>
+        <p class="muted">default: 4 seconds. checks pause while offline or the app is hidden. unchanged repositories use conditional requests; rate limits pause checks automatically. open drafts are preserved.</p>
       {:else if settingsSection === 'export'}
-        <p class="muted" id="pdf-margin-units">Each side defaults to 1 min-box. Set 0 for no margin; fractions are allowed.</p>
+        <p class="muted" id="pdf-margin-units">each side defaults to 1 min-box. set 0 for no margin; fractions are allowed.</p>
         {#each pdfMarginSides as side}
           <label class="field"><span>{side} margin (min-box)</span>
             <input type="number" min="0" step="any" value={pdfMargins[side]} aria-describedby="pdf-margin-units"

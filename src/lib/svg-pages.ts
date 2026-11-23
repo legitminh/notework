@@ -18,7 +18,7 @@ class SvgPageWidget extends WidgetType {
     if (button instanceof HTMLButtonElement) button.type = 'button';
     button.className = 'svg-page-preview';
     button.dataset.pageFrom = String(this.page.from);
-    button.setAttribute('aria-label', `${this.readOnly ? 'Preview of' : 'Edit drawing'} ${this.page.name}`);
+    button.setAttribute('aria-label', `${this.readOnly ? 'preview of' : 'edit drawing'} ${this.page.name}`);
     const indicator = this.loading || this.image ? imageLoadingIndicator() : undefined;
     if (indicator) button.append(indicator);
     const svg = document.createElementNS(svgNamespace, 'svg');
@@ -42,7 +42,7 @@ class SvgPageWidget extends WidgetType {
     if (this.image) {
       const image = document.createElementNS(svgNamespace, 'image');
       image.addEventListener('load', () => indicator?.remove(), { once: true });
-      image.addEventListener('error', () => { if (indicator) { indicator.textContent = 'Image unavailable'; indicator.setAttribute('aria-label', 'Image unavailable'); } }, { once: true });
+      image.addEventListener('error', () => { if (indicator) { indicator.textContent = 'image unavailable'; indicator.setAttribute('aria-label', 'image unavailable'); } }, { once: true });
       image.setAttribute('href', this.image.src); image.setAttribute('width', String(DRAWING_WIDTH)); image.setAttribute('height', String(height));
       svg.prepend(image);
     }

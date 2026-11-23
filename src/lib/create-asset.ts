@@ -12,17 +12,17 @@ export function createAsset(workspace: Workspace, parent: StateNode | null, inpu
 }
 async function createAssetInternal(workspace: Workspace, parent: StateNode | null, input: string, type: AssetType) {
   const name = assetName(input, type);
-  if (!validAssetInput(input, type)) throw new Error('Choose a name without slashes or control characters. Each generated name must fit within 255 characters. “.”, “..”, and “.git” are reserved.');
+  if (!validAssetInput(input, type)) throw new Error('choose a name without slashes or control characters. each generated name must fit within 255 characters. “.”, “..”, and “.git” are reserved.');
   const selected = parent ? workspace.cachedHandle(parent.id) : undefined;
   if (parent?.storage === 'local') {
-    if (!selected || selected.kind !== 'directory') throw new Error('Reopen the selected folder before creating an item.');
+    if (!selected || selected.kind !== 'directory') throw new Error('reopen the selected folder before creating an item.');
     // Request permission before any asynchronous directory traversal consumes the user gesture.
     await requireWrite(selected as unknown as FileSystemDirectoryHandle);
   }
-  if (parent && (await workspace.node(parent.id)).kind !== 'directory') throw new Error('Create assets inside a folder.');
+  if (parent && (await workspace.node(parent.id)).kind !== 'directory') throw new Error('create assets inside a folder.');
   if (!parent) {
     const existing = (await workspace.reachable(ROOT)).nodes;
-    if (existing.some((node) => node.name.toLowerCase() === name.toLowerCase())) throw new Error('An item with this name already exists.');
+    if (existing.some((node) => node.name.toLowerCase() === name.toLowerCase())) throw new Error('an item with this name already exists.');
   }
 
   let directory: FileSystemDirectoryHandle;
@@ -32,9 +32,9 @@ async function createAssetInternal(workspace: Workspace, parent: StateNode | nul
     directory = await workspace.handle(parent.id) as unknown as FileSystemDirectoryHandle;
     if (parent.storage === 'browser') {
       const path = await (await navigator.storage.getDirectory()).resolve(directory);
-      if (!path || path[0] !== 'notework' || path[1] !== 'documents') throw new Error('Only app-owned browser folders can be changed.');
+      if (!path || path[0] !== 'notework' || path[1] !== 'documents') throw new Error('only app-owned browser folders can be changed.');
     } else if (!await directory.isSameEntry(selected as unknown as FileSystemDirectoryHandle)) {
-      throw new Error('The folder changed outside Notework. Reopen it before creating an item.');
+      throw new Error('the folder changed outside Notework. reopen it before creating an item.');
     }
   } else {
     // Root has no backing folder; new root resources use app-owned browser storage.
@@ -53,7 +53,7 @@ async function createAssetInternal(workspace: Workspace, parent: StateNode | nul
   try {
     // Check hidden resources too. Never open an existing file for writing.
     for await (const entry of directory.values()) {
-      if (entry.name.toLowerCase() === name.toLowerCase()) throw new Error('An item with this name already exists.');
+      if (entry.name.toLowerCase() === name.toLowerCase()) throw new Error('an item with this name already exists.');
     }
     const handle: FileSystemHandle = type.kind === 'directory'
       ? await directory.getDirectoryHandle(name, { create: true })

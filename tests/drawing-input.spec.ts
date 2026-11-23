@@ -13,7 +13,7 @@ async function create(page: Page, name: string, format: 'svg' | 'png') {
     await action(page, 'create svg file').click();
   }
   await action(page, `open: ${name}`).click();
-  const canvas = page.getByRole('img', { name: `Drawing canvas for ${name}`, exact: true });
+  const canvas = page.getByRole('img', { name: `drawing canvas for ${name}`, exact: true });
   await expect(canvas).toBeVisible();
   // Record the real browser-assigned pointer ID, rather than assuming mouse/pen IDs.
   await canvas.evaluate((svg) => svg.addEventListener('pointerdown', (event) => {
@@ -33,8 +33,8 @@ for (const format of ['svg', 'png'] as const) for (const pointerType of ['pen', 
     const protocol = await context.newCDPSession(page);
     const strokes = canvas.locator(':scope > polyline');
     const ink = async (count:number) => { if(format === 'svg') await expect(strokes).toHaveCount(count); else await expectInk(canvas,[50,110,170,230,290,350],count); };
-    const tools = page.getByRole('group', { name: 'Drawing toolbar', exact: true });
-    const undo = tools.getByRole('button', { name: 'Undo', exact: true });
+    const tools = page.getByRole('group', { name: 'drawing toolbar', exact: true });
+    const undo = tools.getByRole('button', { name: 'undo', exact: true });
     const coords = (x: number, y: number) => format === 'png' ? rasterPoint(canvas,x,y) : canvas.evaluate((svg, [x, y]) => {
       const p = new DOMPoint(x, y).matrixTransform((svg as SVGSVGElement).getScreenCTM()!);
       return { x: p.x, y: p.y };
@@ -70,7 +70,7 @@ for (const format of ['svg', 'png'] as const) for (const pointerType of ['pen', 
     await expect(undo).toBeEnabled();
     if(format === 'svg') expect((await strokes.last().getAttribute('points'))!.split(' ').at(-1)).toBe('260,50'); else expect(await alpha(canvas,258,50)).toBeGreaterThan(0);
     await undo.click(); await ink(0);
-    await tools.getByRole('button', { name: 'Redo', exact: true }).click();
+    await tools.getByRole('button', { name: 'redo', exact: true }).click();
     await ink(1);
 
     for (const [index, type] of ['pointercancel', 'lostpointercapture', 'pointermove'].entries()) {
@@ -81,7 +81,7 @@ for (const format of ['svg', 'png'] as const) for (const pointerType of ['pen', 
       // last contact sample. It must not add a segment to (0, 0).
       await ink(index + 2);
       await undo.click(); await ink(index + 1);
-      await tools.getByRole('button', { name: 'Redo', exact: true }).click();
+      await tools.getByRole('button', { name: 'redo', exact: true }).click();
       await ink(index + 2);
       if(format === 'svg') expect((await strokes.last().getAttribute('points'))!.split(' ').at(-1)).toBe(`200,${y}`); else expect(await alpha(canvas,199,y)).toBeGreaterThan(0);
       await release(y);
@@ -101,18 +101,18 @@ for (const format of ['svg', 'png'] as const) for (const pointerType of ['pen', 
         svg.dispatchEvent(new TouchEvent('touchend', { bubbles: true, cancelable: true, touches: [], changedTouches: contacts }));
       });
       await ink(4);
-      await tools.getByRole('button', { name: 'Redo', exact: true }).click();
+      await tools.getByRole('button', { name: 'redo', exact: true }).click();
     }
     await release(290);
     await undo.click(); await ink(4);
-    await tools.getByRole('button', { name: 'Redo', exact: true }).click();
+    await tools.getByRole('button', { name: 'redo', exact: true }).click();
 
     // Explicit cancellation remains different from an interrupted input stream.
     await down(350);
     await page.keyboard.press('Escape');
     await release(350);
     await ink(5);
-    await tools.getByRole('button', { name: 'Exit', exact: true }).click();
+    await tools.getByRole('button', { name: 'exit', exact: true }).click();
     await expect(action(page, `open: ${name}`)).toBeVisible();
     await page.reload();
     await action(page, name).click();
@@ -149,7 +149,7 @@ test('a new pen contact recovers a missing release without joining two strokes',
   await expect(canvas.locator('polyline')).toHaveCount(2);
   const paths = await canvas.locator('polyline').evaluateAll((lines) => lines.map((line) => line.getAttribute('points')));
   expect(paths).toEqual(['80,50 200,50', '80,150 200,150']);
-  await page.getByRole('group', { name: 'Drawing toolbar' }).getByRole('button', { name: 'Undo', exact: true }).click();
+  await page.getByRole('group', { name: 'drawing toolbar' }).getByRole('button', { name: 'undo', exact: true }).click();
   await expect(canvas.locator('polyline')).toHaveCount(1);
 });
 
@@ -165,7 +165,7 @@ test('resizing during desktop pen input retains the sampled document coordinates
   await protocol.send('Input.dispatchMouseEvent', { type: 'mousePressed', pointerType: 'pen', button: 'left', buttons: 1, ...coords[0] });
   await protocol.send('Input.dispatchMouseEvent', { type: 'mouseMoved', pointerType: 'pen', buttons: 1, ...coords[1] });
   await canvas.evaluate((svg) => { (svg as SVGSVGElement).style.width = '400px'; });
-  const undo = page.getByRole('group', { name: 'Drawing toolbar' }).getByRole('button', { name: 'Undo', exact: true });
+  const undo = page.getByRole('group', { name: 'drawing toolbar' }).getByRole('button', { name: 'undo', exact: true });
   await expect(undo).toBeEnabled();
   await protocol.send('Input.dispatchMouseEvent', { type: 'mouseReleased', pointerType: 'pen', button: 'left', buttons: 0, ...coords[1] });
   await expect(canvas.locator('polyline')).toHaveAttribute('points', '80,50 200,50');
@@ -181,5 +181,5 @@ test('touch cancellation still discards a tentative finger stroke', async ({ pag
   await expect(canvas.locator('polyline')).toHaveCount(1);
   await protocol.send('Input.dispatchTouchEvent', { type: 'touchCancel', touchPoints: [] });
   await expect(canvas.locator('polyline')).toHaveCount(0);
-  await expect(page.getByRole('group', { name: 'Drawing toolbar' }).getByRole('button', { name: 'Undo', exact: true })).toBeDisabled();
+  await expect(page.getByRole('group', { name: 'drawing toolbar' }).getByRole('button', { name: 'undo', exact: true })).toBeDisabled();
 });

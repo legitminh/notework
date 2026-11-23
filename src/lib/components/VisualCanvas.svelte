@@ -69,7 +69,7 @@
   const canUndo = $derived(read(revision, selectionVersion, editor.canUndo)), canRedo = $derived(read(revision, selectionVersion, editor.canRedo));
   const zoomText = $derived(read(viewVersion, `${Math.round(view.zoom * 10000) / 100}%`));
   const statusText = $derived(saving ? 'saving drawing…' : waitingForPermission ? 'autosave is waiting for write permission; exit to save' : dirty ? 'unsaved drawing changes'
-    : githubPending ? 'drawing draft saved in this browser · Exit to sync to GitHub' : 'drawing saved');
+    : githubPending ? 'drawing draft saved in this browser · exit to sync to GitHub' : 'drawing saved');
   const layerTitle = $derived(activeLayer ? activeLayer.entry.name ?? activeLayer.entry.file : '');
   const title = $derived(documentMode && layerTitle ? `${layerTitle} · ${name}` : name);
 
@@ -136,9 +136,9 @@
       if (current !== 'brush' && current !== 'eraser') return;
       if (!inside(p)) return;
       if (editor.beginStroke(p[0], p[1], point.pressure, current)) gesture = { kind: 'paint', origin: p };
-      else if (activeLayer?.missing) notice = 'This layer’s file is missing, so it cannot be edited.';
-      else if (activeLayer && !activeLayer.entry.visible) notice = 'Show the layer before drawing on it.';
-      else if (activeLayer?.entry.locked) notice = 'This layer is locked.';
+      else if (activeLayer?.missing) notice = 'this layer’s file is missing, so it cannot be edited.';
+      else if (activeLayer && !activeLayer.entry.visible) notice = 'show the layer before drawing on it.';
+      else if (activeLayer?.entry.locked) notice = 'this layer is locked.';
     },
     strokeMove(point) {
       const p = docPoint(point.x, point.y);
@@ -153,7 +153,7 @@
       if (!current) return;
       const p = docPoint(point.x, point.y);
       if (current.kind === 'paint') { editor.strokeTo(p[0], p[1], point.pressure); editor.endStroke(); gestureCount++; }
-      else if (current.kind === 'lasso') { editor.lasso(trace); trace = []; if (!editor.selection) notice = 'Nothing selected: the lasso selects pixels, or strokes lying fully inside it.'; }
+      else if (current.kind === 'lasso') { editor.lasso(trace); trace = []; if (!editor.selection) notice = 'nothing selected: the lasso selects pixels, or strokes lying fully inside it.'; }
       else if (current.kind === 'quad') { dragQuad(current, p); gestureCount++; }
       else { resizeBox(current, p); editor.commitTransform(); gestureCount++; }
       refreshDirty(); schedule();
@@ -239,7 +239,7 @@
       // Pressing Transform again turns it off (committing, or asking about content outside the canvas).
       if (transformTool) { if (await finishTransform()) syncInputOptions(); return; }
       panTool = false;
-      if (!editor.beginTransformSession(allCanvas)) { notice = allCanvas ? 'The canvas is empty.' : 'Nothing to transform on this layer.'; return; }
+      if (!editor.beginTransformSession(allCanvas)) { notice = allCanvas ? 'the canvas is empty.' : 'nothing to transform on this layer.'; return; }
       transformTool = true; resetTransformSliders(); notice = ''; redraw(); return;
     }
     if (!await finishTransform()) return;
@@ -322,7 +322,7 @@
     const reference = kind === 'eraser' ? eraserRef : brushRef;
     if (!library || !reference) return;
     brushBusy = true;
-    try { await library.save(reference, kind === 'eraser' ? currentEraser : currentBrush); brushEdited = false; notice = 'Saved brush file.'; }
+    try { await library.save(reference, kind === 'eraser' ? currentEraser : currentBrush); brushEdited = false; notice = 'saved brush file.'; }
     catch (cause) { error = cause; } finally { brushBusy = false; }
   }
   let importKind: 'brush' | 'eraser' = 'brush';
@@ -333,19 +333,19 @@
       const imported = await library.import(file);
       editor.addBrush(imported.reference, imported.brush, true);
       chooseBrush(imported.brush.eraser ? 'eraser' : importKind, imported.reference);
-      notice = `Imported ${imported.brush.name}.`;
+      notice = `imported ${imported.brush.name}.`;
     } catch (cause) { error = cause; } finally { brushBusy = false; }
   }
   const shortName = (brush: Brush) => brush.name.replace(/^[a-z]\)\s*/, '');
   /** Per-brush settings, edited with Keyflow sliders (percentages / degrees for readability). */
   const brushSettings: { key: string; label: string; unit: string; min: number; max: number; speed: number; get: (b: Brush) => number; set: (v: number) => Partial<Brush> }[] = [
-    { key: 'hardness', label: 'Hardness', unit: '%', min: 0, max: 100, speed: 50, get: (b) => b.hardness * 100, set: (v) => ({ hardness: v / 100 }) },
-    { key: 'flow', label: 'Flow', unit: '%', min: 1, max: 100, speed: 50, get: (b) => b.flow * 100, set: (v) => ({ flow: v / 100 }) },
-    { key: 'spacing', label: 'Spacing', unit: '%', min: 1, max: 100, speed: 50, get: (b) => b.spacing * 100, set: (v) => ({ spacing: v / 100 }) },
-    { key: 'smoothing', label: 'Smoothing', unit: '%', min: 0, max: 95, speed: 50, get: (b) => b.smoothing * 100, set: (v) => ({ smoothing: v / 100 }) },
-    { key: 'minSize', label: 'Min size', unit: '%', min: 0, max: 100, speed: 50, get: (b) => b.minSize * 100, set: (v) => ({ minSize: v / 100 }) },
-    { key: 'ratio', label: 'Roundness', unit: '%', min: 5, max: 100, speed: 50, get: (b) => b.ratio * 100, set: (v) => ({ ratio: v / 100 }) },
-    { key: 'angle', label: 'Angle', unit: '°', min: -180, max: 180, speed: 90, get: (b) => b.angle, set: (v) => ({ angle: v }) }
+    { key: 'hardness', label: 'hardness', unit: '%', min: 0, max: 100, speed: 50, get: (b) => b.hardness * 100, set: (v) => ({ hardness: v / 100 }) },
+    { key: 'flow', label: 'flow', unit: '%', min: 1, max: 100, speed: 50, get: (b) => b.flow * 100, set: (v) => ({ flow: v / 100 }) },
+    { key: 'spacing', label: 'spacing', unit: '%', min: 1, max: 100, speed: 50, get: (b) => b.spacing * 100, set: (v) => ({ spacing: v / 100 }) },
+    { key: 'smoothing', label: 'smoothing', unit: '%', min: 0, max: 95, speed: 50, get: (b) => b.smoothing * 100, set: (v) => ({ smoothing: v / 100 }) },
+    { key: 'minSize', label: 'min size', unit: '%', min: 0, max: 100, speed: 50, get: (b) => b.minSize * 100, set: (v) => ({ minSize: v / 100 }) },
+    { key: 'ratio', label: 'roundness', unit: '%', min: 5, max: 100, speed: 50, get: (b) => b.ratio * 100, set: (v) => ({ ratio: v / 100 }) },
+    { key: 'angle', label: 'angle', unit: '°', min: -180, max: 180, speed: 90, get: (b) => b.angle, set: (v) => ({ angle: v }) }
   ];
 
   // ------------------------------------------------------------------ layers
@@ -494,28 +494,28 @@
   <!-- Horizontal component stream: every control flows left to right and folds like text. -->
   <div class="tool-stream">
     {#if kind === 'brush'}
-      <span class="pair"><span class="stream-label">Pen size</span><NumberBox bind:value={penSize} min={1} max={300} step={1} width="4ch" label="Pen size value" /></span>
-      <HorizontalSlider bind:value={penSize} min={1} max={300} step={1} speed={40} label="Pen size" />
-      <span class="pair"><span class="stream-label">Opacity</span><NumberBox bind:value={penOpacity} min={1} max={100} step={1} width="4ch" label="Brush opacity value" format={(value) => `${value}%`} /></span>
-      <HorizontalSlider bind:value={penOpacity} min={1} max={100} step={1} speed={50} label="Brush opacity" />
+      <span class="pair"><span class="stream-label">pen size</span><NumberBox bind:value={penSize} min={1} max={300} step={1} width="4ch" label="pen size value" /></span>
+      <HorizontalSlider bind:value={penSize} min={1} max={300} step={1} speed={40} label="pen size" />
+      <span class="pair"><span class="stream-label">opacity</span><NumberBox bind:value={penOpacity} min={1} max={100} step={1} width="4ch" label="brush opacity value" format={(value) => `${value}%`} /></span>
+      <HorizontalSlider bind:value={penOpacity} min={1} max={100} step={1} speed={50} label="brush opacity" />
       <span class="stream-break" aria-hidden="true"></span>
       <ColorPalette value={color} palette={paletteColors} recent={recentColors} onchange={(value) => { if (value) editor.setState({ color: value }); }}
         onpalettechange={(palette) => editor.setConfig({ palette })} />
     {:else}
-      <span class="pair"><span class="stream-label">Eraser size</span><NumberBox bind:value={eraserSize} min={1} max={500} step={1} width="4ch" label="Eraser size value" /></span>
-      <HorizontalSlider bind:value={eraserSize} min={1} max={500} step={1} speed={60} label="Eraser size" />
+      <span class="pair"><span class="stream-label">eraser size</span><NumberBox bind:value={eraserSize} min={1} max={500} step={1} width="4ch" label="eraser size value" /></span>
+      <HorizontalSlider bind:value={eraserSize} min={1} max={500} step={1} speed={60} label="eraser size" />
     {/if}
     <span class="stream-break" aria-hidden="true"></span>
-    <span class="stream-label">{kind === 'brush' ? 'Brush type' : 'Eraser type'}</span>
+    <span class="stream-label">{kind === 'brush' ? 'brush type' : 'eraser type'}</span>
     {#each brushes.filter(({ brush: item }) => kind === 'eraser' ? item.eraser : !item.eraser).sort((a, b) => Number(palette.includes(b.reference)) - Number(palette.includes(a.reference)) || a.brush.name.localeCompare(b.brush.name, undefined, { numeric: true })) as item (item.reference)}
       <Control onclick={() => chooseBrush(kind, item.reference)} aria-pressed={item.reference === reference}>{shortName(item.brush)}</Control>
     {/each}
     {#if library}
-      <Control onclick={() => { importKind = kind; brushImport?.click(); }} disabled={brushBusy}>Import brush…</Control>
-      {#if reference && !reference.startsWith('builtin:')}<Control onclick={() => { void saveBrushFile(kind); }} disabled={brushBusy || !brushEdited}>Save brush file</Control>{/if}
+      <Control onclick={() => { importKind = kind; brushImport?.click(); }} disabled={brushBusy}>import brush…</Control>
+      {#if reference && !reference.startsWith('builtin:')}<Control onclick={() => { void saveBrushFile(kind); }} disabled={brushBusy || !brushEdited}>save brush file</Control>{/if}
     {/if}
     <!-- A nested Keyflow input frame: its trigger and every setting inside are keyboard-routed. -->
-    <SubKeyframe label={`Configure ${shortName(brush)}`} class="brush-config-menu" closeOnOutside={false}>
+    <SubKeyframe label={`configure ${shortName(brush)}`} class="brush-config-menu" closeOnOutside={false}>
       {#snippet children()}
         <div class="tool-stream">
           {#each brushSettings as setting (setting.key)}
@@ -524,9 +524,9 @@
             <HorizontalSlider value={Math.round(setting.get(brush))} min={setting.min} max={setting.max} step={1} speed={setting.speed} label={`${shortName(brush)} ${setting.label.toLowerCase()}`}
               onchange={(next: number) => editBrush(kind, setting.set(next))} />
           {/each}
-          <Control onclick={() => editBrush(kind, { sizePressure: !brush.sizePressure })} aria-pressed={brush.sizePressure}>Pressure → size</Control>
-          <Control onclick={() => editBrush(kind, { opacityPressure: !brush.opacityPressure })} aria-pressed={brush.opacityPressure}>Pressure → opacity</Control>
-          <Control onclick={() => editBrush(kind, { flowPressure: !brush.flowPressure })} aria-pressed={brush.flowPressure}>Pressure → flow</Control>
+          <Control onclick={() => editBrush(kind, { sizePressure: !brush.sizePressure })} aria-pressed={brush.sizePressure}>pressure → size</Control>
+          <Control onclick={() => editBrush(kind, { opacityPressure: !brush.opacityPressure })} aria-pressed={brush.opacityPressure}>pressure → opacity</Control>
+          <Control onclick={() => editBrush(kind, { flowPressure: !brush.flowPressure })} aria-pressed={brush.flowPressure}>pressure → flow</Control>
         </div>
       {/snippet}
     </SubKeyframe>
@@ -534,77 +534,77 @@
 {/snippet}
 
 <div class="visual-bar drawing-bar">
-  <div class="editor-controls drawing-controls drawing-tools visual-tools" role="group" aria-label="Drawing toolbar" tabindex="-1" bind:this={toolbar}
+  <div class="editor-controls drawing-controls drawing-tools visual-tools" role="group" aria-label="drawing toolbar" tabindex="-1" bind:this={toolbar}
     use:preserveContentFocus={() => !usingTools && document.activeElement === viewport}>
-    <span class="visual-title" class:unsaved={dirty} title={statusText}><BoundedText text={title} limit={16} label={`Editing ${title}`} /></span>
-    <Control onclick={() => { usingTools = true; void editorMenu?.enter(); }}>Editor</Control>
-    {#if onExit}<Control onclick={() => { void save(true); }} disabled={saving || publishing}>Exit<span class="shortcut-hint" aria-hidden="true">Ctrl+Esc</span></Control>{/if}
-    <Control onclick={() => { void chooseTool('brush'); }} aria-pressed={tool === 'brush'}>Brush</Control>
-    <Control onclick={() => { void chooseTool('eraser'); }} aria-pressed={tool === 'eraser'}>Eraser</Control>
-    <Control onclick={() => { void chooseTool('lasso'); }} aria-pressed={tool === 'lasso'}>Lasso</Control>
-    <Control onclick={() => { void chooseTool('transform'); }} aria-pressed={tool === 'transform'}>Transform</Control>
+    <span class="visual-title" class:unsaved={dirty} title={statusText}><BoundedText text={title} limit={16} label={`editing ${title}`} /></span>
+    <Control onclick={() => { usingTools = true; void editorMenu?.enter(); }}>editor</Control>
+    {#if onExit}<Control onclick={() => { void save(true); }} disabled={saving || publishing}>exit<span class="shortcut-hint" aria-hidden="true">Ctrl+Esc</span></Control>{/if}
+    <Control onclick={() => { void chooseTool('brush'); }} aria-pressed={tool === 'brush'}>brush</Control>
+    <Control onclick={() => { void chooseTool('eraser'); }} aria-pressed={tool === 'eraser'}>eraser</Control>
+    <Control onclick={() => { void chooseTool('lasso'); }} aria-pressed={tool === 'lasso'}>lasso</Control>
+    <Control onclick={() => { void chooseTool('transform'); }} aria-pressed={tool === 'transform'}>transform</Control>
     {#if transformTool}
-      <span class="transform-slider"><span class="menu-label">Rotate {rotation}°</span><HorizontalSlider bind:value={rotation} min={-180} max={180} step={1} speed={90} label="Rotate" /></span>
+      <span class="transform-slider"><span class="menu-label">rotate {rotation}°</span><HorizontalSlider bind:value={rotation} min={-180} max={180} step={1} speed={90} label="rotate" /></span>
       <span class="transform-slider" role="presentation" onpointerup={settleScale} onkeyup={settleScale} onpointercancel={settleScale}>
-        <span class="menu-label">Scale ×{(2 ** scaleStep).toFixed(2)}</span><HorizontalSlider bind:value={scaleStep} min={-1} max={1} step={0.01} speed={1} label="Scale" />
+        <span class="menu-label">scale ×{(2 ** scaleStep).toFixed(2)}</span><HorizontalSlider bind:value={scaleStep} min={-1} max={1} step={0.01} speed={1} label="scale" />
       </span>
-      <Control onclick={() => { void toggleAllCanvas(); }} aria-pressed={allCanvas}>All canvas</Control>
+      <Control onclick={() => { void toggleAllCanvas(); }} aria-pressed={allCanvas}>all canvas</Control>
     {:else if selection}
-      <Control onclick={clearSelection} disabled={saving || publishing} aria-label="Clear selected pixels">Clear</Control><Control onclick={() => editor.deselect()}>Deselect</Control>
+      <Control onclick={clearSelection} disabled={saving || publishing} aria-label="clear selected pixels">clear</Control><Control onclick={() => editor.deselect()}>deselect</Control>
     {/if}
     {#if outsidePrompt}
-      <span class="outside-prompt" role="alertdialog" aria-label="Content outside the canvas">Keep content moved outside the canvas?</span>
-      <Control onclick={() => outsidePrompt?.resolve(true)}>Keep outside</Control>
-      <Control onclick={() => outsidePrompt?.resolve(false)}>Crop to canvas</Control>
-      <Control onclick={() => outsidePrompt?.resolve(undefined)}>Keep transforming</Control>
+      <span class="outside-prompt" role="alertdialog" aria-label="content outside the canvas">keep content moved outside the canvas?</span>
+      <Control onclick={() => outsidePrompt?.resolve(true)}>keep outside</Control>
+      <Control onclick={() => outsidePrompt?.resolve(false)}>crop to canvas</Control>
+      <Control onclick={() => outsidePrompt?.resolve(undefined)}>keep transforming</Control>
     {/if}
-    <Control onclick={undo} disabled={!canUndo || saving || publishing}>Undo</Control><Control onclick={redo} disabled={!canRedo || saving || publishing}>Redo</Control>
-    {#if layered}<Control onclick={() => { usingTools = true; void layerMenu?.enter(); }}>Layer</Control>{/if}
-    {#if onExport}<Control onclick={() => onExport?.()} disabled={saving || publishing}>Export</Control>{/if}
+    <Control onclick={undo} disabled={!canUndo || saving || publishing}>undo</Control><Control onclick={redo} disabled={!canRedo || saving || publishing}>redo</Control>
+    {#if layered}<Control onclick={() => { usingTools = true; void layerMenu?.enter(); }}>layer</Control>{/if}
+    {#if onExport}<Control onclick={() => onExport?.()} disabled={saving || publishing}>export</Control>{/if}
     <span class="visually-hidden" role="status">{statusText}{notice ? ` · ${notice}` : ''}</span>
   </div>
 
   <!-- Input-frame menus overlay the whole toolbar and flow left to right, wrapping as needed. -->
-  <SubKeyframe label="Editor" showTrigger={false} enterTrigger={null} bind:this={editorMenu} class="drawing-menu" onclose={resumeEditing} disabled={publishing}>
+  <SubKeyframe label="editor" showTrigger={false} enterTrigger={null} bind:this={editorMenu} class="drawing-menu" onclose={resumeEditing} disabled={publishing}>
     {#snippet children()}
       <div class="tool-stream">
-          <Control onclick={() => zoomBy(1 / 1.25)}>Zoom out</Control>
-          <Control onclick={() => zoomBy(1.25)}>Zoom in</Control>
-          <Control onclick={() => { void chooseTool('pan'); editorMenu?.exit(); }} aria-pressed={panTool}>Pan</Control>
-          <Control onclick={() => { fit(); }}>Fit canvas</Control>
-          {#if onRawText}<Control onclick={() => { void save(false, true).then((ok) => { if (ok !== false || !editor.dirty) onRawText?.(); }); }} disabled={saving || publishing}>Raw text</Control>{/if}
-          {#if onDelete}<Control onclick={() => { input.interrupt(); void onDelete?.(); }} disabled={saving || publishing}>Delete drawing</Control>{/if}
+          <Control onclick={() => zoomBy(1 / 1.25)}>zoom out</Control>
+          <Control onclick={() => zoomBy(1.25)}>zoom in</Control>
+          <Control onclick={() => { void chooseTool('pan'); editorMenu?.exit(); }} aria-pressed={panTool}>pan</Control>
+          <Control onclick={() => { fit(); }}>fit canvas</Control>
+          {#if onRawText}<Control onclick={() => { void save(false, true).then((ok) => { if (ok !== false || !editor.dirty) onRawText?.(); }); }} disabled={saving || publishing}>raw text</Control>{/if}
+          {#if onDelete}<Control onclick={() => { input.interrupt(); void onDelete?.(); }} disabled={saving || publishing}>delete drawing</Control>{/if}
           <span class="stream-label">{name}</span>
           <span class="stream-label raster-info">{editor.width} × {editor.height} px · {zoomText}</span>
           <span class="stream-label">{statusText}{notice ? ` · ${notice}` : ''}</span>
       </div>
     {/snippet}
   </SubKeyframe>
-  <SubKeyframe label="Brush settings" showTrigger={false} enterTrigger={null} bind:this={brushMenu} class="drawing-menu persistent-menu" closeOnOutside={false} onclose={resumeEditing} disabled={publishing}>
+  <SubKeyframe label="brush settings" showTrigger={false} enterTrigger={null} bind:this={brushMenu} class="drawing-menu persistent-menu" closeOnOutside={false} onclose={resumeEditing} disabled={publishing}>
     {#snippet children()}{@render brushPanel('brush')}{/snippet}
   </SubKeyframe>
-  <SubKeyframe label="Eraser settings" showTrigger={false} enterTrigger={null} bind:this={eraserMenu} class="drawing-menu persistent-menu" closeOnOutside={false} onclose={resumeEditing} disabled={publishing}>
+  <SubKeyframe label="eraser settings" showTrigger={false} enterTrigger={null} bind:this={eraserMenu} class="drawing-menu persistent-menu" closeOnOutside={false} onclose={resumeEditing} disabled={publishing}>
     {#snippet children()}{@render brushPanel('eraser')}{/snippet}
   </SubKeyframe>
   {#if layered}
-    <SubKeyframe label="Layers" showTrigger={false} enterTrigger={null} bind:this={layerMenu} class="drawing-menu" onclose={resumeEditing} disabled={publishing}>
+    <SubKeyframe label="layers" showTrigger={false} enterTrigger={null} bind:this={layerMenu} class="drawing-menu" onclose={resumeEditing} disabled={publishing}>
       {#snippet children()}
         <div class="tool-stream">
             <ChoiceMenu label="active layer" value={String([...layers].reverse().findIndex((item) => item.id === activeLayer?.id))} disabled={publishing}
               choices={[...layers].reverse().map((item, index) => ({ id: String(index), label: `${item.entry.name ?? item.entry.file}${documentMode ? ` · ${kindLabel(item.entry.kind)}` : ''}${item.missing ? ' (missing)' : ''}${item.entry.visible ? '' : ' (hidden)'}` }))}
               onchange={(index) => layerAction(() => editor.setActiveLayer([...layers].reverse()[Number(index)].id))} />
-            <Control onclick={() => layerAction(() => editor.addLayer('raster', `Layer ${editor.layers.length + 1}`))} disabled={layers.length >= 100}>Add layer</Control>
-            {#if documentMode}<Control onclick={() => layerAction(() => editor.addLayer('vector'))} disabled={layers.length >= 100}>Add vector layer</Control>{/if}
-            <Control onclick={() => layerAction(() => editor.removeLayer())} disabled={layers.length < 2}>Delete layer</Control>
-            <Control onclick={() => layerAction(() => activeLayer && editor.updateLayer(activeLayer.id, { visible: !activeLayer.entry.visible }))}>{activeLayer?.entry.visible ? 'Hide layer' : 'Show layer'}</Control>
-            <Control onclick={() => layerAction(() => activeLayer && editor.moveLayer(activeLayer.id, 1))} disabled={layers.at(-1)?.id === activeLayer?.id}>Raise layer</Control>
-            <Control onclick={() => layerAction(() => activeLayer && editor.moveLayer(activeLayer.id, -1))} disabled={layers[0]?.id === activeLayer?.id}>Lower layer</Control>
+            <Control onclick={() => layerAction(() => editor.addLayer('raster', `layer ${editor.layers.length + 1}`))} disabled={layers.length >= 100}>add layer</Control>
+            {#if documentMode}<Control onclick={() => layerAction(() => editor.addLayer('vector'))} disabled={layers.length >= 100}>add vector layer</Control>{/if}
+            <Control onclick={() => layerAction(() => editor.removeLayer())} disabled={layers.length < 2}>delete layer</Control>
+            <Control onclick={() => layerAction(() => activeLayer && editor.updateLayer(activeLayer.id, { visible: !activeLayer.entry.visible }))}>{activeLayer?.entry.visible ? 'hide layer' : 'show layer'}</Control>
+            <Control onclick={() => layerAction(() => activeLayer && editor.moveLayer(activeLayer.id, 1))} disabled={layers.at(-1)?.id === activeLayer?.id}>raise layer</Control>
+            <Control onclick={() => layerAction(() => activeLayer && editor.moveLayer(activeLayer.id, -1))} disabled={layers[0]?.id === activeLayer?.id}>lower layer</Control>
           {#if activeLayer}
-            <span class="pair"><span class="stream-label">Layer opacity</span><NumberBox bind:value={layerOpacity} min={0} max={100} step={1} width="4ch" label="Layer opacity value" format={(value) => `${value}%`} /></span>
-            <HorizontalSlider bind:value={layerOpacity} min={0} max={100} step={1} speed={50} label="Layer opacity" />
+            <span class="pair"><span class="stream-label">layer opacity</span><NumberBox bind:value={layerOpacity} min={0} max={100} step={1} width="4ch" label="layer opacity value" format={(value) => `${value}%`} /></span>
+            <HorizontalSlider bind:value={layerOpacity} min={0} max={100} step={1} speed={50} label="layer opacity" />
             {#if documentMode}
-              <span class="stream-label">Name</span>
-              <TextBox singleLine value={activeLayer.entry.name ?? ''} label="Layer name" placeholder="unnamed"
+              <span class="stream-label">name</span>
+              <TextBox singleLine value={activeLayer.entry.name ?? ''} label="layer name" placeholder="unnamed"
                 onexit={(text) => { const layer = editor.activeLayer; if (layer && (text.trim() || undefined) !== layer.entry.name) layerAction(() => editor.updateLayer(layer.id, { name: text.trim() || undefined })); }} />
               <span class="stream-label">{activeLayer.entry.file} · {kindLabel(activeLayer.entry.kind)}</span>
             {/if}
@@ -615,18 +615,18 @@
   {/if}
 </div>
 {#if library}
-  <input class="visually-hidden" type="file" bind:this={brushImport} accept={BRUSH_IMPORT_EXTENSIONS.join(',')} aria-label="Brush file to import" tabindex="-1"
+  <input class="visually-hidden" type="file" bind:this={brushImport} accept={BRUSH_IMPORT_EXTENSIONS.join(',')} aria-label="brush file to import" tabindex="-1"
     onchange={(e) => { const file = e.currentTarget.files?.[0]; e.currentTarget.value = ''; if (file) void importBrush(file); }} />
 {/if}
 {#if missingLayers.length || missingBrushes.length}
   <div class="visual-missing" role="alert">
-    {#if missingLayers.length}<p><strong>Missing layer {missingLayers.length === 1 ? 'file' : 'files'}:</strong> {missingLayers.map((layer) => layer.entry.file).join(', ')}. The document keeps {missingLayers.length === 1 ? 'its reference' : 'their references'}; restore or reconnect the {missingLayers.length === 1 ? 'file' : 'files'}, or delete the layer.</p>{/if}
-    {#if missingBrushes.length}<p><strong>Missing brush {missingBrushes.length === 1 ? 'file' : 'files'}:</strong> {missingBrushes.join(', ')}. Built-in brushes are used instead.</p>{/if}
+    {#if missingLayers.length}<p><strong>missing layer {missingLayers.length === 1 ? 'file' : 'files'}:</strong> {missingLayers.map((layer) => layer.entry.file).join(', ')}. the document keeps {missingLayers.length === 1 ? 'its reference' : 'their references'}; restore or reconnect the {missingLayers.length === 1 ? 'file' : 'files'}, or delete the layer.</p>{/if}
+    {#if missingBrushes.length}<p><strong>missing brush {missingBrushes.length === 1 ? 'file' : 'files'}:</strong> {missingBrushes.join(', ')}. built-in brushes are used instead.</p>{/if}
   </div>
 {/if}
 {#if error}<StorageNotice {error} />{/if}
 <div class="drawing-surface raster-surface visual-surface" use:portal={surfaceTarget}>
-  <div class="raster-viewport" bind:this={viewport} role="img" aria-label={`Drawing canvas for ${name}`} tabindex="-1"
+  <div class="raster-viewport" bind:this={viewport} role="img" aria-label={`drawing canvas for ${name}`} tabindex="-1"
     onpointerdown={(event) => pointer(event, 'down')} onlostpointercapture={(event) => { if (!(event.buttons & 3) && !event.pressure) input.interrupt(); }}
     data-raster-revision={revision} data-raster-operations={gestureCount} data-raster-zoom={read(viewVersion, view.zoom)} data-visual-tool={tool}>
     <canvas class="visual-canvas" bind:this={canvas}></canvas>

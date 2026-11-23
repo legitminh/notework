@@ -51,7 +51,7 @@
 
   function stop() {
     controller?.abort(); searching = false; searched = true;
-    failure = 'Search stopped. These are the results found so far.';
+    failure = 'search stopped. these are the results found so far.';
   }
 
   function leaveField() {
@@ -69,7 +69,7 @@
 
 <section class="panel" aria-labelledby="search-heading">
   <h2 id="search-heading" tabindex="-1" bind:this={heading}>{everywhere ? 'search all files and folders' : 'search files in folder children'}</h2>
-  <p class="muted">Search names and paths {everywhere ? 'reachable from home' : `in ${scopeLabel} and its reachable children`}. Case insensitive.{#if everywhere} Most recently edited files come first.{/if}</p>
+  <p class="muted">search names and paths {everywhere ? 'reachable from home' : `in ${scopeLabel} and its reachable children`}. case insensitive.{#if everywhere} Most recently edited files come first.{/if}</p>
   <label class="field">
     <span>file/folder name or path</span>
     <input bind:this={input} bind:value={query} placeholder="start typing…" type="search" autocomplete="off"
@@ -83,7 +83,7 @@
     {#if searching}searching… {progress.visited} states visited
     {:else if searched}{results.length} {results.length === 1 ? 'result' : 'results'} found{/if}
     {#if progress.errors} · {progress.errors} unreadable {progress.errors === 1 ? 'branch' : 'branches'} skipped; reconnect sources in app settings.{/if}
-    {#if progress.limited} · Search limit reached. Narrow your search term.{/if}
+    {#if progress.limited} · search limit reached. narrow your search term.{/if}
   </div>
   {#if searching}<Action label="stop search" onSelect={stop} />{/if}
   {#if failure}<p role="status" class="notice">{failure}</p>{/if}

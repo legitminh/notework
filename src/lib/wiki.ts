@@ -97,7 +97,7 @@ export async function containingFolder(workspace: Workspace, node: StateNode, fi
   if (node.storage === 'browser') {
     let directory = await navigator.storage.getDirectory();
     const path = await directory.resolve(nativeFile(file));
-    if (!path || path[0] !== 'notework' || path[1] !== 'documents') throw new Error('The browser document is no longer in Notework storage.');
+    if (!path || path[0] !== 'notework' || path[1] !== 'documents') throw new Error('the browser document is no longer in Notework storage.');
     for (const part of path.slice(0, -1)) directory = await directory.getDirectoryHandle(part);
     return directory;
   }
@@ -105,7 +105,7 @@ export async function containingFolder(workspace: Workspace, node: StateNode, fi
     const parent = await workspace.handle(JSON.stringify([node.sourceId, ...node.path.slice(0, -1)]));
     if (parent.kind === 'directory') return parent as unknown as FileSystemDirectoryHandle;
   }
-  if (node.storage === 'github') throw new Error('Open the GitHub file through its repository folder.');
+  if (node.storage === 'github') throw new Error('open the GitHub file through its repository folder.');
   for (const source of workspace.data.sources) {
     if (source.handle.kind !== 'directory') continue;
     const path = await source.handle.resolve(file).catch(() => null);
@@ -114,11 +114,11 @@ export async function containingFolder(workspace: Workspace, node: StateNode, fi
     for (const name of path.slice(0, -1)) folder = await folder.getDirectoryHandle(name);
     return folder as unknown as FileSystemDirectoryHandle;
   }
-  throw new Error('Connect the file’s containing folder in App settings before creating a sibling or renaming this file.');
+  throw new Error('connect the file’s containing folder in app settings before creating a sibling or renaming this file.');
 }
 
 export class WritePermissionRequired extends Error {
-  constructor() { super('Autosave is waiting for write permission. Exit the editor to save.'); }
+  constructor() { super('autosave is waiting for write permission. exit the editor to save.'); }
 }
 
 export async function requireWrite(handle: FileSystemHandle | LocalFile, request = true) {
@@ -128,13 +128,13 @@ export async function requireWrite(handle: FileSystemHandle | LocalFile, request
     : await permission.queryPermission({ mode: 'readwrite' });
   if (state !== 'granted') {
     if (!request) throw new WritePermissionRequired();
-    throw new Error('Write permission was not granted. Your edits are still open.');
+    throw new Error('write permission was not granted. your edits are still open.');
   }
 }
 
 export async function assertAvailable(folder: FileSystemDirectoryHandle, name: string, except?: string) {
   for await (const entry of folder.values()) {
-    if (entry.name !== except && fold(entry.name) === fold(name)) throw new Error(`An item named “${name}” already exists in this folder.`);
+    if (entry.name !== except && fold(entry.name) === fold(name)) throw new Error(`an item named “${name}” already exists in this folder.`);
   }
 }
 
@@ -170,7 +170,7 @@ export async function prepareWikiSave(
       catch (error) { if (allowUnresolved) continue; throw error; }
       if (!target) {
         if (!canCreate(token)) continue;
-        if (!validFilename(token)) throw new Error(`Cannot create “${token}”. Use a filename without a path or choose an existing file.`);
+        if (!validFilename(token)) throw new Error(`cannot create “${token}”. use a filename without a path or choose an existing file.`);
         if (!folder) {
           folder = await containingFolder(workspace, source, file);
           if (source.storage === 'local') await requireWrite(folder, requestWrite);

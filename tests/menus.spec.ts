@@ -107,14 +107,14 @@ for (const kind of ['file', 'folder']) {
 test('export dropdown Escape restores its trigger before the enclosing dialog closes', async ({ page }) => {
   await create(page, 'menu-export.txt');
   await page.locator('[data-action="open"] button').click();
-  await page.getByRole('textbox', { name: 'Edit menu-export.txt', exact: true }).fill('Menu export');
-  await button(page, 'Export').click();
-  const dialog = page.getByRole('dialog', { name: 'Export', exact: true });
-  const format = choiceMenu(dialog, 'Export format').locator('.subkeyframe-trigger');
+  await page.getByRole('textbox', { name: 'edit menu-export.txt', exact: true }).fill('Menu export');
+  await button(page, 'export').click();
+  const dialog = page.getByRole('dialog', { name: 'export', exact: true });
+  const format = choiceMenu(dialog, 'export format').locator('.subkeyframe-trigger');
   await format.focus(); await format.press('Enter');
   await expect(button(page, 'PDF')).toBeFocused();
   await page.keyboard.press('ArrowDown'); await page.keyboard.press('Enter');
-  await expect(format).toHaveAttribute('aria-label', 'Export format: PNG');
+  await expect(format).toHaveAttribute('aria-label', 'export format: PNG');
   await expect(format).toBeFocused();
   await format.press('Enter'); await page.keyboard.press('Escape');
   await expect(dialog).toBeVisible();
@@ -130,27 +130,27 @@ test('search and drawing format choosers provide Keyflow arrow navigation and Ba
   await page.keyboard.press('ArrowDown');
   await expect(button(page, 'search file in folder children')).toBeFocused();
   await page.keyboard.press('Escape');
-  await expect(page.getByRole('dialog', { name: 'Search', exact: true })).not.toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'search', exact: true })).not.toBeVisible();
   await expect(button(page, 'search')).toBeFocused();
   await create(page, 'drawing-menu.txt');
   await page.locator('[data-action="open"] button').click();
-  await button(page, 'Draw…').click();
+  await button(page, 'draw…').click();
   await expect(button(page, 'SVG')).toBeFocused();
   await page.keyboard.press('ArrowDown');
-  await expect(button(page, 'Visual document')).toBeFocused();
+  await expect(button(page, 'visual document')).toBeFocused();
   await page.keyboard.press('End');
-  await expect(button(page, 'Cancel')).toBeFocused();
+  await expect(button(page, 'cancel')).toBeFocused();
   await page.keyboard.press('Enter');
-  await expect(page.getByRole('dialog', { name: 'Choose drawing format', exact: true })).not.toBeVisible();
-  await expect(button(page, 'Draw…')).toBeFocused();
+  await expect(page.getByRole('dialog', { name: 'choose drawing format', exact: true })).not.toBeVisible();
+  await expect(button(page, 'draw…')).toBeFocused();
 });
 
 test('image-layer menu owns Escape and keyboard selection while the drawing editor is mounted', async ({ page }) => {
   await seedImage(page, 'layers.ora', 400, 200);
   await page.locator('[data-action="open"] button').click();
-  await button(page, 'Layer').click();
-  await button(page, 'Add layer').click();
-  await expect(button(page, 'Add layer')).toBeEnabled();
+  await button(page, 'layer').click();
+  await button(page, 'add layer').click();
+  await expect(button(page, 'add layer')).toBeEnabled();
   const layer = choiceMenu(page, 'active layer');
   const trigger = layer.locator('.subkeyframe-trigger');
   await trigger.focus(); await trigger.press('Enter');
@@ -161,7 +161,7 @@ test('image-layer menu owns Escape and keyboard selection while the drawing edit
   await trigger.press('Enter');
   await page.keyboard.press('ArrowDown'); await page.keyboard.press('Enter');
   await expect(layer).toHaveAttribute('data-value', '1');
-  await expect(button(page, 'Add layer')).toBeEnabled();
+  await expect(button(page, 'add layer')).toBeEnabled();
   await expect(trigger).toBeFocused();
 });
 

@@ -144,7 +144,7 @@ export async function listLibraryBrushes(workspace: Workspace): Promise<LibraryB
 export async function importBrushFile(workspace: Workspace, file: File): Promise<LibraryBrush> {
   const brush = await importBrush(file.name, new Uint8Array(await file.arrayBuffer()));
   const folder = await brushFolder(workspace, true);
-  if (!folder) throw new Error('The brush library could not be created.');
+  if (!folder) throw new Error('the brush library could not be created.');
   const taken = new Set<string>();
   for await (const entry of folder.values()) taken.add(entry.name.toLowerCase());
   const base = brushFileName(brush.name).replace(/\.vbrush$/, '');
@@ -161,7 +161,7 @@ export async function saveBrush(context: VisualContext, reference: string, brush
   if (reference.startsWith(BRUSH_LIBRARY + '/')) {
     const folder = await brushFolder(context.workspace, true);
     const handle = folder && await walk(folder, reference.slice(BRUSH_LIBRARY.length + 1), true);
-    if (!handle) throw new Error('The brush file could not be written.');
+    if (!handle) throw new Error('the brush file could not be written.');
     await writeResourceContent(handle as unknown as LocalFile, 'browser', [text]);
     return;
   }
@@ -233,7 +233,7 @@ export function newVisualDocumentText(size: CanvasSize) {
 
 /** Create `name/name.visual` in a folder; returns the main file handle. */
 export async function createVisualDocument(folder: Directory, name: string, size: CanvasSize, storage: Storage) {
-  for await (const entry of folder.values()) if (entry.name.toLowerCase() === name.toLowerCase()) throw new Error(`An item named “${name}” already exists in this folder.`);
+  for await (const entry of folder.values()) if (entry.name.toLowerCase() === name.toLowerCase()) throw new Error(`an item named “${name}” already exists in this folder.`);
   const directory = await folder.getDirectoryHandle(name, { create: true });
   const main = await directory.getFileHandle(`${name}${VISUAL_EXTENSION}`, { create: true });
   await writeResourceContent(main as unknown as LocalFile, storage, [newVisualDocumentText(size)]);
@@ -253,7 +253,7 @@ export async function flattenToImage(editor: VisualEditor): Promise<{ image: Ima
   const preview = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader(); reader.onload = () => resolve(reader.result as string); reader.onerror = () => reject(reader.error); reader.readAsDataURL(png);
   });
-  return { image: { width: editor.width, height: editor.height, layers: [{ name: 'Composite', png, visible: true, opacity: 1 }] }, preview };
+  return { image: { width: editor.width, height: editor.height, layers: [{ name: 'composite', png, visible: true, opacity: 1 }] }, preview };
 }
 
 export { ROOT };

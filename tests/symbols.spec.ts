@@ -8,7 +8,7 @@ const upper = Array.from('ΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩ');
 const commands = names.flatMap((name) => [`\\${name}`, `\\${name[0].toUpperCase()}${name.slice(1)}`]);
 const symbols = lower.flatMap((letter, index) => [letter, upper[index]]);
 const action = (page: Page, name: string) => page.locator(`[data-action=${JSON.stringify(name)}] button, button[data-action=${JSON.stringify(name)}]`);
-const toolbar = (page: Page) => page.getByRole('group', { name: 'Editor toolbar' });
+const toolbar = (page: Page) => page.getByRole('group', { name: 'editor toolbar' });
 
 async function create(page: Page, name: string) {
   await action(page, 'app settings').click();
@@ -16,7 +16,7 @@ async function create(page: Page, name: string) {
   await page.getByLabel('name', { exact: true }).fill(name);
   await action(page, 'create text file').click();
   await action(page, 'open').click();
-  return page.getByRole('textbox', { name: `Edit ${name}`, exact: true });
+  return page.getByRole('textbox', { name: `edit ${name}`, exact: true });
 }
 
 test('Greek and mathematical shorthands match complete case-sensitive commands', () => {
@@ -42,14 +42,14 @@ test('symbols render in editable notes, previews and embedded pages while saves 
   await expect(editor.locator('.cm-line')).toHaveText(source.split('\n'));
   await editor.press('ControlOrMeta+End');
   await editor.press('ControlOrMeta+s');
-  await toolbar(page).getByRole('button', { name: 'Exit', exact: true }).click();
+  await toolbar(page).getByRole('button', { name: 'exit', exact: true }).click();
   await expect(page.locator('.file-preview .cm-symbol')).toHaveText([...symbols, 'ℵ', '∫', '√']);
   await page.reload();
   await action(page, 'symbols.txt').click();
   await action(page, 'open').click();
   await editor.press('ControlOrMeta+a');
   await expect(editor.locator('.cm-line')).toHaveText(source.split('\n'));
-  await toolbar(page).getByRole('button', { name: 'Exit', exact: true }).click();
+  await toolbar(page).getByRole('button', { name: 'exit', exact: true }).click();
   await action(page, 'home').click();
   const parent = await create(page, 'parent.txt');
   await parent.fill('\\page[symbols.txt]\nend');
@@ -97,7 +97,7 @@ for (const resize of [true, false]) {
     await verify(page.locator('.editor-container'));
     await page.locator('html').evaluate((element) => element.style.setProperty('--min-box', '60px'));
     await verify(page.locator('.editor-container'));
-    await toolbar(page).getByRole('button', { name: 'Exit', exact: true }).click();
+    await toolbar(page).getByRole('button', { name: 'exit', exact: true }).click();
     await verify(page.locator('.file-preview'));
     await page.locator('html').evaluate((element) => element.style.removeProperty('--min-box'));
     await verify(page.locator('.file-preview'));
@@ -117,11 +117,11 @@ test('PDF and raster exports draw the rendered symbols', async ({ page }) => {
   });
   for (const format of ['pdf', 'png', 'jpeg']) {
     await page.evaluate(() => sessionStorage.removeItem('drawn-symbols'));
-    await toolbar(page).getByRole('button', { name: 'Export', exact: true }).click();
-    const dialog = page.getByRole('dialog', { name: 'Export', exact: true });
-    await chooseMenu(dialog, 'Export format', format);
-    await expect(dialog.getByRole('button', { name: `Download ${format.toUpperCase()}`, exact: true })).toBeEnabled();
+    await toolbar(page).getByRole('button', { name: 'export', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'export', exact: true });
+    await chooseMenu(dialog, 'export format', format);
+    await expect(dialog.getByRole('button', { name: `download ${format.toUpperCase()}`, exact: true })).toBeEnabled();
     await expect.poll(() => page.evaluate(() => sessionStorage.getItem('drawn-symbols'))).toContain('σ Σ λ Λ π Π ℵ ∫ √');
-    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await dialog.getByRole('button', { name: 'cancel', exact: true }).click();
   }
 });

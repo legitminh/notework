@@ -21,7 +21,7 @@ export class ContentSearch {
       if (data.error) callback?.reject(new Error(data.error)); else callback?.resolve(data.result);
     };
     this.worker.onerror = () => {
-      this.failure = new Error('The content search worker could not start. Reload to try again.');
+      this.failure = new Error('the content search worker could not start. reload to try again.');
       for (const callback of this.pending.values()) callback.reject(this.failure);
       this.pending.clear();
     };
@@ -84,7 +84,7 @@ export class ContentSearch {
 
   destroy() {
     this.worker.terminate();
-    for (const callback of this.pending.values()) callback.reject(new Error('Search closed.'));
+    for (const callback of this.pending.values()) callback.reject(new Error('search closed.'));
     this.pending.clear();
   }
 }

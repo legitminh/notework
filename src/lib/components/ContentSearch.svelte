@@ -93,18 +93,18 @@
     stopped = true;
     controller?.abort(); clearTimeout(updateTimer); updateTimer = undefined;
     progress = { ...progress, done: true };
-    failure = 'Indexing stopped. Results include only files checked so far.';
+    failure = 'indexing stopped. results include only files checked so far.';
     try { await index.freeze(); await search(); }
     catch (error) { failure = String(error); }
   }
 </script>
 
-<InputFrame active name="Find in contents">
-  <dialog class="local-picker content-search" bind:this={dialog} use:dialogShortcuts aria-label="Find in contents"
+<InputFrame active name="find in contents">
+  <dialog class="local-picker content-search" bind:this={dialog} use:dialogShortcuts aria-label="find in contents"
     oncancel={(event) => { event.preventDefault(); if (!busy) onClose(); }}>
-    <Control onclick={onClose} disabled={busy}>Exit search</Control>
+    <Control onclick={onClose} disabled={busy}>exit search</Control>
     <h2 tabindex="-1" bind:this={heading}>find in contents</h2>
-    <p class="muted">Search text in {label} and its reachable children. Case insensitive, literal text. Contents stay in this tab.</p>
+    <p class="muted">search text in {label} and its reachable children. case insensitive, literal text. contents stay in this tab.</p>
     <label class="field">
       <span>containing text</span>
       <input bind:this={input} bind:value={query} type="search" placeholder="text, code, or punctuation…" autocomplete="off"
@@ -144,7 +144,7 @@
         {/if}
       {/each}
       {#if results.limited}
-        <p class="muted">Showing {limit} matching files, with up to three previews per file. Narrow your search or show more.</p>
+        <p class="muted">showing {limit} matching files, with up to three previews per file. narrow your search or show more.</p>
         <Action label="show more results" onSelect={() => { limit += 200; }} />
       {/if}
     {/if}

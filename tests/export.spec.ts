@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { PDFDocument, PDFArray, PDFRawStream, PDFName, decodePDFRawStream } from 'pdf-lib';
 
 const action = (page: Page, name: string) => page.locator(`[data-action=${JSON.stringify(name)}] button, button[data-action=${JSON.stringify(name)}]`);
-const tools = (page: Page) => page.getByRole('group', { name: 'Editor toolbar' });
+const tools = (page: Page) => page.getByRole('group', { name: 'editor toolbar' });
 test.beforeEach(async ({ page }) => {
   // Keep export drafts unsaved regardless of how long browser rendering takes.
   await page.addInitScript(() => localStorage.setItem('notework:autosave-seconds', '3600'));
@@ -19,7 +19,7 @@ async function note(page: Page, name: string) {
   await page.getByLabel('name', { exact: true }).fill(name);
   await action(page, 'create text file').click();
   await action(page, 'open').click();
-  const editor = page.getByRole('textbox', { name: `Edit ${name}` });
+  const editor = page.getByRole('textbox', { name: `edit ${name}` });
   await expect(editor).toBeVisible();
   return editor;
 }
@@ -63,10 +63,10 @@ async function inspectRaster(page: Page, download: Download, type: 'image/png' |
 }
 
 async function downloadRaster(page: Page, format: 'png' | 'jpeg') {
-  const dialog = page.getByRole('dialog', { name: 'Export', exact: true });
-  await chooseMenu(dialog, 'Export format', format);
+  const dialog = page.getByRole('dialog', { name: 'export', exact: true });
+  await chooseMenu(dialog, 'export format', format);
   const label = format === 'png' ? 'PNG' : 'JPEG';
-  const button = dialog.getByRole('button', { name: `Download ${label}`, exact: true });
+  const button = dialog.getByRole('button', { name: `download ${label}`, exact: true });
   await expect(button).toBeEnabled();
   const downloaded = page.waitForEvent('download');
   await button.click();
@@ -76,33 +76,33 @@ async function downloadRaster(page: Page, format: 'png' | 'jpeg') {
 test('PDF export includes the whole unsaved draft, styled links, and vector SVG with default margins', async ({ page }) => {
   const errors: string[] = []; page.on('pageerror', (error) => errors.push(error.message));
   const editor = await note(page, 'export-note.txt');
-  await tools(page).getByRole('button', { name: 'Draw…', exact: true }).click();
-  await page.getByRole('dialog', { name: 'Choose drawing format' }).getByRole('button', { name: 'SVG', exact: true }).click();
-  await page.getByRole('group', { name: 'Drawing toolbar' }).getByRole('button', { name: 'Exit', exact: true }).click();
+  await tools(page).getByRole('button', { name: 'draw…', exact: true }).click();
+  await page.getByRole('dialog', { name: 'choose drawing format' }).getByRole('button', { name: 'SVG', exact: true }).click();
+  await page.getByRole('group', { name: 'drawing toolbar' }).getByRole('button', { name: 'exit', exact: true }).click();
   await page.keyboard.insertText('below');
-  const preview = page.getByRole('button', { name: /^Edit drawing drawing-/ });
-  const name = (await preview.getAttribute('aria-label'))!.slice('Edit drawing '.length);
+  const preview = page.getByRole('button', { name: /^edit drawing drawing-/ });
+  const name = (await preview.getAttribute('aria-label'))!.slice('edit drawing '.length);
   await preview.click();
-  const canvas = page.getByRole('img', { name: `Drawing canvas for ${name}` });
+  const canvas = page.getByRole('img', { name: `drawing canvas for ${name}` });
   const matrix = await canvas.evaluate((el) => {
     const m = (el as SVGSVGElement).getScreenCTM()!; return { a: m.a, d: m.d, e: m.e, f: m.f };
   });
   await page.mouse.move(matrix.e + 100 * matrix.a, matrix.f + 50 * matrix.d); await page.mouse.down();
   await page.mouse.move(matrix.e + 500 * matrix.a, matrix.f + 200 * matrix.d);
   await page.mouse.move(matrix.e + 100 * matrix.a, matrix.f + 200 * matrix.d); await page.mouse.up();
-  const drawingTools = page.getByRole('group', { name: 'Drawing toolbar' });
+  const drawingTools = page.getByRole('group', { name: 'drawing toolbar' });
   await page.keyboard.press('ControlOrMeta+s');
-  await drawingTools.getByRole('button', { name: 'Exit', exact: true }).click();
+  await drawingTools.getByRole('button', { name: 'exit', exact: true }).click();
   await expect(editor).toBeEditable();
   await editor.press('ControlOrMeta+a');
   await editor.press('Backspace');
   await page.keyboard.insertText(`PDF layout: Tiếng Việt αβ 🙂\n[[linked-note.txt]]\n\\svgpage[${name}]\nAfter drawing\n${Array.from({ length: 80 }, (_, i) => `off-screen line ${i + 1}`).join('\n')}\nDEEP END`);
-  await tools(page).getByRole('button', { name: 'Export', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'Export', exact: true });
-  await expect(choiceMenu(dialog, 'Export format')).toHaveAttribute('data-value', 'pdf');
-  await expect(dialog.getByRole('button', { name: 'Download PDF', exact: true })).toBeEnabled();
+  await tools(page).getByRole('button', { name: 'export', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'export', exact: true });
+  await expect(choiceMenu(dialog, 'export format')).toHaveAttribute('data-value', 'pdf');
+  await expect(dialog.getByRole('button', { name: 'download PDF', exact: true })).toBeEnabled();
   const downloaded = page.waitForEvent('download');
-  await dialog.getByRole('button', { name: 'Download PDF', exact: true }).click();
+  await dialog.getByRole('button', { name: 'download PDF', exact: true }).click();
   const download = await downloaded;
   expect(download.suggestedFilename()).toBe('export-note.pdf');
   const { page: pdfPage, operators } = await readPdf(download);
@@ -133,9 +133,9 @@ test('text PNG and JPEG exports share the PDF page layout, margins, colors, and 
   }));
   const images = [];
   for (const format of ['png', 'jpeg'] as const) {
-    await tools(page).getByRole('button', { name: 'Export', exact: true }).click();
-    const dialog = page.getByRole('dialog', { name: 'Export', exact: true });
-    await expectChoiceCount(dialog, 'Export format', 3);
+    await tools(page).getByRole('button', { name: 'export', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'export', exact: true });
+    await expectChoiceCount(dialog, 'export format', 3);
     const download = await downloadRaster(page, format);
     expect(download.suggestedFilename()).toBe(`raster-note.${format}`);
     images.push(await inspectRaster(page, download, format === 'png' ? 'image/png' : 'image/jpeg'));
@@ -151,14 +151,14 @@ test('standalone SVG PNG and JPEG exports use one identical page with current st
   await page.goto('/'); await startCreate(page);
   await page.getByLabel('name', { exact: true }).fill('raster-drawing');
   await action(page, 'create svg file').click(); await action(page, 'open').click();
-  const canvas = page.getByRole('img', { name: 'Drawing canvas for raster-drawing.svg' });
+  const canvas = page.getByRole('img', { name: 'drawing canvas for raster-drawing.svg' });
   const box = (await canvas.boundingBox())!;
   await page.mouse.move(box.x + 40, box.y + 50); await page.mouse.down();
   await page.mouse.move(box.x + 250, box.y + 140); await page.mouse.up();
-  const drawingTools = page.getByRole('group', { name: 'Drawing toolbar' });
+  const drawingTools = page.getByRole('group', { name: 'drawing toolbar' });
   const images = [];
   for (const format of ['png', 'jpeg'] as const) {
-    await drawingTools.getByRole('button', { name: 'Export', exact: true }).click();
+    await drawingTools.getByRole('button', { name: 'export', exact: true }).click();
     const download = await downloadRaster(page, format);
     expect(download.suggestedFilename()).toBe(`raster-drawing.${format}`);
     images.push(await inspectRaster(page, download, format === 'png' ? 'image/png' : 'image/jpeg'));
@@ -179,11 +179,11 @@ test('installed PWA shares a prepared PNG from the final user tap', async ({ pag
       }));
     } });
   });
-  const editor = await note(page, 'share-image.txt'); await editor.fill('Share this image');
-  await tools(page).getByRole('button', { name: 'Export', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'Export', exact: true });
-  await chooseMenu(dialog, 'Export format', 'png');
-  const share = dialog.getByRole('button', { name: 'Share PNG', exact: true });
+  const editor = await note(page, 'share-image.txt'); await editor.fill('share this image');
+  await tools(page).getByRole('button', { name: 'export', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'export', exact: true });
+  await chooseMenu(dialog, 'export format', 'png');
+  const share = dialog.getByRole('button', { name: 'share PNG', exact: true });
   await expect(share).toBeEnabled(); await share.click();
   expect(await page.evaluate(() => JSON.parse(sessionStorage.getItem('image-share')!))).toEqual({
     name: 'share-image.png', type: 'image/png', active: true
@@ -203,11 +203,11 @@ test('PWA export shares a prepared PDF from a fresh tap and treats cancellation 
   });
   const downloads: Download[] = []; page.on('download', (download) => downloads.push(download));
   const editor = await note(page, 'share-note.txt'); await editor.fill('Shared current draft');
-  await tools(page).getByRole('button', { name: 'Export', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'Export', exact: true });
-  const share = dialog.getByRole('button', { name: 'Share PDF', exact: true });
+  await tools(page).getByRole('button', { name: 'export', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'export', exact: true });
+  const share = dialog.getByRole('button', { name: 'share PDF', exact: true });
   await expect(share).toBeEnabled(); await share.click();
-  await expect(dialog.getByRole('status')).toHaveText('Sharing cancelled.');
+  await expect(dialog.getByRole('status')).toHaveText('sharing cancelled.');
   await expect(dialog.getByRole('alert')).toHaveCount(0);
   expect(downloads).toHaveLength(0);
   await share.click(); await expect(dialog).toHaveCount(0);
@@ -224,12 +224,12 @@ test('PWA export falls back to a normal PDF download when file sharing is unavai
     Object.defineProperty(navigator, 'canShare', { value: () => false });
     Object.defineProperty(navigator, 'share', { value: () => { throw new Error('Must not be called'); } });
   });
-  const editor = await note(page, 'fallback.txt'); await editor.fill('Download fallback');
-  await tools(page).getByRole('button', { name: 'Export', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'Export', exact: true });
-  await expect(dialog.getByRole('button', { name: 'Download PDF', exact: true })).toBeEnabled();
+  const editor = await note(page, 'fallback.txt'); await editor.fill('download fallback');
+  await tools(page).getByRole('button', { name: 'export', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'export', exact: true });
+  await expect(dialog.getByRole('button', { name: 'download PDF', exact: true })).toBeEnabled();
   const downloaded = page.waitForEvent('download');
-  await dialog.getByRole('button', { name: 'Download PDF', exact: true }).click();
+  await dialog.getByRole('button', { name: 'download PDF', exact: true }).click();
   await readPdf(await downloaded);
 });
 
@@ -237,16 +237,16 @@ test('standalone drawing export includes unsaved strokes as vector geometry', as
   await page.goto('/'); await startCreate(page);
   await page.getByLabel('name', { exact: true }).fill('export-drawing');
   await action(page, 'create svg file').click(); await action(page, 'open').click();
-  const canvas = page.getByRole('img', { name: 'Drawing canvas for export-drawing.svg' });
+  const canvas = page.getByRole('img', { name: 'drawing canvas for export-drawing.svg' });
   const box = (await canvas.boundingBox())!;
   await page.mouse.move(box.x + 40, box.y + 50); await page.mouse.down();
   await page.mouse.move(box.x + 150, box.y + 100); await page.mouse.up();
-  const drawingTools = page.getByRole('group', { name: 'Drawing toolbar' });
-  await drawingTools.getByRole('button', { name: 'Export', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'Export', exact: true });
-  await expect(dialog.getByRole('button', { name: 'Download PDF', exact: true })).toBeEnabled();
+  const drawingTools = page.getByRole('group', { name: 'drawing toolbar' });
+  await drawingTools.getByRole('button', { name: 'export', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'export', exact: true });
+  await expect(dialog.getByRole('button', { name: 'download PDF', exact: true })).toBeEnabled();
   const downloaded = page.waitForEvent('download');
-  await dialog.getByRole('button', { name: 'Download PDF', exact: true }).click();
+  await dialog.getByRole('button', { name: 'download PDF', exact: true }).click();
   const download = await downloaded;
   expect(download.suggestedFilename()).toBe('export-drawing.pdf');
   const { operators } = await readPdf(download);
@@ -256,21 +256,21 @@ test('standalone drawing export includes unsaved strokes as vector geometry', as
 
 test('inline export uses the current unsaved drawing and leaves its source draft untouched', async ({ page }) => {
   const editor = await note(page, 'inline.txt');
-  await tools(page).getByRole('button', { name: 'Draw…', exact: true }).click();
-  await page.getByRole('dialog', { name: 'Choose drawing format' }).getByRole('button', { name: 'SVG', exact: true }).click();
-  await page.getByRole('group', { name: 'Drawing toolbar' }).getByRole('button', { name: 'Exit', exact: true }).click();
+  await tools(page).getByRole('button', { name: 'draw…', exact: true }).click();
+  await page.getByRole('dialog', { name: 'choose drawing format' }).getByRole('button', { name: 'SVG', exact: true }).click();
+  await page.getByRole('group', { name: 'drawing toolbar' }).getByRole('button', { name: 'exit', exact: true }).click();
   await page.keyboard.insertText('below');
-  await page.getByRole('button', { name: /^Edit drawing drawing-/ }).click();
-  const canvas = page.getByRole('img', { name: /^Drawing canvas for drawing-/ });
+  await page.getByRole('button', { name: /^edit drawing drawing-/ }).click();
+  const canvas = page.getByRole('img', { name: /^drawing canvas for drawing-/ });
   const box = (await canvas.boundingBox())!;
   await page.mouse.move(box.x + 40, box.y + 40); await page.mouse.down();
   await page.mouse.move(box.x + 140, box.y + 100); await page.mouse.up();
-  const drawingTools = page.getByRole('group', { name: 'Drawing toolbar' });
-  await drawingTools.getByRole('button', { name: 'Export', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'Export', exact: true });
-  await expect(dialog.getByRole('button', { name: 'Download PDF', exact: true })).toBeEnabled();
+  const drawingTools = page.getByRole('group', { name: 'drawing toolbar' });
+  await drawingTools.getByRole('button', { name: 'export', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'export', exact: true });
+  await expect(dialog.getByRole('button', { name: 'download PDF', exact: true })).toBeEnabled();
   const downloaded = page.waitForEvent('download');
-  await dialog.getByRole('button', { name: 'Download PDF', exact: true }).click();
+  await dialog.getByRole('button', { name: 'download PDF', exact: true }).click();
   const download = await downloaded;
   expect(download.suggestedFilename()).toBe('inline.pdf');
   const { operators } = await readPdf(download);
@@ -283,14 +283,14 @@ test('inline export uses the current unsaved drawing and leaves its source draft
 test('tall notes stay on a single PDF page, and cancelling preparation leaves the draft editable', async ({ page }) => {
   const editor = await note(page, 'tall.txt');
   await editor.fill(Array.from({ length: 850 }, (_, i) => `line ${i + 1}`).join('\n'));
-  await tools(page).getByRole('button', { name: 'Export', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'Export', exact: true });
-  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await tools(page).getByRole('button', { name: 'export', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'export', exact: true });
+  await dialog.getByRole('button', { name: 'cancel', exact: true }).click();
   await expect(dialog).toHaveCount(0); await expect(editor).toBeEditable();
-  await tools(page).getByRole('button', { name: 'Export', exact: true }).click();
-  await expect(dialog.getByRole('button', { name: 'Download PDF', exact: true })).toBeEnabled({ timeout: 15000 });
+  await tools(page).getByRole('button', { name: 'export', exact: true }).click();
+  await expect(dialog.getByRole('button', { name: 'download PDF', exact: true })).toBeEnabled({ timeout: 15000 });
   const downloaded = page.waitForEvent('download');
-  await dialog.getByRole('button', { name: 'Download PDF', exact: true }).click();
+  await dialog.getByRole('button', { name: 'download PDF', exact: true }).click();
   const { page: pdfPage } = await readPdf(await downloaded);
   expect(pdfPage.node.get(PDFName.of('UserUnit'))?.toString()).toBe('2');
   expect(pdfPage.getHeight()).toBeLessThanOrEqual(14400);
@@ -322,7 +322,7 @@ test('independent PDF margins persist in min-boxes and pad drawing exports witho
   await startCreate(page);
   await page.getByLabel('name', { exact: true }).fill('margins.svg');
   await action(page, 'create svg file').click(); await action(page, 'open').click();
-  const canvas = page.getByRole('img', { name: 'Drawing canvas for margins.svg' });
+  const canvas = page.getByRole('img', { name: 'drawing canvas for margins.svg' });
   await expect(canvas).toBeVisible();
   const matrix = await canvas.evaluate((el) => {
     const m = (el as SVGSVGElement).getScreenCTM()!; return { a: m.a, d: m.d, e: m.e, f: m.f };
@@ -332,13 +332,13 @@ test('independent PDF margins persist in min-boxes and pad drawing exports witho
   const points = (await canvas.locator('polyline').getAttribute('points'))!.split(' ').map((point) => point.split(',').map(Number));
   const bottom = Math.ceil(Math.max(...points.map((point) => point[1])) + 1.5);
   const width = await page.locator('.drawing-page-viewport').evaluate((el) => el.clientWidth);
-  const drawingTools = page.getByRole('group', { name: 'Drawing toolbar' });
+  const drawingTools = page.getByRole('group', { name: 'drawing toolbar' });
   async function exported() {
-    await drawingTools.getByRole('button', { name: 'Export', exact: true }).click();
-    const dialog = page.getByRole('dialog', { name: 'Export', exact: true });
-    await expect(dialog.getByRole('button', { name: 'Download PDF', exact: true })).toBeEnabled();
+    await drawingTools.getByRole('button', { name: 'export', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'export', exact: true });
+    await expect(dialog.getByRole('button', { name: 'download PDF', exact: true })).toBeEnabled();
     const downloaded = page.waitForEvent('download');
-    await dialog.getByRole('button', { name: 'Download PDF', exact: true }).click();
+    await dialog.getByRole('button', { name: 'download PDF', exact: true }).click();
     return readPdf(await downloaded);
   }
   const custom = await exported();
@@ -351,7 +351,7 @@ test('independent PDF margins persist in min-boxes and pad drawing exports witho
   expect((Number(stroke[3]) - Number(stroke[1])) / (Number(stroke[2]) - Number(stroke[4])))
     .toBeCloseTo((points[1][0] - points[0][0]) / (points[1][1] - points[0][1]), 3);
   await page.keyboard.press('ControlOrMeta+s');
-  await drawingTools.getByRole('button', { name: 'Exit', exact: true }).click();
+  await drawingTools.getByRole('button', { name: 'exit', exact: true }).click();
   await action(page, '..').click(); await action(page, 'app settings').click(); await action(page, 'export').click();
   for (const side of Object.keys(values)) await page.getByLabel(`${side} margin (min-box)`, { exact: true }).fill('0');
   await page.reload(); await action(page, 'margins.svg').click(); await action(page, 'open').click();

@@ -31,7 +31,7 @@
     const layers = [];
     for (const layer of [...source.layers].reverse()) {
       const png = new Blob([await encodePng(source.layerPixels(layer)) as BlobPart], { type: 'image/png' });
-      layers.push({ name: layer.entry.name ?? 'Layer', png, visible: layer.entry.visible, opacity: layer.entry.opacity });
+      layers.push({ name: layer.entry.name ?? 'layer', png, visible: layer.entry.visible, opacity: layer.entry.opacity });
     }
     return { width: source.width, height: source.height, layers };
   }

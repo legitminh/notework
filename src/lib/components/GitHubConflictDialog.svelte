@@ -19,7 +19,7 @@
     if (busy) return;
     busy = true; error = '';
     try { onChoose(await version.value()); }
-    catch (cause) { error = cause instanceof Error ? cause.message : 'Could not keep this version. Try again.'; }
+    catch (cause) { error = cause instanceof Error ? cause.message : 'could not keep this version. try again.'; }
     finally { busy = false; }
   }
 </script>
@@ -27,15 +27,15 @@
 <dialog class="github-conflict local-picker" bind:this={dialog} use:dialogShortcuts aria-labelledby="github-conflict-heading"
   oncancel={(event) => { event.preventDefault(); if (!busy) onChoose(); }}>
   <h2 id="github-conflict-heading">GitHub conflict</h2>
-  <p>“{conflict.path}” changed on GitHub while you were editing. Edit either version, then choose which one to keep.</p>
+  <p>“{conflict.path}” changed on GitHub while you were editing. edit either version, then choose which one to keep.</p>
   {#if error}<p class="notice" role="alert">{error}</p>{/if}
   <div class="conflict-versions">
-    <GitHubConflictVersion bind:this={local} blob={conflict.local} path={conflict.path} label="Your version"
+    <GitHubConflictVersion bind:this={local} blob={conflict.local} path={conflict.path} label="your version"
       {stylusOnly} {autosaveMs} disabled={busy} onChoose={() => { void choose(local); }} />
     <GitHubConflictVersion bind:this={upstream} blob={conflict.upstream} path={conflict.path} label="GitHub version"
       {stylusOnly} {autosaveMs} disabled={busy} onChoose={() => { void choose(upstream); }} />
   </div>
-  <Control disabled={busy} onclick={() => onChoose()}>Cancel</Control>
+  <Control disabled={busy} onclick={() => onChoose()}>cancel</Control>
 </dialog>
 
 <style>

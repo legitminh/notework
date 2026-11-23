@@ -23,19 +23,19 @@
 
 <ColorWheel value={shown} size={132} onchange={(color) => onchange(color)} />
 <span class="stream-break" aria-hidden="true"></span>
-<span class="stream-label">Palette</span>
+<span class="stream-label">palette</span>
 {#if ink}
-  <span class="swatch-control ink-swatch" class:chosen={value === undefined}><Control onclick={() => onchange(undefined)} aria-label="Use ink color (follows theme)" aria-pressed={value === undefined}><span class="swatch" aria-hidden="true"></span></Control></span>
+  <span class="swatch-control ink-swatch" class:chosen={value === undefined}><Control onclick={() => onchange(undefined)} aria-label="use ink color (follows theme)" aria-pressed={value === undefined}><span class="swatch" aria-hidden="true"></span></Control></span>
 {/if}
 {#each palette as swatch (swatch)}
-  <span class="swatch-control" class:chosen={value === swatch} style:--swatch={swatch}><Control onclick={() => onchange(swatch)} aria-label={`Use color ${swatch}`} aria-pressed={value === swatch}><span class="swatch" aria-hidden="true"></span></Control></span>
+  <span class="swatch-control" class:chosen={value === swatch} style:--swatch={swatch}><Control onclick={() => onchange(swatch)} aria-label={`use color ${swatch}`} aria-pressed={value === swatch}><span class="swatch" aria-hidden="true"></span></Control></span>
 {/each}
-{#if value !== undefined && !palette.includes(value)}<Control onclick={() => onpalettechange([...palette, value!])} aria-label="Add current color to palette">+</Control>{/if}
-{#if value !== undefined && palette.includes(value)}<Control onclick={() => onpalettechange(palette.filter((item) => item !== value))} aria-label="Remove current color from palette">−</Control>{/if}
+{#if value !== undefined && !palette.includes(value)}<Control onclick={() => onpalettechange([...palette, value!])} aria-label="add current color to palette">+</Control>{/if}
+{#if value !== undefined && palette.includes(value)}<Control onclick={() => onpalettechange(palette.filter((item) => item !== value))} aria-label="remove current color from palette">−</Control>{/if}
 {#if recent.length}
-  <span class="stream-label">Recent</span>
+  <span class="stream-label">recent</span>
   {#each recent as color (color)}
-    <span class="swatch-control small" class:chosen={value === color} style:--swatch={color}><Control onclick={() => onchange(color)} aria-label={`Use recent color ${color}`}><span class="swatch" aria-hidden="true"></span></Control></span>
+    <span class="swatch-control small" class:chosen={value === color} style:--swatch={color}><Control onclick={() => onchange(color)} aria-label={`use recent color ${color}`}><span class="swatch" aria-hidden="true"></span></Control></span>
   {/each}
 {/if}
 

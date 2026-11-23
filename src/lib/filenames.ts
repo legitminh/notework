@@ -12,11 +12,11 @@ export function invalidFilenameMessage(name: string) {
   const control = /[\u0000-\u001f]/.exec(name)?.[0];
   if (control) {
     const code = control.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0');
-    return `The name contains an invisible control character (U+${code}). Remove it and try again.`;
+    return `the name contains an invisible control character (U+${code}). remove it and try again.`;
   }
   if (/[/\\]/.test(name)) return 'Enter a name without a folder path (/ or \\).';
-  if (/[\[\]]/.test(name)) return 'Square brackets ([ and ]) cannot be used in a linked filename.';
-  if (name.length > 255) return 'The name is too long. Use 255 characters or fewer.';
+  if (/[\[\]]/.test(name)) return 'square brackets ([ and ]) cannot be used in a linked filename.';
+  if (name.length > 255) return 'the name is too long. use 255 characters or fewer.';
   if (name === '.' || name === '..' || name.toLowerCase() === '.git') return '“.”, “..”, and “.git” are reserved names.';
   return 'Enter a valid file or folder name.';
 }

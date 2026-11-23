@@ -20,7 +20,7 @@
   <div class="notice">
     <p {role}>{typeof error === 'string' ? error : storageError(error)}</p>
     {#if repositoryId}
-      <Control onclick={() => reconnect(repositoryId!)}>Reconnect GitHub</Control>
+      <Control onclick={() => reconnect(repositoryId!)}>reconnect GitHub</Control>
     {/if}
   </div>
 {/if}

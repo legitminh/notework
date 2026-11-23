@@ -51,27 +51,27 @@ export async function isDrawingFile(file: File) {
 }
 
 export async function readDrawing(file: File): Promise<Drawing> {
-  if (!await isDrawingFile(file)) throw new Error('This SVG is not a Notework drawing.');
-  if (file.size > 16 * 1024 * 1024) throw new Error('This drawing is too large to open.');
+  if (!await isDrawingFile(file)) throw new Error('this SVG is not a Notework drawing.');
+  if (file.size > 16 * 1024 * 1024) throw new Error('this drawing is too large to open.');
   const svg = new DOMParser().parseFromString(await file.text(), 'image/svg+xml').documentElement;
   if (svg.localName !== 'svg' || svg.getAttribute('data-notework-drawing') !== '1' ||
       svg.children.length !== 1 || svg.firstElementChild?.localName !== 'g') {
-    throw new Error('This drawing contains unsupported SVG data.');
+    throw new Error('this drawing contains unsupported SVG data.');
   }
   return Array.from(svg.firstElementChild.children, (line) => {
     const coordinates = line.getAttribute('points');
-    if (line.localName !== 'polyline' || !coordinates?.trim()) throw new Error('This drawing contains an invalid stroke.');
+    if (line.localName !== 'polyline' || !coordinates?.trim()) throw new Error('this drawing contains an invalid stroke.');
     const points = coordinates.trim().split(/\s+/).map((pair): Point => {
-      if (!/^\d+(?:\.\d+)?,\d+(?:\.\d+)?$/.test(pair)) throw new Error('This drawing contains an invalid point.');
+      if (!/^\d+(?:\.\d+)?,\d+(?:\.\d+)?$/.test(pair)) throw new Error('this drawing contains an invalid point.');
       const [x, y] = pair.split(',').map(Number);
-      if (!Number.isFinite(y) || x > DRAWING_WIDTH || y > 10_000_000) throw new Error('This drawing contains an out-of-range point.');
+      if (!Number.isFinite(y) || x > DRAWING_WIDTH || y > 10_000_000) throw new Error('this drawing contains an out-of-range point.');
       return [x, y];
     });
     const width = Number(line.getAttribute('stroke-width') ?? svg.firstElementChild!.getAttribute('stroke-width') ?? STROKE_WIDTH);
-    if (!Number.isFinite(width) || width <= 0 || width > DRAWING_WIDTH) throw new Error('This drawing contains an invalid pen size.');
+    if (!Number.isFinite(width) || width <= 0 || width > DRAWING_WIDTH) throw new Error('this drawing contains an invalid pen size.');
     const color = line.getAttribute('stroke'), opacity = line.getAttribute('stroke-opacity');
-    if (color !== null && !isHexColor(color)) throw new Error('This drawing contains an invalid stroke color.');
-    if (opacity !== null && !(Number(opacity) > 0 && Number(opacity) <= 1)) throw new Error('This drawing contains an invalid stroke opacity.');
+    if (color !== null && !isHexColor(color)) throw new Error('this drawing contains an invalid stroke color.');
+    if (opacity !== null && !(Number(opacity) > 0 && Number(opacity) <= 1)) throw new Error('this drawing contains an invalid stroke opacity.');
     return sizedStroke(points, width, false, { color: color ?? undefined, opacity: opacity === null ? undefined : Number(opacity) });
   });
 }

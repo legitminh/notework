@@ -42,14 +42,14 @@
         version = loaded;
         if (loaded.kind === 'text') text = loaded.text;
       } catch (cause) {
-        if (active) error = `Could not open this version: ${cause instanceof Error ? cause.message : 'Unknown file error'}`;
+        if (active) error = `could not open this version: ${cause instanceof Error ? cause.message : 'unknown file error'}`;
       } finally { if (active) ready = true; }
     })();
     return () => { active = false; };
   });
 
   export async function value() {
-    if (!ready || (editor && !await editor.saveForNavigation())) throw new Error('Finish editing this version before keeping it.');
+    if (!ready || (editor && !await editor.saveForNavigation())) throw new Error('finish editing this version before keeping it.');
     if (version?.kind === 'text' && version.text !== text) return new Blob([...encodedChunks([text], version.format)]);
     return edited ?? blob;
   }
@@ -58,11 +58,11 @@
 <section aria-label={label} class="conflict-version">
   <h3>{label}</h3>
   {#if !ready}
-    <p role="status">Opening version…</p>
+    <p role="status">opening version…</p>
   {:else if error}
     <p class="notice" role="alert">{error}</p>
   {:else if !blob}
-    <p>This file was deleted on GitHub.</p>
+    <p>this file was deleted on GitHub.</p>
   {:else if version?.kind === 'image'}
     <div class="visual-editor" inert={disabled}>
       <ImageCanvasEditor bind:this={editor} {name} initial={version.image} {stylusOnly} {autosaveMs}
@@ -76,9 +76,9 @@
   {:else if version?.kind === 'text'}
     <label><span class="visually-hidden">{label}</span><textarea bind:value={text} spellcheck="false" {disabled}></textarea></label>
   {:else}
-    <p>{label === 'Your version' ? 'Your version cannot be edited as text.' : 'The GitHub version cannot be edited as text.'}</p>
+    <p>{label === 'your version' ? 'your version cannot be edited as text.' : 'the GitHub version cannot be edited as text.'}</p>
   {/if}
-  <Control onclick={onChoose} disabled={!ready || disabled}>{label === 'Your version' ? 'Keep your version' : blob ? 'Keep GitHub version' : 'Keep GitHub deletion'}</Control>
+  <Control onclick={onChoose} disabled={!ready || disabled}>{label === 'your version' ? 'keep your version' : blob ? 'keep GitHub version' : 'keep GitHub deletion'}</Control>
 </section>
 
 <style>

@@ -6,10 +6,10 @@ const keep = '.gitkeep';
 const supportedBlob = (entry: GitEntry) => entry.type === 'blob' && (entry.mode === '100644' || entry.mode === '100755');
 const parent = (path: string) => path.slice(0, Math.max(0, path.lastIndexOf('/')));
 const name = (path: string) => path.slice(path.lastIndexOf('/') + 1);
-const missing = () => new DOMException('The GitHub item is no longer present.', 'NotFoundError');
-const wrongKind = () => new DOMException('A different kind of GitHub item has this name.', 'TypeMismatchError');
+const missing = () => new DOMException('the GitHub item is no longer present.', 'NotFoundError');
+const wrongKind = () => new DOMException('a different kind of GitHub item has this name.', 'TypeMismatchError');
 const key = (path: string, name: string) => {
-  if (!name || name === '.' || name === '..' || /[/\x00]/.test(name)) throw new TypeError('Choose a valid item name.');
+  if (!name || name === '.' || name === '..' || /[/\x00]/.test(name)) throw new TypeError('choose a valid item name.');
   return path ? path + '/' + name : name;
 };
 export const gitBlobSha = async (blob: Blob) => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-1',
@@ -62,7 +62,7 @@ export class GitHubRepository {
     }
     const api = new GitHubApi({ owner, repo, branch }, token, id);
     const metadata = await api.request<{ default_branch: string; permissions?: { push: boolean }; archived?: boolean }>('', 'open the repository');
-    if (metadata.archived || metadata.permissions?.push === false) throw new Error('This repository does not allow writes with this connection.');
+    if (metadata.archived || metadata.permissions?.push === false) throw new Error('this repository does not allow writes with this connection.');
     branch ||= metadata.default_branch;
     if (!branch || branch.split('/').some((part) => !part || part === '.' || part === '..')) throw new Error('Enter a valid branch name.');
     const repository = new GitHubRepository(id, { owner, repo, branch }, token);
@@ -90,7 +90,7 @@ export class GitHubRepository {
 
   assertNoQueuedSync(path: string) {
     if ([...this.queuedPaths].some((queued) => !path || queued === path || queued.startsWith(path + '/'))) {
-      throw new Error('This item has pending GitHub sync. Let syncing finish or review its conflict before deleting, moving, or renaming it.');
+      throw new Error('this item has pending GitHub sync. let syncing finish or review its conflict before deleting, moving, or renaming it.');
     }
   }
 
@@ -112,13 +112,13 @@ export class GitHubRepository {
   }
 
   private current() {
-    if (!this.snapshot) throw new Error('The GitHub repository is unavailable. Check the connection in settings.');
+    if (!this.snapshot) throw new Error('the GitHub repository is unavailable. check the connection in settings.');
     return this.snapshot;
   }
 
   async sync(poll = false) {
     if (!this.token) throw new GitHubApiError(401, 'connect', this.id);
-    if (!navigator.onLine) throw new Error('GitHub is offline. Changes can stay in this browser until you reconnect.');
+    if (!navigator.onLine) throw new Error('GitHub is offline. changes can stay in this browser until you reconnect.');
     return this.syncing ??= (async () => {
       const startedFrom = this.snapshot;
       const head = await this.api.head(poll);
@@ -202,9 +202,9 @@ export class GitHubRepository {
   assertTransferable(path: string) {
     this.assertNoQueuedSync(path);
     const contains = (candidate: string) => candidate === path || candidate.startsWith(path + '/');
-    if ([...this.drafts.keys()].some(contains)) throw new Error('Open the GitHub files with unpublished drafts and exit them before moving or renaming them.');
+    if ([...this.drafts.keys()].some(contains)) throw new Error('open the GitHub files with unpublished drafts and exit them before moving or renaming them.');
     if ([...this.entries.values()].some((entry) => contains(entry.path) && !supportedBlob(entry))) {
-      throw new Error('This GitHub folder contains a symbolic link or submodule. Move it on GitHub to preserve those entries.');
+      throw new Error('this GitHub folder contains a symbolic link or submodule. move it on GitHub to preserve those entries.');
     }
   }
 
@@ -263,7 +263,7 @@ export class GitHubRepository {
       const prefix = path + '/';
       const paths = [...new Set([...this.entries.keys(), ...this.pending.keys(), ...this.drafts.keys()])]
         .filter((key) => key.startsWith(prefix) && (this.has(key) || this.drafts.has(key)));
-      if (!recursive && paths.some((path) => path !== prefix + keep)) throw new DOMException('The folder is not empty.', 'InvalidModificationError');
+      if (!recursive && paths.some((path) => path !== prefix + keep)) throw new DOMException('the folder is not empty.', 'InvalidModificationError');
       if (!this.removals.has(path)) this.removals.set(path, this.directoryVersion(path));
       for (const file of paths) this.stage(file, null);
     } else if (this.has(path) || this.drafts.has(path)) this.stage(path, null);
@@ -336,7 +336,7 @@ export class GitHubRepository {
       this.directoryIndex = undefined;
       return tree.length > 0;
     }
-    throw new Error('The GitHub branch is changing quickly. Your changes are still available; try saving again.');
+    throw new Error('the GitHub branch is changing quickly. your changes are still available; try saving again.');
   }
 
   editBase(path: string) { return this.entries.get(path)?.sha ?? null; }
@@ -448,7 +448,7 @@ export class GitHubDirectory extends GitHubHandle implements LocalDirectory {
     const path = key(this.path, name);
     const kind = this.repository.list(this.path).get(name);
     if (kind === 'directory') throw wrongKind();
-    if (!kind && (this.repository.has(path) || (options?.create && name === keep))) throw new DOMException('This GitHub path is reserved or unsupported.', 'NotAllowedError');
+    if (!kind && (this.repository.has(path) || (options?.create && name === keep))) throw new DOMException('this GitHub path is reserved or unsupported.', 'NotAllowedError');
     if (!kind && !options?.create) throw missing();
     if (!kind) this.repository.stage(path, new Blob());
     return new GitHubFile(this.repository, path);

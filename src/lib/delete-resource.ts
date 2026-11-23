@@ -21,14 +21,14 @@ export function deleteResource(workspace: Workspace, node: StateNode) {
 }
 async function deleteResourceInternal(workspace: Workspace, node: StateNode) {
   const handle = workspace.cachedHandle(node.id);
-  if (!handle) throw new Error('The resource must be reopened before it can be deleted.');
+  if (!handle) throw new Error('the resource must be reopened before it can be deleted.');
   if (node.storage === 'browser') {
     await deleteBrowserResource(handle);
     return;
   }
   const repository = workspace.github(node.sourceId);
   if (repository) {
-    if (!node.path.length) throw new Error('Disconnect the repository in GitHub settings.');
+    if (!node.path.length) throw new Error('disconnect the repository in GitHub settings.');
     const checkpoint = repository.checkpoint();
     try {
       repository.remove(node.path.join('/'), node.kind === 'directory');
@@ -56,7 +56,7 @@ async function deleteResourceInternal(workspace: Workspace, node: StateNode) {
     await handle.remove({ recursive: node.kind === 'directory' });
     return;
   }
-  throw new Error('Reconnect this item through its containing folder before deleting it.');
+  throw new Error('reconnect this item through its containing folder before deleting it.');
 }
 
 export function canDeleteResource(workspace: Workspace, node: StateNode) {

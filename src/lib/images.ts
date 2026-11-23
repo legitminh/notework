@@ -11,12 +11,12 @@ export function imageFormat(name: string): ImageFormat | undefined {
 }
 const MAX_PIXELS = 32 * 1024 * 1024;
 export function imageCanvas(width: number, height: number) {
-  if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width > 16384 || height > 16384 || width * height > MAX_PIXELS) throw new Error('This image exceeds the editor’s 32 megapixel / 16,384 pixel side limit.');
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width > 16384 || height > 16384 || width * height > MAX_PIXELS) throw new Error('this image exceeds the editor’s 32 megapixel / 16,384 pixel side limit.');
   const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height;
   return canvas;
 }
 export const canvasBlob = (canvas: HTMLCanvasElement, type = 'image/png') => new Promise<Blob>((resolve, reject) =>
-  canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('Could not encode this image.')), type, .94));
+  canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('could not encode this image.')), type, .94));
 export async function paintBlob(context: CanvasRenderingContext2D, blob: Blob, x = 0, y = 0) {
   const bitmap = await createImageBitmap(blob);
   try { context.drawImage(bitmap, x, y); } finally { bitmap.close(); }
@@ -41,38 +41,38 @@ async function heic(type: 'decode' | 'encode', data: Uint8Array, width?: number,
       clearTimeout(timeout); worker.terminate();
       if (error) reject(error); else resolve(result as Awaited<ReturnType<typeof heic>>);
     }
-    worker.onerror = (event) => finish(new Error(event.message || 'The local HEIC codec could not start.'));
+    worker.onerror = (event) => finish(new Error(event.message || 'the local HEIC codec could not start.'));
     worker.onmessage = (event) => { if (event.data.id === id) finish(event.data.error ? new Error(event.data.error) : undefined, event.data); };
     worker.postMessage({ id, type, data, width, height }, [data.buffer]);
   });
 }
 export async function readImage(file: File): Promise<ImageDocument> {
-  if (file.size > 128 * 1024 * 1024) throw new Error('This image exceeds the 128 MB editor limit.');
+  if (file.size > 128 * 1024 * 1024) throw new Error('this image exceeds the 128 MB editor limit.');
   const format = imageFormat(file.name);
   if (format === 'ora') {
     let total = 0;
     const archive = unzipSync(new Uint8Array(await file.arrayBuffer()), { filter: ({ originalSize, name }) => {
       if (!['mimetype', 'stack.xml'].includes(name) && !name.toLowerCase().endsWith('.png')) return false;
       total += originalSize;
-      if (total > 256 * 1024 * 1024) throw new Error('The expanded ORA exceeds 256 MB.');
+      if (total > 256 * 1024 * 1024) throw new Error('the expanded ORA exceeds 256 MB.');
       return true;
     } });
-    if (!archive['mimetype'] || strFromU8(archive['mimetype']) !== 'image/openraster' || !archive['stack.xml']) throw new Error('This is not an OpenRaster file.');
+    if (!archive['mimetype'] || strFromU8(archive['mimetype']) !== 'image/openraster' || !archive['stack.xml']) throw new Error('this is not an OpenRaster file.');
     const xml = new DOMParser().parseFromString(strFromU8(archive['stack.xml']), 'application/xml');
-    if (xml.querySelector('parsererror')) throw new Error('The ORA layer stack is invalid.');
+    if (xml.querySelector('parsererror')) throw new Error('the ORA layer stack is invalid.');
     const root = xml.documentElement, stack = root.querySelector(':scope > stack');
     const width = Number(root.getAttribute('w')), height = Number(root.getAttribute('h'));
     imageCanvas(width, height);
-    if (!stack || stack.querySelector('stack')) throw new Error('Nested ORA layer groups are not supported. Flatten the groups before opening.');
+    if (!stack || stack.querySelector('stack')) throw new Error('nested ORA layer groups are not supported. flatten the groups before opening.');
     const layers: ImageLayer[] = [];
     for (const layer of stack.children) {
       if (layers.length >= 100) throw new Error('ORA files may have at most 100 layers.');
-      if (layer.localName !== 'layer' || ![null, 'svg:src-over'].includes(layer.getAttribute('composite-op'))) throw new Error('This ORA uses an unsupported layer blend mode.');
+      if (layer.localName !== 'layer' || ![null, 'svg:src-over'].includes(layer.getAttribute('composite-op'))) throw new Error('this ORA uses an unsupported layer blend mode.');
       const data = archive[layer.getAttribute('src') ?? ''];
-      if (!data) throw new Error('An ORA layer image is missing.');
+      if (!data) throw new Error('an ORA layer image is missing.');
       const canvas = imageCanvas(width, height);
       await paintBlob(canvas.getContext('2d')!, new Blob([new Uint8Array(data)], { type: 'image/png' }), Number(layer.getAttribute('x') ?? 0), Number(layer.getAttribute('y') ?? 0));
-      layers.push({ name: layer.getAttribute('name') || `Layer ${layers.length + 1}`, png: await canvasBlob(canvas), visible: layer.getAttribute('visibility') !== 'hidden', opacity: Math.max(0, Math.min(1, Number(layer.getAttribute('opacity') ?? 1))) });
+      layers.push({ name: layer.getAttribute('name') || `layer ${layers.length + 1}`, png: await canvasBlob(canvas), visible: layer.getAttribute('visibility') !== 'hidden', opacity: Math.max(0, Math.min(1, Number(layer.getAttribute('opacity') ?? 1))) });
     }
     if (!layers.length || layers.length > 100) throw new Error('ORA files must have between 1 and 100 layers.');
     return { width, height, layers };
@@ -87,7 +87,7 @@ export async function readImage(file: File): Promise<ImageDocument> {
     try { canvas = imageCanvas(bitmap.width, bitmap.height); canvas.getContext('2d')!.drawImage(bitmap, 0, 0); }
     finally { bitmap.close(); }
   }
-  return { width: canvas.width, height: canvas.height, layers: [{ name: 'Image', png: await canvasBlob(canvas), visible: true, opacity: 1 }] };
+  return { width: canvas.width, height: canvas.height, layers: [{ name: 'image', png: await canvasBlob(canvas), visible: true, opacity: 1 }] };
 }
 const escapeXml = (text: string) => text.replace(/[<>&"']/g, (character) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' })[character]!);
 export async function encodeImage(document: ImageDocument, format: ImageFormat): Promise<Blob> {

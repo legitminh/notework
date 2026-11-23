@@ -35,7 +35,7 @@ class FoldArrow extends WidgetType {
     const arrow = document.createElement('span');
     arrow.className = 'cm-fold-arrow';
     arrow.textContent = ' ▸';
-    arrow.setAttribute('aria-label', 'Folded children');
+    arrow.setAttribute('aria-label', 'folded children');
     return arrow;
   }
 }
@@ -145,7 +145,7 @@ const hover = ViewPlugin.fromClass(class {
     this.parent = line.from;
     const closed = value.closed.has(line.from);
     this.component = mount(FoldHover, { target: host, props: {
-      closed, label: `${closed ? 'Unfold' : 'Fold'} children of line ${line.number}`,
+      closed, label: `${closed ? 'unfold' : 'fold'} children of line ${line.number}`,
       onclick: () => foldLine(this.view, 'toggle', line.from)
     } });
   }

@@ -10,9 +10,9 @@
   onMount(() => { const element = dialog; element.showModal(); return () => element.close(); });
 </script>
 
-<dialog class="local-picker search-menu" bind:this={dialog} use:dialogShortcuts aria-label="Search"
+<dialog class="local-picker search-menu" bind:this={dialog} use:dialogShortcuts aria-label="search"
     oncancel={(event) => { event.preventDefault(); onClose(); }}>
-  <Menu label="Search" showTrigger={false} open={true} backLabel="Cancel" onclose={onClose}>
+  <Menu label="search" showTrigger={false} open={true} backLabel="cancel" onclose={onClose}>
     {#snippet children()}
     <h2>search</h2>
     <Control aria-label="search text in folder children" onclick={() => onChoose('folder-text')}>search text in folder children <span class="resource-hint">Cmd/Ctrl+F</span></Control>

@@ -1,5 +1,5 @@
 /** Shared by Svelte image surfaces and CodeMirror's DOM widgets. */
-export function imageLoadingIndicator(label = 'Loading image') {
+export function imageLoadingIndicator(label = 'loading image') {
   const status = document.createElement('span');
   status.className = 'image-loading';
   status.setAttribute('role', 'status');

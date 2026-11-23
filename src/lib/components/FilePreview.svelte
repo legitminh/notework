@@ -115,7 +115,7 @@
         } else {
           const file = await handle.getFile();
           const format = await inspectTextFile(file, workspace.format(node.id));
-          if (!format) throw new Error('This file cannot be previewed as text.');
+          if (!format) throw new Error('this file cannot be previewed as text.');
           let text = '';
           for await (const chunk of decodedChunks(file, format)) text += chunk;
           if (!active) return;
@@ -123,7 +123,7 @@
           view = new EditorView({ parent: host, state: EditorState.create({
             doc: text.replace(/\r\n?/g, '\n').split('\n').map((line) => indent + line).join('\n'),
             extensions: [EditorState.readOnly.of(true), EditorView.editable.of(false),
-              EditorView.contentAttributes.of({ role: 'document', 'aria-label': `Preview of ${node.name}`, tabindex: '-1' }),
+              EditorView.contentAttributes.of({ role: 'document', 'aria-label': `preview of ${node.name}`, tabindex: '-1' }),
               indentUnit.of('  '), EditorState.tabSize.of(2),
               prettyDisplay(prettyFontSize, prettyMargin, inheritedPretty),
               pageReferences({ workspace, source: node, wrapLines, prettyFontSize, prettyMargin, readOnly: true, catalog, ancestors: ancestors ?? [node.id], context, onOpen: (id, location) => onOpenReference?.(id, location) }),
@@ -157,14 +157,14 @@
 <div class="file-preview" class:embedded={!!inheritedPretty} style:--page-indent={`${countColumn(indent, 2)}ch`} use:openAtClick>
   <span class="preview-open">
     <Interactable registered={false} on_close={() => onOpen()} disabled={disabled || loading || !!shortcutScope.dialog}>
-      <span class="visually-hidden">Open {node.name} from preview</span>
+      <span class="visually-hidden">open {node.name} from preview</span>
     </Interactable>
   </span>
   <div class="preview-open-hint" aria-hidden="true"><span>open</span></div>
   <div class="preview-content">
     {#if (node.drawing || isSvg) && !error && !imageFailed && (loading || !imageReady)}<ImageLoading />
     {:else if loading}<p class="muted">loading preview…</p>{/if}
-    {#if image}<img class:svg-image={isSvg && !node.drawing} src={image} alt={`Preview of ${node.name}`} onload={() => { imageReady = true; }} onerror={() => { imageFailed = true; error = new Error('Could not display this image.'); }} />{/if}
+    {#if image}<img class:svg-image={isSvg && !node.drawing} src={image} alt={`preview of ${node.name}`} onload={() => { imageReady = true; }} onerror={() => { imageFailed = true; error = new Error('could not display this image.'); }} />{/if}
     <div bind:this={host}></div>
   </div>
 </div>

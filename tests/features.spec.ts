@@ -4,8 +4,8 @@ import { test, expect, type Page } from '@playwright/test';
 // Image codecs share the browser's raster resources; run these cases sequentially.
 test.describe.configure({ mode: 'default', timeout: 90_000 });
 const action = (page: Page, name: string) => page.locator(`[data-action=${JSON.stringify(name)}] button, button[data-action=${JSON.stringify(name)}]`);
-const textTools = (page: Page) => page.getByRole('group', { name: 'Editor toolbar' });
-const drawTools = (page: Page) => page.getByRole('group', { name: 'Drawing toolbar' });
+const textTools = (page: Page) => page.getByRole('group', { name: 'editor toolbar' });
+const drawTools = (page: Page) => page.getByRole('group', { name: 'drawing toolbar' });
 async function create(page: Page, name: string, type = 'text file') {
   await action(page, 'app settings').click();
   await action(page, 'create new file/folder').click();
@@ -27,7 +27,7 @@ async function bytes(page: Page, name: string) {
   }, name);
 }
 async function stroke(page: Page) {
-  const canvas = page.getByRole('img', { name: /^Drawing canvas for / });
+  const canvas = page.getByRole('img', { name: /^drawing canvas for / });
   await expect(canvas).toBeVisible({ timeout: 30_000 });
   const box = (await canvas.boundingBox())!;
   await page.mouse.move(box.x + 40, box.y + 40); await page.mouse.down();
@@ -48,13 +48,13 @@ test('keyboard defaults, persisted settings, virtual ASCII text and real flick i
   await page.getByLabel('name', { exact: true }).fill('keys.txt');
   await action(page, 'create text file').click();
   await action(page, 'open').click();
-  const text = page.getByRole('textbox', { name: 'Edit keys.txt', exact: true });
+  const text = page.getByRole('textbox', { name: 'edit keys.txt', exact: true });
   await expect(text).toBeFocused();
   await page.locator('.keyboard-dock button').filter({ hasText: /^\[a\]$/ }).click();
   await expect(text).toHaveText('a');
   await page.locator('.keyboard-dock button').filter({ hasText: /^\[Enter\]$/ }).click();
   await expect(text.locator('.cm-line')).toHaveCount(2);
-  await textTools(page).getByRole('button', { name: 'Exit', exact: true }).click();
+  await textTools(page).getByRole('button', { name: 'exit', exact: true }).click();
   await home(page); await action(page, 'app settings').click(); await action(page, 'keyboard').click();
   await chooseMenu(page, 'virtual keyboard layout', 'flick-alpha');
   await page.reload();
@@ -81,13 +81,13 @@ test('virtual keyboard toggles immediately and stays responsive after modal sear
     await expect(action(page, 'virtual keyboard: on')).toBeVisible();
 
     await page.keyboard.press('Control+Shift+p');
-    const dialog = page.getByRole('dialog', { name: 'Search all files', exact: true });
+    const dialog = page.getByRole('dialog', { name: 'search all files', exact: true });
     await expect(dialog.locator('.keyboard-dock')).toBeVisible();
     const field = dialog.getByRole('searchbox');
     await expect(field).toHaveAttribute('inputmode', 'none');
     await dialog.locator('.keyboard-dock').getByRole('button', { name: 'a', exact: true }).click();
     await expect(field).toHaveValue('a');
-    await dialog.getByRole('button', { name: 'Exit search', exact: true }).click();
+    await dialog.getByRole('button', { name: 'exit search', exact: true }).click();
     await expect(dialog).toHaveCount(0);
     await expect(dock).toBeVisible();
 
@@ -109,7 +109,7 @@ test('mod-4 uses spare space without narrowing editors and alternates gray with 
   await action(page, 'create new file/folder').click();
   await page.getByLabel('name', { exact: true }).fill('lines.txt'); await action(page, 'create text file').click();
   await action(page, 'open').click();
-  const text = page.getByRole('textbox', { name: 'Edit lines.txt' }); await text.fill('zero\none\ntwo\nthree\nfour');
+  const text = page.getByRole('textbox', { name: 'edit lines.txt' }); await text.fill('zero\none\ntwo\nthree\nfour');
   await expect(page.locator('.cm-lineNumbers')).toHaveCount(0);
   const geometry = () => page.locator('.editor-container').evaluate(container => {
     const line = container.querySelector('.cm-line')!, content = container.querySelector('.cm-content')!;
@@ -124,7 +124,7 @@ test('mod-4 uses spare space without narrowing editors and alternates gray with 
   await page.setViewportSize({ width: 390, height: 844 });
   const narrow = await geometry();
   expect(narrow.width).toBe(390);
-  await textTools(page).getByRole('button', { name: 'Exit', exact: true }).click();
+  await textTools(page).getByRole('button', { name: 'exit', exact: true }).click();
   await home(page); await action(page, 'app settings').click(); await action(page, 'text editor').click();
   await action(page, 'line index mod 4: off').click();
   await action(page, 'close app settings').click();
@@ -151,17 +151,17 @@ test('mod-4 uses spare space without narrowing editors and alternates gray with 
 
 test('Draw SVG enters drawing immediately; Delete drawing removes its reference and saved file', async ({ page }) => {
   await create(page, 'note.txt'); await action(page, 'open').click();
-  await textTools(page).getByRole('button', { name: 'Draw…', exact: true }).click();
-  await page.getByRole('dialog', { name: 'Choose drawing format' }).getByRole('button', { name: 'SVG', exact: true }).click();
-  const canvas = page.getByRole('img', { name: /^Drawing canvas for / });
+  await textTools(page).getByRole('button', { name: 'draw…', exact: true }).click();
+  await page.getByRole('dialog', { name: 'choose drawing format' }).getByRole('button', { name: 'SVG', exact: true }).click();
+  const canvas = page.getByRole('img', { name: /^drawing canvas for / });
   await expect(canvas).toBeVisible();
-  const name = (await canvas.getAttribute('aria-label'))!.slice('Drawing canvas for '.length);
+  const name = (await canvas.getAttribute('aria-label'))!.slice('drawing canvas for '.length);
   await stroke(page); await page.keyboard.press('Control+s');
   await expect.poll(() => bytes(page, name)).not.toBeNull();
   page.once('dialog', (dialog) => dialog.accept());
-  await drawTools(page).getByRole('button', { name: 'Delete drawing', exact: true }).click();
+  await drawTools(page).getByRole('button', { name: 'delete drawing', exact: true }).click();
   await expect(textTools(page)).toBeVisible();
-  await expect(page.getByRole('textbox', { name: 'Edit note.txt' })).not.toContainText('svgpage');
+  await expect(page.getByRole('textbox', { name: 'edit note.txt' })).not.toContainText('svgpage');
   expect(await bytes(page, name)).toBeNull();
 });
 
@@ -171,46 +171,46 @@ for (const format of ['png', 'jpeg', 'ora']) {
     await seedImage(page, `picture.${format}`);
     await action(page, 'open').click(); await stroke(page);
     if (format === 'ora') {
-      await drawTools(page).getByRole('button', { name: 'Layer', exact: true }).click();
-      await page.getByRole('button', { name: 'Add layer', exact: true }).click();
+      await drawTools(page).getByRole('button', { name: 'layer', exact: true }).click();
+      await page.getByRole('button', { name: 'add layer', exact: true }).click();
       await expect(choiceMenu(page, 'active layer')).toHaveAttribute('data-value', '0');
       await expectChoiceCount(page, 'active layer', 2);
       await page.keyboard.press('Escape');
       await stroke(page);
     }
-    await drawTools(page).getByRole('button', { name: 'Exit', exact: true }).click();
+    await drawTools(page).getByRole('button', { name: 'exit', exact: true }).click();
     await expect(action(page, 'open')).toBeVisible({ timeout: 30_000 });
     const data = (await bytes(page, `picture.${format}`))!;
     if (format === 'png') expect(data.slice(0, 8)).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
     if (format === 'jpeg') expect(data.slice(0, 3)).toEqual([255, 216, 255]);
     if (format === 'ora') expect(data.slice(0, 2)).toEqual([80, 75]);
     await page.reload(); await action(page, `picture.${format}`).click(); await action(page, 'open').click();
-    await expect(page.getByRole('img', { name: `Drawing canvas for picture.${format}` })).toBeVisible();
-    if (format === 'ora') { await drawTools(page).getByRole('button', { name: 'Layer', exact: true }).click(); await expectChoiceCount(page, 'active layer', 2); }
+    await expect(page.getByRole('img', { name: `drawing canvas for picture.${format}` })).toBeVisible();
+    if (format === 'ora') { await drawTools(page).getByRole('button', { name: 'layer', exact: true }).click(); await expectChoiceCount(page, 'active layer', 2); }
     await expect(page.locator('canvas.visual-canvas')).toBeVisible();
   });
 }
 
 test('the drawing format choice offers only SVG and visual documents, and inserts the visual page directive', async ({ page }) => {
   await create(page, 'images.txt'); await action(page, 'open').click();
-  await textTools(page).getByRole('button', { name: 'Draw…', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'Choose drawing format' });
-  await expect(dialog.locator('.editor-controls button')).toHaveText([/SVG$/, /Visual document$/]);
-  await dialog.getByRole('button', { name: 'Visual document', exact: true }).click();
+  await textTools(page).getByRole('button', { name: 'draw…', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'choose drawing format' });
+  await expect(dialog.locator('.editor-controls button')).toHaveText([/SVG$/, /visual document$/]);
+  await dialog.getByRole('button', { name: 'visual document', exact: true }).click();
   await sizeCanvas(page);
-  await stroke(page); await drawTools(page).getByRole('button', { name: 'Exit', exact: true }).click();
-  const text = page.getByRole('textbox', { name: 'Edit images.txt' });
-  await expect(page.getByRole('button', { name: /^Edit drawing visual-[0-9a-f]{8}\/visual-[0-9a-f]{8}\.visual$/ })).toBeVisible();
-  await text.press('Control+s'); await textTools(page).getByRole('button', { name: 'Exit', exact: true }).click();
+  await stroke(page); await drawTools(page).getByRole('button', { name: 'exit', exact: true }).click();
+  const text = page.getByRole('textbox', { name: 'edit images.txt' });
+  await expect(page.getByRole('button', { name: /^edit drawing visual-[0-9a-f]{8}\/visual-[0-9a-f]{8}\.visual$/ })).toBeVisible();
+  await text.press('Control+s'); await textTools(page).getByRole('button', { name: 'exit', exact: true }).click();
   expect(Buffer.from((await bytes(page, 'images.txt'))!).toString()).toMatch(/\\visualpage\[visual-.*\.visual\]/);
 });
 
 test('Cmd/Ctrl+Shift+P searches from root with separate open and navigation actions', async ({ page }) => {
   await create(page, 'other.txt'); await home(page); await create(page, 'source.txt'); await action(page, 'open').click();
-  const source = page.getByRole('textbox', { name: 'Edit source.txt' }); await source.fill('Keep this draft');
+  const source = page.getByRole('textbox', { name: 'edit source.txt' }); await source.fill('Keep this draft');
   await page.keyboard.down('Meta'); await expect(page.getByLabel('Command and Control shortcuts')).toBeVisible();
   await page.keyboard.press('Shift+p'); await page.keyboard.up('Meta');
-  const dialog = page.getByRole('dialog', { name: 'Search all files', exact: true });
+  const dialog = page.getByRole('dialog', { name: 'search all files', exact: true });
   await expect(dialog).toBeVisible();
   await dialog.getByRole('searchbox').fill('other');
   await expect(dialog.locator('.search-status')).toContainText('1 result found');
@@ -219,14 +219,14 @@ test('Cmd/Ctrl+Shift+P searches from root with separate open and navigation acti
     actions.map((action) => action.getAttribute('data-action')))).toEqual(['open', 'other.txt']);
   await row.locator('[data-action="open"] button').click();
   await expect(dialog).toHaveCount(0);
-  await expect(page.getByRole('textbox', { name: 'Edit other.txt' })).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'edit other.txt' })).toBeVisible();
   expect(Buffer.from((await bytes(page, 'source.txt'))!).toString()).toBe('Keep this draft');
-  await page.getByRole('textbox', { name: 'Edit other.txt' }).fill('Save before navigating');
+  await page.getByRole('textbox', { name: 'edit other.txt' }).fill('Save before navigating');
   await page.keyboard.press('Control+Shift+p'); await dialog.getByRole('searchbox').fill('source');
   await dialog.locator('[data-action="source.txt"] button').click();
   await expect(dialog).toHaveCount(0);
   await expect(action(page, 'open')).toBeVisible();
-  await expect(page.getByRole('textbox', { name: 'Edit source.txt' })).toHaveCount(0);
+  await expect(page.getByRole('textbox', { name: 'edit source.txt' })).toHaveCount(0);
   expect(Buffer.from((await bytes(page, 'other.txt'))!).toString()).toBe('Save before navigating');
 
   // Quick-open also enters the editor when its result is already selected.
@@ -251,20 +251,20 @@ test('imported image pixels survive drawing, and image links export and rename c
     const blob = await new Promise<Blob>(resolve => canvas.toBlob(blob => resolve(blob!)));
     return Array.from(new Uint8Array(await blob.arrayBuffer()));
   });
-  await page.getByLabel('Image file to insert').setInputFiles({ name: 'photo.png', mimeType: 'image/png', buffer: Buffer.from(png) });
-  const canvas = page.getByRole('img', { name: /^Drawing canvas for photo-.*\.png/ });
+  await page.getByLabel('image file to insert').setInputFiles({ name: 'photo.png', mimeType: 'image/png', buffer: Buffer.from(png) });
+  const canvas = page.getByRole('img', { name: /^drawing canvas for photo-.*\.png/ });
   await expect(canvas).toBeVisible();
-  const name = (await canvas.getAttribute('aria-label'))!.slice('Drawing canvas for '.length);
-  await stroke(page); await drawTools(page).getByRole('button', { name: 'Exit', exact: true }).click();
-  const preview = page.getByRole('button', { name: `Edit drawing ${name}` });
+  const name = (await canvas.getAttribute('aria-label'))!.slice('drawing canvas for '.length);
+  await stroke(page); await drawTools(page).getByRole('button', { name: 'exit', exact: true }).click();
+  const preview = page.getByRole('button', { name: `edit drawing ${name}` });
   await expect(preview.locator('image')).toHaveAttribute('href', /^data:image\/png/);
-  await textTools(page).getByRole('button', { name: 'Export', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'Export', exact: true });
-  await expect(dialog.getByRole('button', { name: 'Download PDF', exact: true })).toBeEnabled();
-  const downloaded = page.waitForEvent('download'); await dialog.getByRole('button', { name: 'Download PDF', exact: true }).click();
+  await textTools(page).getByRole('button', { name: 'export', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'export', exact: true });
+  await expect(dialog.getByRole('button', { name: 'download PDF', exact: true })).toBeEnabled();
+  const downloaded = page.waitForEvent('download'); await dialog.getByRole('button', { name: 'download PDF', exact: true }).click();
   expect((await downloaded).suggestedFilename()).toBe('photo-note.pdf');
   await expect(dialog).toHaveCount(0);
-  await textTools(page).getByRole('button', { name: 'Exit', exact: true }).click();
+  await textTools(page).getByRole('button', { name: 'exit', exact: true }).click();
   const saved = await bytes(page, name);
   const pixel = await page.evaluate(async data => {
     const bitmap = await createImageBitmap(new Blob([new Uint8Array(data!)], { type: 'image/png' }));
@@ -274,8 +274,8 @@ test('imported image pixels survive drawing, and image links export and rename c
   }, saved);
   expect(pixel).toEqual([224, 0, 0, 255]);
   await action(page, name).click(); await action(page, 'configure file').click(); await action(page, 'rename').click();
-  const rename = page.getByRole('dialog', { name: 'Rename file' }); await rename.getByRole('textbox').fill('renamed.png');
-  await rename.getByRole('button', { name: 'Rename and update links', exact: true }).click();
+  const rename = page.getByRole('dialog', { name: 'rename file' }); await rename.getByRole('textbox').fill('renamed.png');
+  await rename.getByRole('button', { name: 'rename and update links', exact: true }).click();
   await expect(rename).not.toBeVisible();
   await expect(page.getByRole('heading', { name: 'renamed.png', exact: true })).toBeVisible();
   expect(Buffer.from((await bytes(page, 'photo-note.txt'))!).toString()).toContain('\\pngpage[renamed.png]');
@@ -285,12 +285,12 @@ test('virtual keyboard remains usable inside modal global search', async ({ page
   await create(page, 'apple.txt'); await home(page); await action(page, 'app settings').click(); await action(page, 'keyboard').click();
   await action(page, 'virtual keyboard: off').click(); await action(page, 'close app settings').click();
   await page.keyboard.press('Control+Shift+p');
-  const dialog = page.getByRole('dialog', { name: 'Search all files', exact: true });
+  const dialog = page.getByRole('dialog', { name: 'search all files', exact: true });
   await expect(dialog.getByRole('searchbox')).toBeFocused();
   for (const key of ['a', 'p', 'p']) await dialog.locator('.keyboard-dock').getByRole('button', { name: key, exact: true }).click();
   await expect(dialog.getByRole('searchbox')).toHaveValue('app');
   await expect(dialog.locator('[data-action="apple.txt"] button')).toBeVisible();
-  await dialog.getByRole('button', { name: 'Exit search', exact: true }).click();
+  await dialog.getByRole('button', { name: 'exit search', exact: true }).click();
   await expect(dialog).toHaveCount(0);
   await expect(page.locator('.keyboard-dock')).toBeVisible();
 });
@@ -300,7 +300,7 @@ test('updated flick keyboard enters uppercase and editing gestures in the editor
   await chooseMenu(page, 'virtual keyboard layout', 'flick-alpha');
   await action(page, 'virtual keyboard: off').click(); await action(page, 'close app settings').click();
   await action(page, 'gestures.txt').click(); await action(page, 'open').click();
-  const editor = page.getByRole('textbox', { name: 'Edit gestures.txt', exact: true });
+  const editor = page.getByRole('textbox', { name: 'edit gestures.txt', exact: true });
   await editor.fill('ab');
   const keyboard = page.locator('.keyflow-keyboard[data-layout="flick-alpha"]');
   await expect(keyboard.locator('.keyboard-row')).toHaveCount(3);
@@ -322,10 +322,10 @@ test('updated flick keyboard enters uppercase and editing gestures in the editor
   await flick('q', 'up'); await expect(editor).toHaveText('ab z1 ');
   await keyboard.getByRole('button', { name: 'escape', exact: true }).click();
   await expect(editor).not.toBeFocused();
-  await textTools(page).getByRole('button', { name: 'Exit', exact: true }).click();
+  await textTools(page).getByRole('button', { name: 'exit', exact: true }).click();
 
   await page.keyboard.press('Control+Shift+p');
-  const dialog = page.getByRole('dialog', { name: 'Search all files', exact: true });
+  const dialog = page.getByRole('dialog', { name: 'search all files', exact: true });
   await dialog.getByRole('searchbox').fill('gestures');
   await expect(dialog.locator('.search-status')).toContainText('1 result found');
   await dialog.locator('.keyboard-dock').getByRole('button', { name: 'escape', exact: true }).click();
@@ -337,9 +337,9 @@ test('updated flick keyboard enters uppercase and editing gestures in the editor
 
 test('navigation previews are read only, render prettify, and open the matching editor', async ({ page }) => {
   await create(page, 'preview.txt'); await action(page, 'open').click();
-  const editor = page.getByRole('textbox', { name: 'Edit preview.txt', exact: true });
+  const editor = page.getByRole('textbox', { name: 'edit preview.txt', exact: true });
   await editor.fill('\\prettify\nParent\n\tChild\n\t\tLeaf\nOther');
-  await textTools(page).getByRole('button', { name: 'Exit', exact: true }).click();
+  await textTools(page).getByRole('button', { name: 'exit', exact: true }).click();
   const preview = page.locator('.file-preview');
   await expect(preview.locator('.cm-pretty-heading')).toHaveCount(2);
   await expect(preview.locator('.cm-content')).toHaveAttribute('contenteditable', 'false');
@@ -365,8 +365,8 @@ test('navigation previews are read only, render prettify, and open the matching 
     return result;
   });
   expect(shades).toEqual([[128, 0, 0, 255], [255, 128, 128, 255]]);
-  await expect(preview.getByRole('button', { name: 'Open preview.txt from preview', exact: true })).toBeVisible();
-  await preview.getByRole('button', { name: 'Open preview.txt from preview', exact: true }).click();
+  await expect(preview.getByRole('button', { name: 'open preview.txt from preview', exact: true })).toBeVisible();
+  await preview.getByRole('button', { name: 'open preview.txt from preview', exact: true }).click();
   await expect(editor).toBeEditable();
   await expect(editor).toContainText('Parent');
   for (const colorScheme of ['dark', 'light'] as const) {
@@ -378,21 +378,21 @@ test('navigation previews are read only, render prettify, and open the matching 
 test('bracket shortcuts traverse separate navigation and editor histories and branch after going back', async ({ page }) => {
   await seedImage(page, 'third.png', 400, 200); await home(page);
   await create(page, 'first.txt'); await action(page, 'open').click();
-  await page.getByRole('textbox', { name: 'Edit first.txt', exact: true }).fill('first');
-  await textTools(page).getByRole('button', { name: 'Exit', exact: true }).click();
+  await page.getByRole('textbox', { name: 'edit first.txt', exact: true }).fill('first');
+  await textTools(page).getByRole('button', { name: 'exit', exact: true }).click();
   await home(page); await create(page, 'second.txt'); await action(page, 'open').click();
-  const second = page.getByRole('textbox', { name: 'Edit second.txt', exact: true });
+  const second = page.getByRole('textbox', { name: 'edit second.txt', exact: true });
   await second.fill('second');
   await page.keyboard.press('ControlOrMeta+[');
   await expect(second).toBeVisible();
   await page.keyboard.press('Escape');
   await page.keyboard.press('ControlOrMeta+[');
-  await expect(page.getByRole('textbox', { name: 'Edit first.txt', exact: true })).toHaveText('first');
+  await expect(page.getByRole('textbox', { name: 'edit first.txt', exact: true })).toHaveText('first');
   await expect(textTools(page)).toBeFocused();
   await page.keyboard.press('ControlOrMeta+]');
   await expect(second).toHaveText('second');
   await expect(textTools(page)).toBeFocused();
-  await textTools(page).getByRole('button', { name: 'Exit', exact: true }).click();
+  await textTools(page).getByRole('button', { name: 'exit', exact: true }).click();
   await expect(page.locator('.file-preview')).toBeVisible();
   await page.keyboard.press('ControlOrMeta+[');
   await expect(page.getByRole('heading', { name: 'home', exact: true })).toBeVisible();
@@ -405,7 +405,7 @@ test('bracket shortcuts traverse separate navigation and editor histories and br
   await page.keyboard.press('ControlOrMeta+]');
   await expect(page.getByRole('button', { name: 'open: first.txt', exact: true })).toBeVisible();
   await home(page); await action(page, 'third.png').click(); await action(page, 'open').click();
-  await expect(page.getByRole('img', { name: 'Drawing canvas for third.png', exact: true })).toBeVisible();
+  await expect(page.getByRole('img', { name: 'drawing canvas for third.png', exact: true })).toBeVisible();
   await page.keyboard.press('Escape'); await page.keyboard.press('ControlOrMeta+[');
   await expect(second).toHaveText('second'); await expect(textTools(page)).toBeFocused();
   await page.keyboard.press('ControlOrMeta+]');
@@ -414,19 +414,19 @@ test('bracket shortcuts traverse separate navigation and editor histories and br
 
 test('pen size uses a nested Keyflow slider, remains scoped, and survives SVG save/reopen', async ({ page }) => {
   await create(page, 'sized.svg', 'svg file'); await action(page, 'open').click();
-  await drawTools(page).getByRole('button', { name: 'Brush', exact: true }).click();
-  const slider = page.getByRole('slider', { name: 'Pen size', exact: true });
+  await drawTools(page).getByRole('button', { name: 'brush', exact: true }).click();
+  const slider = page.getByRole('slider', { name: 'pen size', exact: true });
   await expect(slider).toBeVisible();
   const old = Number(await slider.getAttribute('aria-valuenow'));
   // The same persistent positional slider controls as visual documents.
-  await page.getByRole('button', { name: /Increase Pen size$/ }).click();
+  await page.getByRole('button', { name: /Increase pen size$/ }).click();
   await expect.poll(async () => Number(await slider.getAttribute('aria-valuenow'))).toBeGreaterThan(old);
   const size = Number(await slider.getAttribute('aria-valuenow'));
   await page.keyboard.press('Escape');
   await expect(slider).toHaveCount(0);
   await stroke(page);
   await expect(page.locator('.drawing-canvas > polyline')).toHaveAttribute('stroke-width', String(size));
-  await drawTools(page).getByRole('button', { name: 'Exit', exact: true }).click();
+  await drawTools(page).getByRole('button', { name: 'exit', exact: true }).click();
   await action(page, 'open').click();
   await expect(page.locator('.drawing-canvas > polyline')).toHaveAttribute('stroke-width', String(size));
 });
@@ -438,27 +438,27 @@ test('SVG drawings share the visual document color wheel, palette and recent col
   // Ink is the default and follows the theme.
   await stroke(page);
   await expect(strokes.first()).toHaveAttribute('stroke', 'currentColor');
-  await tools.getByRole('button', { name: 'Brush', exact: true }).click();
+  await tools.getByRole('button', { name: 'brush', exact: true }).click();
   await expect(page.getByRole('slider', { name: /^Color wheel/ })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Use ink color (follows theme)', exact: true })).toHaveAttribute('aria-pressed', 'true');
-  await page.getByRole('button', { name: 'Use color #c92a2a', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Use color #c92a2a', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: 'use ink color (follows theme)', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('button', { name: 'use color #c92a2a', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'use color #c92a2a', exact: true })).toHaveAttribute('aria-pressed', 'true');
   // The hex field adds a new color that can join the palette.
-  await page.getByRole('button', { name: 'Hex color', exact: true }).click();
-  await page.getByRole('textbox', { name: 'Hex color', exact: true }).press('ControlOrMeta+a');
+  await page.getByRole('button', { name: 'hex color', exact: true }).click();
+  await page.getByRole('textbox', { name: 'hex color', exact: true }).press('ControlOrMeta+a');
   await page.keyboard.type('#0ca678'); await page.keyboard.press('Enter');
-  await page.getByRole('button', { name: 'Add current color to palette', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Use color #0ca678', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'add current color to palette', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'use color #0ca678', exact: true })).toBeVisible();
   await page.keyboard.press('Escape');
-  const canvas = page.getByRole('img', { name: /^Drawing canvas for / });
+  const canvas = page.getByRole('img', { name: /^drawing canvas for / });
   const box = (await canvas.boundingBox())!;
   await page.mouse.move(box.x + 40, box.y + 160); await page.mouse.down();
   await page.mouse.move(box.x + 200, box.y + 180, { steps: 5 }); await page.mouse.up();
   await expect(strokes.nth(1)).toHaveAttribute('stroke', '#0ca678');
-  await tools.getByRole('button', { name: 'Brush', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Use recent color #0ca678', exact: true })).toBeVisible();
+  await tools.getByRole('button', { name: 'brush', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'use recent color #0ca678', exact: true })).toBeVisible();
   await page.keyboard.press('Escape');
-  await tools.getByRole('button', { name: 'Exit', exact: true }).click();
+  await tools.getByRole('button', { name: 'exit', exact: true }).click();
   // Saved as standard SVG paint, so the preview and reopened editor keep it.
   const saved = new TextDecoder().decode(new Uint8Array((await bytes(page, 'colors.svg'))!));
   expect(saved).toMatch(/<polyline points="[^"]+" stroke-width="3"\/>/);
@@ -468,14 +468,14 @@ test('SVG drawings share the visual document color wheel, palette and recent col
   await expect(strokes.first()).toHaveAttribute('stroke', 'currentColor');
   // The palette and pen color persist for every SVG drawing in this browser.
   await page.reload(); await action(page, 'colors.svg').click(); await action(page, 'open').click();
-  await drawTools(page).getByRole('button', { name: 'Brush', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Use color #0ca678', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await drawTools(page).getByRole('button', { name: 'brush', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'use color #0ca678', exact: true })).toHaveAttribute('aria-pressed', 'true');
 });
 
 test('SVG lasso works like visual documents: Clear, Deselect, Delete key, and Lasso again turns it off', async ({ page }) => {
   await create(page, 'select.svg', 'svg file'); await action(page, 'open').click();
   const tools = drawTools(page);
-  const canvas = page.getByRole('img', { name: /^Drawing canvas for / });
+  const canvas = page.getByRole('img', { name: /^drawing canvas for / });
   const strokes = canvas.locator('polyline');
   const box = (await canvas.boundingBox())!;
   for (const dx of [60, 260]) {
@@ -488,20 +488,20 @@ test('SVG lasso works like visual documents: Clear, Deselect, Delete key, and La
     for (const [dx, dy] of [[left + 100, 30], [left + 100, 120], [left, 120], [left, 30]]) await page.mouse.move(box.x + dx, box.y + dy);
     await page.mouse.up();
   };
-  await tools.getByRole('button', { name: 'Lasso', exact: true }).click();
+  await tools.getByRole('button', { name: 'lasso', exact: true }).click();
   await lasso(40);
-  await expect(tools.getByRole('button', { name: 'Clear selected strokes', exact: true })).toBeVisible();
-  await tools.getByRole('button', { name: 'Deselect', exact: true }).click();
+  await expect(tools.getByRole('button', { name: 'clear selected strokes', exact: true })).toBeVisible();
+  await tools.getByRole('button', { name: 'deselect', exact: true }).click();
   await expect(canvas.locator('.lasso-frame')).toHaveCount(0);
-  await expect(tools.getByRole('button', { name: 'Deselect', exact: true })).toHaveCount(0);
+  await expect(tools.getByRole('button', { name: 'deselect', exact: true })).toHaveCount(0);
   await lasso(240);
   await canvas.focus();
-  await page.keyboard.press('Delete');
+  await page.keyboard.press('delete');
   await expect(strokes).toHaveCount(1);
   await expect(canvas.locator('.lasso-dashes').first()).toHaveCSS('stroke', 'rgb(17, 17, 17)');
-  await tools.getByRole('button', { name: 'Lasso', exact: true }).click();
-  await expect(tools.getByRole('button', { name: 'Lasso', exact: true })).toHaveAttribute('aria-pressed', 'false');
-  await expect(tools.getByRole('button', { name: 'Brush', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await tools.getByRole('button', { name: 'lasso', exact: true }).click();
+  await expect(tools.getByRole('button', { name: 'lasso', exact: true })).toHaveAttribute('aria-pressed', 'false');
+  await expect(tools.getByRole('button', { name: 'brush', exact: true })).toHaveAttribute('aria-pressed', 'true');
 });
 
 test('raster eraser removes saved pixels locally, supports undo, and keeps surrounding pixels', async ({ page }) => {
@@ -512,26 +512,26 @@ test('raster eraser removes saved pixels locally, supports undo, and keeps surro
     const blob = await new Promise<Blob>(resolve => canvas.toBlob(blob => resolve(blob!)));
     return Array.from(new Uint8Array(await blob.arrayBuffer()));
   });
-  await page.getByLabel('Image file to insert').setInputFiles({ name: 'erase.png', mimeType: 'image/png', buffer: Buffer.from(png) });
-  const canvas = page.getByRole('img', { name: /^Drawing canvas for erase-.*\.png/ });
+  await page.getByLabel('image file to insert').setInputFiles({ name: 'erase.png', mimeType: 'image/png', buffer: Buffer.from(png) });
+  const canvas = page.getByRole('img', { name: /^drawing canvas for erase-.*\.png/ });
   await expect(canvas).toBeVisible();
-  const name = (await canvas.getAttribute('aria-label'))!.slice('Drawing canvas for '.length);
-  const eraser = drawTools(page).getByRole('button', { name: 'Eraser', exact: true });
+  const name = (await canvas.getAttribute('aria-label'))!.slice('drawing canvas for '.length);
+  const eraser = drawTools(page).getByRole('button', { name: 'eraser', exact: true });
   await eraser.click(); await eraser.click();
-  const slider = page.getByRole('slider', { name: 'Eraser size', exact: true });
+  const slider = page.getByRole('slider', { name: 'eraser size', exact: true });
   await expect(slider).toBeVisible();
   // Persistent positional slider controls: tap the increase control.
-  await page.getByRole('button', { name: /Increase Eraser size$/ }).click();
+  await page.getByRole('button', { name: /Increase eraser size$/ }).click();
   await page.keyboard.press('Escape');
   const box = (await canvas.boundingBox())!;
   const center = await rasterPoint(canvas,200,100);
   await page.mouse.move(center.x - 12, center.y); await page.mouse.down();
   await page.mouse.move(center.x + 12, center.y, { steps: 8 }); await page.mouse.up();
   await expect.poll(() => alpha(canvas,200,100)).toBe(0);
-  await drawTools(page).getByRole('button', { name: 'Undo', exact: true }).click();
+  await drawTools(page).getByRole('button', { name: 'undo', exact: true }).click();
   await expect.poll(() => alpha(canvas,200,100)).toBe(255);
-  await drawTools(page).getByRole('button', { name: 'Redo', exact: true }).click();
-  await drawTools(page).getByRole('button', { name: 'Exit', exact: true }).click();
+  await drawTools(page).getByRole('button', { name: 'redo', exact: true }).click();
+  await drawTools(page).getByRole('button', { name: 'exit', exact: true }).click();
   await expect(textTools(page)).toBeVisible();
   const data = await bytes(page, name);
   const pixels = await page.evaluate(async data => {
@@ -545,9 +545,9 @@ test('raster eraser removes saved pixels locally, supports undo, and keeps surro
 
 test('filename opens separately, and a long preview click opens the clicked text position', async ({ page }) => {
   await create(page, 'long-preview.txt'); await action(page, 'open').click();
-  const editor = page.getByRole('textbox', { name: 'Edit long-preview.txt', exact: true });
+  const editor = page.getByRole('textbox', { name: 'edit long-preview.txt', exact: true });
   await editor.fill(Array.from({ length: 800 }, (_, i) => `Line ${i + 1}: preview content`).join('\n'));
-  await textTools(page).getByRole('button', { name: 'Exit', exact: true }).click();
+  await textTools(page).getByRole('button', { name: 'exit', exact: true }).click();
   const preview = page.locator('.file-preview');
   const title = page.getByRole('button', { name: 'open: long-preview.txt', exact: true });
   await expect(title).toBeVisible();
@@ -599,12 +599,12 @@ test('system is the default theme and Keyflow dropdown persists explicit choices
 test('page embeds are indented, inherit pretty, save graph links, and open with editor history', async ({ page }) => {
   const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
   await create(page, 'child.txt'); await action(page, 'open').click();
-  await page.getByRole('textbox', { name: 'Edit child.txt', exact: true }).fill('Child\n  Leaf\nTail');
-  await textTools(page).getByRole('button', { name: 'Exit', exact: true }).click();
+  await page.getByRole('textbox', { name: 'edit child.txt', exact: true }).fill('Child\n  Leaf\nTail');
+  await textTools(page).getByRole('button', { name: 'exit', exact: true }).click();
   await home(page); await create(page, 'parent.txt'); await action(page, 'open').click();
-  const parent = page.getByRole('textbox', { name: 'Edit parent.txt', exact: true });
+  const parent = page.getByRole('textbox', { name: 'edit parent.txt', exact: true });
   await parent.fill('\\pretty\nRoot\n  \\page[child.txt]\nEnd');
-  const embedded = page.getByRole('region', { name: 'Referenced file child.txt', exact: true });
+  const embedded = page.getByRole('region', { name: 'referenced file child.txt', exact: true });
   await expect(embedded.locator('.cm-content')).toHaveAttribute('contenteditable', 'false');
   await expect(embedded.locator('.cm-line').first()).toHaveText('  Child');
   await expect(embedded.locator('.cm-line').nth(1)).toHaveText('    Leaf');
@@ -614,8 +614,8 @@ test('page embeds are indented, inherit pretty, save graph links, and open with 
   for (const edge of ['paddingTop', 'paddingBottom'] as const) {
     expect(await embedded.locator('.cm-pretty-heading').evaluate((element, edge) => parseFloat(getComputedStyle(element)[edge]), edge)).toBeCloseTo(embeddedBase * 1.5 * .83, 2);
   }
-  await embedded.getByRole('button', { name: 'Open child.txt from preview', exact: true }).click();
-  await expect(page.getByRole('textbox', { name: 'Edit child.txt', exact: true })).toHaveText('Child  LeafTail');
+  await embedded.getByRole('button', { name: 'open child.txt from preview', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'edit child.txt', exact: true })).toHaveText('Child  LeafTail');
   await page.keyboard.press('Escape'); await page.keyboard.press('ControlOrMeta+[');
   await expect(parent).toBeVisible(); await expect(textTools(page)).toBeFocused();
   await expect(embedded).toBeVisible();
@@ -626,10 +626,10 @@ test('page embeds are indented, inherit pretty, save graph links, and open with 
 
 test('nested page references stop cycles and missing references do not create files', async ({ page }) => {
   await create(page, 'cycle.txt'); await action(page, 'open').click();
-  const editor = page.getByRole('textbox', { name: 'Edit cycle.txt', exact: true });
+  const editor = page.getByRole('textbox', { name: 'edit cycle.txt', exact: true });
   await editor.fill('\\page[cycle.txt]\n\\page[missing.txt]\nEnd');
-  await expect(page.getByText('Circular page reference: cycle.txt', { exact: true })).toBeVisible();
-  await expect(page.getByText('Referenced file “missing.txt” is unavailable.', { exact: true })).toBeVisible();
+  await expect(page.getByText('circular page reference: cycle.txt', { exact: true })).toBeVisible();
+  await expect(page.getByText('referenced file “missing.txt” is unavailable.', { exact: true })).toBeVisible();
   await page.keyboard.press('ControlOrMeta+s');
   await expect(page.getByText('saved in browser storage', { exact: true })).toBeVisible();
   expect(await bytes(page, 'missing.txt')).toBeNull();
@@ -658,7 +658,7 @@ test('a click low in a drawing preview opens that drawing point without adding i
   });
   const box = (await image.boundingBox())!;
   await page.mouse.click(box.x + box.width / 2, box.y + 2400 / 1024 * box.width);
-  const canvas = page.getByRole('img', { name: 'Drawing canvas for tall.svg', exact: true });
+  const canvas = page.getByRole('img', { name: 'drawing canvas for tall.svg', exact: true });
   await expect(canvas).toBeVisible();
   await expect.poll(() => canvas.evaluate(svg => {
     const point = new DOMPoint(512, 2400).matrixTransform((svg as SVGSVGElement).getScreenCTM()!);
@@ -671,31 +671,31 @@ test('a click low in a drawing preview opens that drawing point without adding i
 
 test('page completion offers text targets and renaming updates the saved page directive', async ({ page }) => {
   await create(page, 'source-page.txt'); await action(page, 'open').click();
-  await page.getByRole('textbox', { name: 'Edit source-page.txt', exact: true }).fill('Referenced content');
-  await textTools(page).getByRole('button', { name: 'Exit', exact: true }).click();
+  await page.getByRole('textbox', { name: 'edit source-page.txt', exact: true }).fill('Referenced content');
+  await textTools(page).getByRole('button', { name: 'exit', exact: true }).click();
   await home(page); await create(page, 'linked-page.txt'); await action(page, 'open').click();
-  const parent = page.getByRole('textbox', { name: 'Edit linked-page.txt', exact: true });
+  const parent = page.getByRole('textbox', { name: 'edit linked-page.txt', exact: true });
   await parent.fill('\\page[sour');
   const option = page.getByRole('option').filter({ hasText: 'source-page.txt' });
   await expect(option).toBeVisible(); await page.keyboard.press('Tab'); await page.keyboard.press('Enter');
-  await expect(page.getByRole('region', { name: 'Referenced file source-page.txt', exact: true }).locator('.cm-content')).toHaveText('Referenced content');
-  await textTools(page).getByRole('button', { name: 'Exit', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'referenced file source-page.txt', exact: true }).locator('.cm-content')).toHaveText('Referenced content');
+  await textTools(page).getByRole('button', { name: 'exit', exact: true }).click();
   await home(page); await action(page, 'source-page.txt').click(); await action(page, 'configure file').click(); await action(page, 'rename').click();
-  const dialog = page.getByRole('dialog', { name: 'Rename file', exact: true });
-  await dialog.getByRole('textbox').fill('renamed-page.txt'); await dialog.getByRole('button', { name: 'Rename and update links', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'rename file', exact: true });
+  await dialog.getByRole('textbox').fill('renamed-page.txt'); await dialog.getByRole('button', { name: 'rename and update links', exact: true }).click();
   await expect(dialog).not.toBeVisible();
   expect(Buffer.from((await bytes(page, 'linked-page.txt'))!).toString()).toContain('\\page[renamed-page.txt]');
   await home(page); await action(page, 'linked-page.txt').click(); await action(page, 'open').click();
   await expect(parent).toBeFocused();
   await page.keyboard.press('ControlOrMeta+End');
-  await expect(page.getByRole('region', { name: 'Referenced file renamed-page.txt', exact: true }).locator('.cm-content')).toHaveText('Referenced content');
+  await expect(page.getByRole('region', { name: 'referenced file renamed-page.txt', exact: true }).locator('.cm-content')).toHaveText('Referenced content');
 });
 
 for (const format of ['svg', 'png']) {
   test(`${format} keeps strokes drawn during saves and ignores palm touches around pen input`, async ({ page, context }) => {
     if (format === 'svg') await create(page, 'continuous.svg', 'svg file'); else await seedImage(page, 'continuous.png');
     await action(page, 'open').click();
-    const canvas = page.getByRole('img', { name: `Drawing canvas for continuous.${format}` });
+    const canvas = page.getByRole('img', { name: `drawing canvas for continuous.${format}` });
     await expect(canvas).toBeVisible();
     const protocol = await context.newCDPSession(page);
     const position = async (y: number) => format === 'png' ? { ...await rasterPoint(canvas,80,y),end:(await rasterPoint(canvas,200,y)).x } : canvas.evaluate((svg, y) => {
@@ -744,7 +744,7 @@ for (const format of ['svg', 'png']) {
       svg.dispatchEvent(new TouchEvent('touchend', { bubbles: true, cancelable: true, touches: [], changedTouches: contacts }));
     });
     if (format === 'svg') await expect(canvas.locator(':scope > polyline')).toHaveCount(3); else expect(await alpha(canvas,140,180)).toBe(255);
-    await drawTools(page).getByRole('button', { name: 'Exit', exact: true }).click();
+    await drawTools(page).getByRole('button', { name: 'exit', exact: true }).click();
     await expect(action(page, 'open')).toBeVisible();
     const data = (await bytes(page, `continuous.${format}`))!;
     if (format === 'svg') expect(Buffer.from(data).toString().match(/<polyline/g)).toHaveLength(3);
@@ -772,7 +772,7 @@ test('image previews and editors animate a loading icon inside the image while d
   });
   await action(page, 'loading.png').click();
   const preview = page.locator('.file-preview');
-  const indicator = preview.getByRole('status', { name: 'Loading image', exact: true });
+  const indicator = preview.getByRole('status', { name: 'loading image', exact: true });
   await expect(indicator).toBeVisible();
   await expect(indicator.locator('svg')).toHaveCSS('animation-name', 'image-loading-spin');
   const inside = await indicator.evaluate(el => {
@@ -794,8 +794,8 @@ test('image previews and editors animate a loading icon inside the image while d
     }) as typeof createImageBitmap;
   });
   await action(page, 'open').click();
-  await expect(page.getByRole('status', { name: 'Loading image', exact: true })).toBeVisible();
+  await expect(page.getByRole('status', { name: 'loading image', exact: true })).toBeVisible();
   await page.evaluate(() => Reflect.get(window, 'releaseImageDecode')());
-  await expect(page.getByRole('img', { name: 'Drawing canvas for loading.png' })).toBeVisible();
-  await expect(page.getByRole('status', { name: 'Loading image', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('img', { name: 'drawing canvas for loading.png' })).toBeVisible();
+  await expect(page.getByRole('status', { name: 'loading image', exact: true })).toHaveCount(0);
 });

@@ -27,8 +27,8 @@
   <Action label="cancel creation" onSelect={onCancel} disabled={busy} />
   <h1 id="create-heading">create new file/folder</h1>
   <label class="field"><span>name</span><input bind:this={input} bind:value={() => name, (value) => { name = stripFilenameEditingArtifacts(value); }} maxlength="255" autocomplete="off" disabled={busy} /></label>
-  <p class="muted">{githubFolder ? 'New assets are saved in this folder on GitHub.' : machineFolder ? 'New assets are saved in this folder on your computer. Creating an item may ask for write access.' : 'New assets are saved inside this folder in browser storage.'}</p>
-  {#if !supported}<p class="notice" role="alert">{machineFolder ? 'Local creation needs browser filesystem support.' : 'Browser storage is unavailable. Use HTTPS and allow site storage.'}</p>{/if}
+  <p class="muted">{githubFolder ? 'new assets are saved in this folder on GitHub.' : machineFolder ? 'new assets are saved in this folder on your computer. creating an item may ask for write access.' : 'new assets are saved inside this folder in browser storage.'}</p>
+  {#if !supported}<p class="notice" role="alert">{machineFolder ? 'local creation needs browser filesystem support.' : 'browser storage is unavailable. use HTTPS and allow site storage.'}</p>{/if}
   {#if error}<StorageNotice {error} />{/if}
   {#if rasterType}
     <CanvasSizeForm {busy} onCancel={() => rasterType = undefined} onCreate={(size) => {
@@ -39,12 +39,12 @@
     <div class="creation-option">
       <Action label={`create ${type.label}`} disabled={busy || !supported || !validAssetInput(name, type)}
         onSelect={() => { if (type.canvas) rasterType = type; else onCreate(name, type); }} />
-      <p class="path" aria-label={`Path for ${type.label}`}>{path}/{assetName(name, type) || '…'}{type.kind === 'directory' ? '/' : ''}</p>
+      <p class="path" aria-label={`path for ${type.label}`}>{path}/{assetName(name, type) || '…'}{type.kind === 'directory' ? '/' : ''}</p>
       {#if type.initialFileName}
-        <p class="path" aria-label="Path for page text file">{path}/{name.trim() || '…'}/{name.trim() ? type.initialFileName(name.trim()) : '….main'}</p>
+        <p class="path" aria-label="path for page text file">{path}/{name.trim() || '…'}/{name.trim() ? type.initialFileName(name.trim()) : '….main'}</p>
       {/if}
     </div>
   {/each}
   {/if}
-  {#if name && !validAssetName(name.trim())}<p class="notice">Choose a name without slashes or control characters. “.”, “..”, and “.git” are reserved.</p>{/if}
+  {#if name && !validAssetName(name.trim())}<p class="notice">choose a name without slashes or control characters. “.”, “..”, and “.git” are reserved.</p>{/if}
 </section>

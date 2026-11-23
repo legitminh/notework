@@ -56,11 +56,11 @@ interface EditorCommand {
 
 const commands: readonly EditorCommand[] = [
   { name: 'page', detail: 'Embed a read-only file', targets: (workspace, source, query, files) => drawingTargets(workspace, source, query, files, false) },
-  ...['svg', 'png', 'jpeg', 'heic', 'ora'].map((format) => ({ name: `${format}page`, detail: `Insert a ${format.toUpperCase()} page`, targets: targetsFor(format) })),
-  { name: 'visualpage', detail: 'Insert a layered visual document', targets: targetsFor('visual') },
-  { name: 'prettify', detail: 'Format and color parent lines', placement: 'next-line' },
-  { name: 'pretty', detail: 'Format the following lines', placement: 'next-line' },
-  { name: 'unpretty', detail: 'Return to regular text', placement: 'next-line' },
+  ...['svg', 'png', 'jpeg', 'heic', 'ora'].map((format) => ({ name: `${format}page`, detail: `insert a ${format.toUpperCase()} page`, targets: targetsFor(format) })),
+  { name: 'visualpage', detail: 'insert a layered visual document', targets: targetsFor('visual') },
+  { name: 'prettify', detail: 'format and color parent lines', placement: 'next-line' },
+  { name: 'pretty', detail: 'format the following lines', placement: 'next-line' },
+  { name: 'unpretty', detail: 'return to regular text', placement: 'next-line' },
   { name: 'pretty1', detail: 'Format a block, then return to regular text', placement: 'brackets' },
   { name: 'unpretty1', detail: 'Use regular text in a block, then resume formatting', placement: 'brackets' },
   ...Array.from(symbolShorthands, ([name, symbol]) => ({ name, detail: symbol }))

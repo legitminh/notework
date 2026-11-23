@@ -44,16 +44,16 @@ async function transferResourceInternal(workspace: Workspace, source: StateNode,
   const relocating = target !== undefined;
   const sourceRepo = workspace.github(source.sourceId);
   const destinationRepo = relocating ? (target ? workspace.github(target.sourceId) : undefined) : sourceRepo;
-  if (sourceRepo && !source.path.length) throw new Error('Manage the repository itself in GitHub settings.');
+  if (sourceRepo && !source.path.length) throw new Error('manage the repository itself in GitHub settings.');
   sourceRepo?.assertTransferable(source.path.join('/'));
   if (!relocating) name = cleanFilename(name);
   if (!relocating && (!validFilename(name) || name.toLowerCase() === '.git')) throw new Error(invalidFilenameMessage(name));
   if (!relocating && name === source.name) return { node: source, warning: '', remap: (id: string) => id };
-  if (!relocating && name.toLowerCase() === source.name.toLowerCase()) throw new Error('Rename to a different name first, then change its capitalization.');
+  if (!relocating && name.toLowerCase() === source.name.toLowerCase()) throw new Error('rename to a different name first, then change its capitalization.');
   // Start permission requests in the explicit Rename/Choose/Yes gesture.
   const cachedParent = workspace.deletionParent(source);
   const selected = target ? workspace.cachedHandle(target.id) : undefined;
-  if (target && (!selected || selected.kind !== 'directory')) throw new Error('Choose a folder as the destination.');
+  if (target && (!selected || selected.kind !== 'directory')) throw new Error('choose a folder as the destination.');
   await Promise.all([
     ...(source.storage === 'local' && cachedParent ? [requireWrite(cachedParent as unknown as FileSystemDirectoryHandle)] : []),
     ...(target?.storage === 'local' && selected ? [requireWrite(selected as unknown as FileSystemDirectoryHandle)] : [])
@@ -70,9 +70,9 @@ async function transferResourceInternal(workspace: Workspace, source: StateNode,
   let discardBucket: (() => Promise<void>) | undefined;
   if (relocating && target) {
     destinationFolder = await workspace.handle(target.id) as unknown as FileSystemDirectoryHandle;
-    if (!await destinationFolder.isSameEntry(native(selected!))) throw new Error('The destination changed. Reopen it before relocating.');
+    if (!await destinationFolder.isSameEntry(native(selected!))) throw new Error('the destination changed. reopen it before relocating.');
     if (original.kind === 'directory' && await resolveEntry(native(original) as FileSystemDirectoryHandle, native(selected!)) !== null) {
-      throw new Error('A folder cannot be relocated into itself or one of its subfolders.');
+      throw new Error('a folder cannot be relocated into itself or one of its subfolders.');
     }
     if (await sameEntry(folder, destinationFolder)) return { node: source, warning: '', remap: (id: string) => id };
     destinationSource = target.sourceId;
@@ -80,12 +80,12 @@ async function transferResourceInternal(workspace: Workspace, source: StateNode,
     destinationUri = target.uri + '/' + encodeURIComponent(name);
     if (storage === 'browser') {
       const path = await (await navigator.storage.getDirectory()).resolve(destinationFolder);
-      if (!path || path[0] !== 'notework' || path[1] !== 'documents') throw new Error('Choose an app-owned browser folder.');
+      if (!path || path[0] !== 'notework' || path[1] !== 'documents') throw new Error('choose an app-owned browser folder.');
     }
   } else if (relocating) {
     if (!source.path.length && source.storage === 'browser' && workspace.data.rootIds.includes(source.id)) return { node: source, warning: '', remap: (id: string) => id };
     if ((await workspace.reachable(ROOT)).nodes.some((node) => node.id !== source.id && node.name.toLowerCase() === name.toLowerCase())) {
-      throw new Error(`An item named “${name}” already exists at home.`);
+      throw new Error(`an item named “${name}” already exists at home.`);
     }
     const app = await (await navigator.storage.getDirectory()).getDirectoryHandle('notework', { create: true });
     const documents = await app.getDirectoryHandle('documents', { create: true });
@@ -144,7 +144,7 @@ async function transferResourceInternal(workspace: Workspace, source: StateNode,
   };
   try {
     async function copy(handle: FileSystemHandle, parent: FileSystemDirectoryHandle, filename: string) {
-      if (destinationRepo && filename.toLowerCase() === '.git') throw new Error('A folder containing .git metadata cannot be moved into GitHub.');
+      if (destinationRepo && filename.toLowerCase() === '.git') throw new Error('a folder containing .git metadata cannot be moved into GitHub.');
       if (handle.kind === 'file') {
         const file = await (handle as FileSystemFileHandle).getFile();
         snapshots.push({ handle: handle as FileSystemFileHandle, size: file.size, modified: file.lastModified });
@@ -206,7 +206,7 @@ async function transferResourceInternal(workspace: Workspace, source: StateNode,
       const handle = await workspace.handle(from);
       if (handle.kind !== 'file') continue;
       const format = await inspectText(handle);
-      if (!format) throw new Error('A linking file cannot be updated as text.');
+      if (!format) throw new Error('a linking file cannot be updated as text.');
       let before = '';
       for await (const chunk of decodedChunks(await handle.getFile(), format)) before += chunk;
       const afterNode = await next.node(remap(from));
@@ -227,21 +227,21 @@ async function transferResourceInternal(workspace: Workspace, source: StateNode,
     for (const item of writes.values()) {
       if (item.outside) {
         const latest = await item.handle.getFile();
-        if (latest.size !== item.format.size || latest.lastModified !== item.format.modified) throw new Error('A linking file changed outside Notework. Retry the operation.');
+        if (latest.size !== item.format.size || latest.lastModified !== item.format.modified) throw new Error('a linking file changed outside Notework. retry the operation.');
       }
       await writeText(item.handle, item.after, item.format);
       if (item.outside) backups.push(item);
     }
     for (const item of snapshots) {
       const latest = await item.handle.getFile();
-      if (latest.size !== item.size || latest.lastModified !== item.modified) throw new Error('A resource changed outside Notework. Retry the operation.');
+      if (latest.size !== item.size || latest.lastModified !== item.modified) throw new Error('a resource changed outside Notework. retry the operation.');
     }
     for (const item of directories) {
       const names: string[] = [];
       for await (const entry of item.handle.values()) names.push(entry.name);
-      if (JSON.stringify(names.sort()) !== JSON.stringify(item.names)) throw new Error('The folder changed outside Notework. Retry the operation.');
+      if (JSON.stringify(names.sort()) !== JSON.stringify(item.names)) throw new Error('the folder changed outside Notework. retry the operation.');
     }
-    if (!await (await at(folder, [source.name])).isSameEntry(native(original))) throw new Error('The original was replaced. Reopen it before retrying.');
+    if (!await (await at(folder, [source.name])).isSameEntry(native(original))) throw new Error('the original was replaced. reopen it before retrying.');
     await saveWorkspace(next.data);
     installed = true;
     workspace.data = next.data;
@@ -257,7 +257,7 @@ async function transferResourceInternal(workspace: Workspace, source: StateNode,
     try { if (!sourceRepo) await folder.removeEntry(source.name, { recursive: source.kind === 'directory' }); }
     catch (error) {
       if (source.kind === 'file' && !published) throw error;
-      warning = `${relocating ? 'Relocated' : 'Renamed'} successfully, but the original could not be removed. Both copies were kept; remove the old copy after checking the new one.`; }
+      warning = `${relocating ? 'relocated' : 'renamed'} successfully, but the original could not be removed. both copies were kept; remove the old copy after checking the new one.`; }
     committed = true;
     workspace.revision++;
     return { node: await workspace.node(remap(source.id)), warning, remap };
@@ -279,7 +279,7 @@ async function transferResourceInternal(workspace: Workspace, source: StateNode,
       }
       if (destinationCreated && !destinationRepo && !rollbackFailed) await destinationFolder.removeEntry(name, { recursive: true }).catch(() => {});
       if (!rollbackFailed) await discardBucket?.().catch(() => {});
-      if (rollbackFailed) throw new Error(`${relocating ? 'Relocation' : 'Rename'} could not be fully rolled back. Both copies were kept. Check the affected files before retrying.`);
+      if (rollbackFailed) throw new Error(`${relocating ? 'relocation' : 'rename'} could not be fully rolled back. both copies were kept. check the affected files before retrying.`);
     }
     throw error;
   } finally { for (const id of ids) workspace.moving.delete(id); }

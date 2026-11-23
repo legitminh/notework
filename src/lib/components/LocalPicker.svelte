@@ -97,7 +97,7 @@
     try {
       // Request read-only access from this explicit gesture. Do not read file contents.
       const grants = await Promise.all(selected.map(({ handle }) => handle.requestPermission({ mode: 'read' })));
-      if (grants.some((grant) => grant !== 'granted')) throw new Error('Read access was not granted. No items were added.');
+      if (grants.some((grant) => grant !== 'granted')) throw new Error('read access was not granted. no items were added.');
       await onSelect(selected);
     } catch (cause) { error = explainError(cause); }
     finally { busy = false; }
@@ -107,23 +107,23 @@
 <dialog use:dialogShortcuts bind:this={dialog} class="local-picker" aria-labelledby="picker-title"
   oncancel={(event) => { event.preventDefault(); if (!busy) onCancel(); }}>
   <h2 id="picker-title">add existing folder/file</h2>
-  <p class="muted">Select items to observe. Only their handles are remembered on this device; nothing is uploaded.</p>
+  <p class="muted">select items to observe. only their handles are remembered on this device; nothing is uploaded.</p>
   <section class="drop-zone" aria-label="drop files or folders" ondragover={dragOver} ondrop={drop}>
     <p>drop files or folders here</p>
-    <p class="muted">Both are recognized automatically. Or browse a location and select either kind below.</p>
+    <p class="muted">both are recognized automatically. or browse a location and select either kind below.</p>
   </section>
   <Control class="picker-button" onclick={browse} disabled={busy}>browse location…</Control>
-  <p class="muted">Your browser asks for a folder to browse. Only items you select below are remembered.</p>
+  <p class="muted">your browser asks for a folder to browse. only items you select below are remembered.</p>
   {#if error}<p role="alert" class="notice">{error}</p>{/if}
   {#if busy}<p role="status" class="muted">working…</p>{/if}
   {#if location}
     <p class="path">{trail.map((item) => item.name).join('/')}/</p>
     {#if trail.length > 1}<Control class="picker-button" onclick={() => open(trail.slice(0, -1))} disabled={busy}>..</Control>{/if}
-    <label class="picker-row"><input type="checkbox" aria-label={`Select ${location.name} folder`} checked={!!selection[locationKey]} onchange={() => toggle(locationKey, location!, trail.at(-2))} disabled={busy} /><span>this folder: {location.name}/</span></label>
+    <label class="picker-row"><input type="checkbox" aria-label={`select ${location.name} folder`} checked={!!selection[locationKey]} onchange={() => toggle(locationKey, location!, trail.at(-2))} disabled={busy} /><span>this folder: {location.name}/</span></label>
     <div class="picker-entries" aria-label="location contents">
       {#each entries as entry (entry.key)}
         <div class="picker-row">
-          <input type="checkbox" aria-label={`Select ${entry.handle.name} ${entry.handle.kind === 'directory' ? 'folder' : 'file'}`} checked={!!selection[entry.key]} onchange={() => toggle(entry.key, entry.handle, location)} disabled={busy} />
+          <input type="checkbox" aria-label={`select ${entry.handle.name} ${entry.handle.kind === 'directory' ? 'folder' : 'file'}`} checked={!!selection[entry.key]} onchange={() => toggle(entry.key, entry.handle, location)} disabled={busy} />
           {#if entry.handle.kind === 'directory'}
             <Control class="picker-name" onclick={() => open([...trail, entry.handle as LocalDirectory])} disabled={busy}>{entry.handle.name}/</Control>
           {:else}
@@ -132,7 +132,7 @@
           <span class="picker-kind">{entry.handle.kind === 'directory' ? 'folder' : 'file'}</span>
         </div>
       {/each}
-      {#if !entries.length}<p class="muted">This folder is empty. You can still select the folder itself.</p>{/if}
+      {#if !entries.length}<p class="muted">this folder is empty. you can still select the folder itself.</p>{/if}
     </div>
   {/if}
   {#if selected.length}

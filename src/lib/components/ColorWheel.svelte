@@ -114,7 +114,7 @@
 
 <div class="color-wheel-panel">
   <div class="wheel" bind:this={wheel} style:width={`${SIZE}px`} style:height={`${SIZE}px`} role="slider" tabindex="0"
-    aria-label="Color wheel: hue ring and saturation/value triangle" aria-valuetext={`hue ${Math.round(hsv[0])}, saturation ${Math.round(hsv[1] * 100)}%, value ${Math.round(hsv[2] * 100)}%`} aria-valuenow={Math.round(hsv[0])}
+    aria-label="color wheel: hue ring and saturation/value triangle" aria-valuetext={`hue ${Math.round(hsv[0])}, saturation ${Math.round(hsv[1] * 100)}%, value ${Math.round(hsv[2] * 100)}%`} aria-valuenow={Math.round(hsv[0])}
     onpointerdown={(event) => { wheel.setPointerCapture(event.pointerId); pick(event, true); }}
     onpointermove={(event) => { if (dragging) pick(event); }}
     onpointerup={() => { dragging = undefined; }}
@@ -137,20 +137,20 @@
     <Control onclick={() => mode = 'rgb'} aria-pressed={mode === 'rgb'}>RGB</Control>
     <span class="swatch current" style:background={value} aria-hidden="true"></span>
     {#if mode === 'hsv'}
-      <span class="pair"><span class="channel">H</span><NumberBox value={Math.round(hsv[0])} min={0} max={359} step={1} width="4ch" label="Hue value" onchange={(hue: number) => commit([hue, hsv[1], hsv[2]])} /></span>
-      <HorizontalSlider value={Math.round(hsv[0])} min={0} max={359} step={1} speed={120} label="Hue" onchange={(hue: number) => commit([hue, hsv[1], hsv[2]])} />
-      <span class="pair"><span class="channel">S</span><NumberBox value={Math.round(hsv[1] * 100)} min={0} max={100} step={1} width="4ch" label="Saturation value" onchange={(sat: number) => commit([hsv[0], sat / 100, hsv[2]])} /></span>
-      <HorizontalSlider value={Math.round(hsv[1] * 100)} min={0} max={100} step={1} speed={50} label="Saturation" onchange={(sat: number) => commit([hsv[0], sat / 100, hsv[2]])} />
-      <span class="pair"><span class="channel">V</span><NumberBox value={Math.round(hsv[2] * 100)} min={0} max={100} step={1} width="4ch" label="Value value" onchange={(val: number) => commit([hsv[0], hsv[1], val / 100])} /></span>
-      <HorizontalSlider value={Math.round(hsv[2] * 100)} min={0} max={100} step={1} speed={50} label="Value" onchange={(val: number) => commit([hsv[0], hsv[1], val / 100])} />
+      <span class="pair"><span class="channel">H</span><NumberBox value={Math.round(hsv[0])} min={0} max={359} step={1} width="4ch" label="hue value" onchange={(hue: number) => commit([hue, hsv[1], hsv[2]])} /></span>
+      <HorizontalSlider value={Math.round(hsv[0])} min={0} max={359} step={1} speed={120} label="hue" onchange={(hue: number) => commit([hue, hsv[1], hsv[2]])} />
+      <span class="pair"><span class="channel">S</span><NumberBox value={Math.round(hsv[1] * 100)} min={0} max={100} step={1} width="4ch" label="saturation value" onchange={(sat: number) => commit([hsv[0], sat / 100, hsv[2]])} /></span>
+      <HorizontalSlider value={Math.round(hsv[1] * 100)} min={0} max={100} step={1} speed={50} label="saturation" onchange={(sat: number) => commit([hsv[0], sat / 100, hsv[2]])} />
+      <span class="pair"><span class="channel">V</span><NumberBox value={Math.round(hsv[2] * 100)} min={0} max={100} step={1} width="4ch" label="value value" onchange={(val: number) => commit([hsv[0], hsv[1], val / 100])} /></span>
+      <HorizontalSlider value={Math.round(hsv[2] * 100)} min={0} max={100} step={1} speed={50} label="value" onchange={(val: number) => commit([hsv[0], hsv[1], val / 100])} />
     {:else}
-      {#each ['Red', 'Green', 'Blue'] as channel, index (channel)}
-        <span class="pair"><span class="channel">{channel[0]}</span><NumberBox value={rgb[index]} min={0} max={255} step={1} width="4ch" label={`${channel} value`} onchange={(next: number) => setRgb(index, next)} /></span>
+      {#each ['red', 'green', 'blue'] as channel, index (channel)}
+        <span class="pair"><span class="channel">{channel[0].toUpperCase()}</span><NumberBox value={rgb[index]} min={0} max={255} step={1} width="4ch" label={`${channel} value`} onchange={(next: number) => setRgb(index, next)} /></span>
         <HorizontalSlider value={rgb[index]} min={0} max={255} step={1} speed={120} label={channel} onchange={(next: number) => setRgb(index, next)} />
       {/each}
     {/if}
-    <span class="pair"><span class="channel">Hex</span>
-    <TextBox singleLine bind:value={hexDraft} label="Hex color" spellcheck={false}
+    <span class="pair"><span class="channel">hex</span>
+    <TextBox singleLine bind:value={hexDraft} label="hex color" spellcheck={false}
       onexit={(text) => { const hex = text.trim(); if (/^#?[0-9a-f]{6}$/i.test(hex)) { const next = rgbToHsv(...hexToRgb(hex)); commit([next[1] && next[2] ? next[0] : hsv[0], next[1], next[2]]); } hexDraft = lastValue || value; }} /></span>
   </div>
 </div>

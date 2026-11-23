@@ -9,7 +9,7 @@ function openDatabase(): Promise<IDBDatabase> {
     request.onupgradeneeded = () => request.result.createObjectStore('workspace');
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => { database = undefined; reject(request.error); };
-    request.onblocked = () => { database = undefined; reject(new Error('Close other Notework tabs to enable local storage.')); };
+    request.onblocked = () => { database = undefined; reject(new Error('close other Notework tabs to enable local storage.')); };
   });
 }
 
@@ -30,18 +30,18 @@ export function snapshotWorkspace(data: WorkspaceData): WorkspaceData {
 
 async function restoreSource(source: StoredSource): Promise<Source> {
   if (source.storage === 'github') {
-    if (!source.github) throw new Error('Missing GitHub connection.');
+    if (!source.github) throw new Error('missing GitHub connection.');
     return { ...source, handle: (await GitHubRepository.restore(source.id, source.github)).root };
   }
   if (source.storage !== 'browser') {
-    if (!source.handle) throw new Error('Missing machine resource handle.');
+    if (!source.handle) throw new Error('missing machine resource handle.');
     return { ...source, handle: source.handle };
   }
   const uri = new URL(source.uri!);
   const path = uri.pathname.split('/').filter(Boolean).map(decodeURIComponent);
   if (uri.protocol !== 'opfs:' || uri.hostname !== 'notework' || path[0] !== 'documents' || path.length < 2 ||
       path.some((part) => part === '.' || part === '..' || /[/\\\x00]/.test(part))) {
-    throw new Error('Invalid browser resource location.');
+    throw new Error('invalid browser resource location.');
   }
   let folder = await navigator.storage.getDirectory();
   folder = await folder.getDirectoryHandle('notework');
@@ -93,6 +93,6 @@ export async function saveWorkspace(data: WorkspaceData): Promise<void> {
     transaction.objectStore('workspace').put(storedWorkspace(data), 'current');
     transaction.oncomplete = () => resolve();
     transaction.onerror = () => reject(transaction.error);
-    transaction.onabort = () => reject(transaction.error ?? new Error('Local save was interrupted.'));
+    transaction.onabort = () => reject(transaction.error ?? new Error('local save was interrupted.'));
   });
 }

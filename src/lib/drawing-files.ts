@@ -41,7 +41,7 @@ export function hasDrawingDraft(resource?: DrawingResource) {
 export async function loadDrawing(handle: LocalFile, storage: Storage, context?: DrawingContext): Promise<DrawingResource> {
   const file = await handle.getFile();
   if (isVisualName(handle.name)) {
-    if (!context) throw new Error('Open this visual document from its folder.');
+    if (!context) throw new Error('open this visual document from its folder.');
     const visual = await visualContext(context.workspace, context.node, handle, context.folder);
     const { image, preview } = await visualPreview(visual);
     return { handle, file, strokes: [], storage, image, preview, visual };
@@ -124,7 +124,7 @@ export async function saveDrawing(resource: DrawingResource, strokes: Drawing, r
   if (resource.storage === 'local') await requireWrite(resource.handle, requestWrite);
   const latest = await resource.handle.getFile();
   if (latest.lastModified !== resource.file.lastModified || latest.size !== resource.file.size) {
-    throw new Error('The SVG changed outside the editor. Reopen it before saving.');
+    throw new Error('the SVG changed outside the editor. reopen it before saving.');
   }
   await writeDrawing(resource.handle, strokes, resource.storage);
   return { handle: resource.handle, file: await resource.handle.getFile(), strokes, storage: resource.storage };
@@ -133,7 +133,7 @@ export async function saveDrawing(resource: DrawingResource, strokes: Drawing, r
 async function stageSibling(
   workspace: Workspace, source: StateNode, file: LocalFile, name: string, strokes: Drawing, requestWrite = true, size?: CanvasSize
 ) {
-  if (!canCreateSiblingDrawing(name)) throw new Error('Choose a supported drawing filename without a folder path.');
+  if (!canCreateSiblingDrawing(name)) throw new Error('choose a supported drawing filename without a folder path.');
   const folder = await containingFolder(workspace, source, file);
   if (source.storage === 'local') await requireWrite(folder, requestWrite);
   await assertAvailable(folder, name);
@@ -154,7 +154,7 @@ export async function saveSiblingDrawing(
   workspace: Workspace, source: StateNode, file: LocalFile, name: string, strokes: Drawing, requestWrite = true, size?: CanvasSize
 ) {
   if (file instanceof GitHubFile) {
-    if (!canCreateSiblingDrawing(name)) throw new Error('Choose a supported drawing filename without a folder path.');
+    if (!canCreateSiblingDrawing(name)) throw new Error('choose a supported drawing filename without a folder path.');
     const { repository } = file;
     const folder = await containingFolder(workspace, source, file);
     await assertAvailable(folder, name);
@@ -187,7 +187,7 @@ export async function prepareSvgPages(
         const item = await stageSibling(workspace, source, file, name, [], requestWrite);
         staged.push(item);
         targets[name] = item.id;
-      } else if (!allowMissing) throw new Error(`Drawing resource “${name}” could not be found.`);
+      } else if (!allowMissing) throw new Error(`drawing resource “${name}” could not be found.`);
     }
     return { targets, rollback };
   } catch (error) { await rollback(); throw error; }
@@ -203,7 +203,7 @@ export async function saveImage(resource: DrawingResource, image: ImageDocument,
       basedOn: draft?.basedOn ?? resource.githubBasedOn, content, modified: Date.now() });
   } else {
     const latest = await resource.handle.getFile();
-    if (latest.size !== resource.file.size || latest.lastModified !== resource.file.lastModified) throw new Error('The image changed outside the editor. Reopen it before saving.');
+    if (latest.size !== resource.file.size || latest.lastModified !== resource.file.lastModified) throw new Error('the image changed outside the editor. reopen it before saving.');
     await writeResourceContent(resource.handle, resource.storage, [new Uint8Array(await content.arrayBuffer())]);
   }
   const blob = await canvasBlob(await composite(image));

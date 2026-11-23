@@ -1,8 +1,8 @@
 import { expect, type Page, type Locator } from '@playwright/test';
 import { zipSync, strToU8 } from 'fflate';
 export async function sizeCanvas(page: Page, width=1024, height=512) {
-  await page.getByLabel('Width in pixels').fill(String(width)); await page.getByLabel('Height in pixels').fill(String(height));
-  await page.getByRole('button',{name:'Create canvas',exact:true}).click();
+  await page.getByLabel('width in pixels').fill(String(width)); await page.getByLabel('height in pixels').fill(String(height));
+  await page.getByRole('button',{name:'create canvas',exact:true}).click();
 }
 type Hooked = HTMLElement & { visualEditor: { activeLayer: { raster?: { read(rect: object): { data: Uint8ClampedArray } } } }; visualView: { toScreen(x: number, y: number): [number, number] } };
 /** Screen position of a document pixel inside a visual.editor viewport (`canvas` is the role=img viewport). */
@@ -41,7 +41,7 @@ export async function seedImage(page: Page, name: string, width = 1024, height =
   }, [width, height, format === 'jpeg'] as const);
   const bytes = format === 'ora' ? Array.from(zipSync({
     mimetype: strToU8('image/openraster'),
-    'stack.xml': strToU8(`<image w="${width}" h="${height}"><stack>${Array.from({ length: layers }, (_, i) => `<layer name="Layer ${layers - i}" src="data/layer${i}.png"/>`).join('')}</stack></image>`),
+    'stack.xml': strToU8(`<image w="${width}" h="${height}"><stack>${Array.from({ length: layers }, (_, i) => `<layer name="layer ${layers - i}" src="data/layer${i}.png"/>`).join('')}</stack></image>`),
     ...Object.fromEntries(Array.from({ length: layers }, (_, i) => [`data/layer${i}.png`, new Uint8Array(png)]))
   }, { level: 0 })) : png;
   const written = await page.evaluate(async ([name, bytes]) => {

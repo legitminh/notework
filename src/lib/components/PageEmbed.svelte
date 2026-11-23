@@ -16,9 +16,9 @@
         const files = await options.catalog();
         const target = await resolveFileReference(options.workspace, options.source, token, files);
         abort.signal.throwIfAborted();
-        if (!target || !files.some((file) => file.id === target.id)) throw new Error(`Referenced file “${token}” is unavailable.`);
-        if (options.ancestors.includes(target.id)) throw new Error(`Circular page reference: ${token}`);
-        if (options.ancestors.length >= 8) throw new Error('Page reference nesting limit reached.');
+        if (!target || !files.some((file) => file.id === target.id)) throw new Error(`referenced file “${token}” is unavailable.`);
+        if (options.ancestors.includes(target.id)) throw new Error(`circular page reference: ${token}`);
+        if (options.ancestors.length >= 8) throw new Error('page reference nesting limit reached.');
         node = target;
       } catch (cause) { if (!abort.signal.aborted) error = cause instanceof Error ? cause.message : String(cause); }
     })();
@@ -26,7 +26,7 @@
   });
 </script>
 
-<section class="page-embed" aria-label={`Referenced file ${token}`} data-reference-target={node?.id}>
+<section class="page-embed" aria-label={`referenced file ${token}`} data-reference-target={node?.id}>
   {#if node}
     <FilePreview workspace={options.workspace} {node} wrapLines={options.wrapLines} prettyFontSize={options.prettyFontSize}
       prettyMargin={options.prettyMargin} showLineNumbers={false} disabled={false} {indent} inheritedPretty={pretty}

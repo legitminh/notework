@@ -12,17 +12,17 @@ async function base64(blob: Blob) {
 
 export class GitHubApiError extends Error {
   constructor(readonly status: number, action: string, readonly repositoryId?: string, readonly retryAt = 0) {
-    super(retryAt ? 'GitHub rate limit reached. Automatic checks will resume after the required wait.'
-      : status === 401 ? 'The GitHub token is missing, expired, or was rejected.'
-      : status === 403 ? 'GitHub refused access. Check the token permissions, branch rules, and API limits.'
-      : status === 404 ? 'GitHub could not find the repository, branch, or object. Check the connection in settings.'
-      : `GitHub could not ${action} (HTTP ${status}). Check the branch rules or try again.`);
+    super(retryAt ? 'GitHub rate limit reached. automatic checks will resume after the required wait.'
+      : status === 401 ? 'the GitHub token is missing, expired, or was rejected.'
+      : status === 403 ? 'GitHub refused access. check the token permissions, branch rules, and API limits.'
+      : status === 404 ? 'GitHub could not find the repository, branch, or object. check the connection in settings.'
+      : `GitHub could not ${action} (HTTP ${status}). check the branch rules or try again.`);
   }
   get canReconnect() { return !this.retryAt && [401, 403, 404].includes(this.status); }
 }
 
 export class GitHubWriteUncertain extends Error {
-  constructor() { super('GitHub did not confirm whether the branch was updated. Check the connection and retry; Notework kept a local copy.'); }
+  constructor() { super('GitHub did not confirm whether the branch was updated. check the connection and retry; Notework kept a local copy.'); }
 }
 
 export class GitHubApi {
@@ -53,7 +53,7 @@ export class GitHubApi {
         signal: AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(15000)])
       });
     } catch {
-      throw new Error('Could not reach GitHub. Check your connection and try again.');
+      throw new Error('could not reach GitHub. check your connection and try again.');
     }
     this.lifetime.signal.throwIfAborted();
     const reset = Number(response.headers.get('x-ratelimit-reset')) * 1000;

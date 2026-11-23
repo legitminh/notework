@@ -155,7 +155,7 @@
 
   async function write(snapshot: Text) {
     const current = await handle.getFile();
-    if (current.size !== format.size || current.lastModified !== format.modified) throw new Error('The file changed outside this editor. Export your edits before reopening it.');
+    if (current.size !== format.size || current.lastModified !== format.modified) throw new Error('the file changed outside this editor. export your edits before reopening it.');
     const content = encodedChunks(chunks(snapshot), format);
     if (node.storage === 'browser') await writeBrowserContent(handle, content);
     else {
@@ -251,7 +251,7 @@
     if (!view || saving || githubPublishing || inlineDrawing) return;
     error = '';
     try {
-      if (node.storage === 'github') throw new Error('Create visual documents in GitHub folders with “create new file/folder”, then link them with \\visualpage.');
+      if (node.storage === 'github') throw new Error('create visual documents in GitHub folders with “create new file/folder”, then link them with \\visualpage.');
       const folder = await containingFolder(workspace, node, handle);
       if (node.storage === 'local') await requireWrite(folder, true);
       const name = `visual-${crypto.randomUUID().slice(0, 8)}`;
@@ -294,7 +294,7 @@
     openingDrawing = true; error = '';
     try {
       const resource = newDrawings.has(page.name) ? undefined : await (previews.get(page.name) ?? loadDrawingReference(workspace, node, handle, page.name, await catalog()));
-      if (!resource && !canCreateSiblingDrawing(page.name)) throw new Error(`Drawing resource “${page.name}” could not be found.`);
+      if (!resource && !canCreateSiblingDrawing(page.name)) throw new Error(`drawing resource “${page.name}” could not be found.`);
       if (!active || githubPublishing || !view.state.field(pageWidgets.field).pages.some((item) => item.from === page.from && item.name === page.name)) return;
       const host = document.createElement('div');
       host.className = 'inline-drawing-host';
@@ -345,16 +345,16 @@
     const file = resource.handle;
     const target = await resolveFileReference(workspace, node, inlineDrawing!.page.name, await catalog());
     if (target) await sync.enqueue(target, file);
-    else throw new Error('Save the note reference before syncing this drawing.');
+    else throw new Error('save the note reference before syncing this drawing.');
   }
 
   async function deleteInlineDrawing() {
     const drawing = inlineDrawing;
-    if (!drawing || !view || !confirm(`Delete ${drawing.page.name} and its drawing file? Other links to this file will stop working.`)) return;
+    if (!drawing || !view || !confirm(`delete ${drawing.page.name} and its drawing file? other links to this file will stop working.`)) return;
     try {
       if (drawing.resource) {
         const target = await resolveFileReference(workspace, node, drawing.page.name, await catalog());
-        if (!target) throw new Error('The drawing file could not be found.');
+        if (!target) throw new Error('the drawing file could not be found.');
         // A visual document owns its page folder (main file plus layer assets).
         const owner = drawing.resource.visual && target.path.length > 1
           ? await workspace.node(nodeId(target.sourceId, target.path.slice(0, -1))).catch(() => target) : target;
@@ -529,7 +529,7 @@
       const references = workspace.data.wiki?.[node.id];
       const saved = references && Object.hasOwn(references, token) ? references[token] : undefined;
       const id = saved ?? findWikiTarget(workspace, node, token, await catalog())?.id;
-      if (!id) throw new Error(`No file found for “${token}”. Save the link to create it.`);
+      if (!id) throw new Error(`no file found for “${token}”. save the link to create it.`);
       if (id === node.id) {
         return;
       }
@@ -631,7 +631,7 @@
         if (resource?.image) return { blob: await canvasBlob(await composite(resource.image)), width: resource.image.width, height: resource.image.height };
         if (resource) return resource.strokes;
         if (newDrawings.has(name) || !savedPages.has(name)) return [];
-        throw new Error(`Drawing “${name}” is unavailable. Restore it before exporting.`);
+        throw new Error(`drawing “${name}” is unavailable. restore it before exporting.`);
       }
     };
   }
@@ -695,7 +695,7 @@
         if (!active) return;
         if (handle instanceof GitHubFile) releaseGitHubFile = handle.repository.retainFile(handle.path, file);
         const detected = await inspectTextFile(file, workspace.format(node.id));
-        if (!detected) throw new Error('This resource is not decodable text.');
+        if (!detected) throw new Error('this resource is not decodable text.');
         format = detected;
         if (handle instanceof GitHubFile) {
           const draft = handle.repository.draft(handle.path);
@@ -753,7 +753,7 @@
             showLineNumbers ? lineNumbers() : [], showLineIndex ? lineIndex : [], drawSelection(), highlightActiveLine(), history(),
             bracketMatching(), closeBrackets(), highlightSelectionMatches(),
             indentUnit.of('  '), EditorState.tabSize.of(2),
-            EditorView.contentAttributes.of({ 'aria-label': `Edit ${node.name}`, spellcheck: 'false' }),
+            EditorView.contentAttributes.of({ 'aria-label': `edit ${node.name}`, spellcheck: 'false' }),
             keymap.of([
               indentWithTab, ...closeBracketsKeymap, ...defaultKeymap, ...historyKeymap, ...searchKeymap
             ]),
@@ -830,15 +830,15 @@
 <div class="document-editor">
   <div class="editor-toolbar-slot">
     {#if !inlineDrawing}
-    <div class="editor-controls" role="group" aria-label="Editor toolbar" tabindex="-1" bind:this={toolbar}
+    <div class="editor-controls" role="group" aria-label="editor toolbar" tabindex="-1" bind:this={toolbar}
       use:preserveContentFocus={() => !usingTools && !!view?.hasFocus}>
-      <Control aria-keyshortcuts="Control+Escape" onclick={requestExit} disabled={saving || githubPublishing}>Exit<span class="shortcut-hint" aria-hidden="true">Ctrl+Esc</span></Control>
-      {#if onVisualEditor}<Control onclick={() => { void saveForNavigation().then((saved) => { if (saved) onVisualEditor?.(); }); }} disabled={saving || githubPublishing}>Visual editor</Control>{/if}
-      <Control aria-keyshortcuts={vimMode ? undefined : 'Control+F'} onclick={find} disabled={loading || githubPublishing}><span class="visually-hidden">Find and replace</span><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="10" cy="10" r="6" /><path d="m14.5 14.5 5 5" /></svg>{#if !vimMode}<span class="shortcut-hint" aria-hidden="true">Ctrl+F</span>{/if}</Control>
-      <Control onclick={() => { choseDrawingFormat = false; rasterFormat = undefined; choosingDrawing = true; formatDialog.showModal(); }} disabled={loading || saving || githubPublishing}>Draw…<span class="shortcut-hint" aria-hidden="true">Command+B · SVG</span></Control>
-      <Control onclick={() => imagePicker.click()} disabled={loading || saving || githubPublishing}>Insert image</Control>
-      <Control onclick={() => { if (view) foldLine(view); }} disabled={loading || githubPublishing}>Fold</Control>
-      <Control onclick={() => openExport()} disabled={loading || githubPublishing}>Export</Control>
+      <Control aria-keyshortcuts="Control+Escape" onclick={requestExit} disabled={saving || githubPublishing}>exit<span class="shortcut-hint" aria-hidden="true">Ctrl+Esc</span></Control>
+      {#if onVisualEditor}<Control onclick={() => { void saveForNavigation().then((saved) => { if (saved) onVisualEditor?.(); }); }} disabled={saving || githubPublishing}>visual editor</Control>{/if}
+      <Control aria-keyshortcuts={vimMode ? undefined : 'Control+F'} onclick={find} disabled={loading || githubPublishing}><span class="visually-hidden">find and replace</span><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="10" cy="10" r="6" /><path d="m14.5 14.5 5 5" /></svg>{#if !vimMode}<span class="shortcut-hint" aria-hidden="true">Ctrl+F</span>{/if}</Control>
+      <Control onclick={() => { choseDrawingFormat = false; rasterFormat = undefined; choosingDrawing = true; formatDialog.showModal(); }} disabled={loading || saving || githubPublishing}>draw…<span class="shortcut-hint" aria-hidden="true">Command+B · SVG</span></Control>
+      <Control onclick={() => imagePicker.click()} disabled={loading || saving || githubPublishing}>insert image</Control>
+      <Control onclick={() => { if (view) foldLine(view); }} disabled={loading || githubPublishing}>fold</Control>
+      <Control onclick={() => openExport()} disabled={loading || githubPublishing}>export</Control>
     </div>
     {/if}
     {#if inlineDrawing}
@@ -873,7 +873,7 @@
       {:else if saving}saving…
       {:else if waitingForPermission}autosave is waiting for write permission; exit to save
       {:else if dirty}unsaved changes
-      {:else if githubPending}draft saved in this browser · Exit to sync to GitHub
+      {:else if githubPending}draft saved in this browser · exit to sync to GitHub
       {:else if !error && node.storage === 'github'}saved on GitHub
       {:else if !error}saved {node.storage === 'browser' ? 'in browser storage' : 'on your computer'}{/if}
     </p>
@@ -885,33 +885,33 @@
 
 
 
-<input class="visually-hidden" bind:this={imagePicker} type="file" accept=".png,.jpg,.jpeg,.heic,.ora" aria-label="Image file to insert"
+<input class="visually-hidden" bind:this={imagePicker} type="file" accept=".png,.jpg,.jpeg,.heic,.ora" aria-label="image file to insert"
   onchange={(event) => {
     const file = event.currentTarget.files?.[0];
     event.currentTarget.value = '';
     if (!file) return;
     const kind = imageFormat(file.name);
-    if (kind) void insertDrawing(kind, file); else error = 'Choose PNG, JPEG, HEIC, or ORA.';
+    if (kind) void insertDrawing(kind, file); else error = 'choose PNG, JPEG, HEIC, or ORA.';
   }} />
-<dialog use:dialogShortcuts class="local-picker drawing-format" bind:this={formatDialog} aria-label="Choose drawing format"
+<dialog use:dialogShortcuts class="local-picker drawing-format" bind:this={formatDialog} aria-label="choose drawing format"
   onclose={() => { choosingDrawing = false; }}>
-  <Menu label="Choose drawing format" showTrigger={false} open={choosingDrawing} backLabel="Cancel" onclose={() => {
+  <Menu label="choose drawing format" showTrigger={false} open={choosingDrawing} backLabel="cancel" onclose={() => {
     formatDialog.close();
     if (!choseDrawingFormat) void tick().then(() => {
       if (!active || inlineDrawing) return;
       usingTools = true;
-      toolbar?.querySelector<HTMLButtonElement>('[aria-label="Draw…"]')?.focus({ preventScroll: true });
+      toolbar?.querySelector<HTMLButtonElement>('[aria-label="draw…"]')?.focus({ preventScroll: true });
     });
   }}>
     {#snippet children()}
   {#if rasterFormat}
     <CanvasSizeForm onCancel={() => rasterFormat = undefined} onCreate={(size) => { choseDrawingFormat = true; formatDialog.close(); void insertVisual(size); }} />
   {:else}
-  <h2>Choose drawing format</h2>
-  <p class="muted">SVG stores vector strokes on an endless page. A visual document is a layered canvas (raster and vector layers, brushes) stored as a page folder.</p>
+  <h2>choose drawing format</h2>
+  <p class="muted">SVG stores vector strokes on an endless page. a visual document is a layered canvas (raster and vector layers, brushes) stored as a page folder.</p>
   <div class="editor-controls">
     <Control onclick={() => { choseDrawingFormat = true; formatDialog.close(); void insertDrawing('svg'); }}>SVG</Control>
-    <Control onclick={() => { rasterFormat = 'visual'; }}>Visual document</Control>
+    <Control onclick={() => { rasterFormat = 'visual'; }}>visual document</Control>
   </div>
   {/if}
     {/snippet}

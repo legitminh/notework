@@ -43,17 +43,17 @@
 
 <dialog bind:this={dialog} use:dialogShortcuts class="local-picker editor-exit github-reconnect"
   aria-labelledby="github-reconnect-heading" oncancel={(event) => { event.preventDefault(); if (!busy) close(); }}>
-  <h2 id="github-reconnect-heading">Reconnect GitHub</h2>
+  <h2 id="github-reconnect-heading">reconnect GitHub</h2>
   <p class="muted">{connection.owner}/{connection.repo} · {connection.branch}</p>
-  <p class="muted"><a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer">Create a token on GitHub</a> if you need a new one. Use <strong>Add permissions</strong> to select <strong>Contents</strong> and choose <strong>Read and write</strong>.</p>
+  <p class="muted"><a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer">create a token on GitHub</a> if you need a new one. use <strong>Add permissions</strong> to select <strong>Contents</strong> and choose <strong>Read and write</strong>.</p>
   <form bind:this={form} use:submitOnEnter onsubmit={save}>
-    <label class="field">New personal access token
+    <label class="field">new personal access token
       <input bind:this={input} bind:value={token} type="password" autocomplete="off" required disabled={busy} />
     </label>
     {#if error}<p class="notice" role="alert">{error}</p>{/if}
     <div class="editor-controls">
-      <Control onclick={() => form.requestSubmit()} disabled={busy}>Save token</Control>
-      <Control onclick={() => close()} disabled={busy}>Cancel</Control>
+      <Control onclick={() => form.requestSubmit()} disabled={busy}>save token</Control>
+      <Control onclick={() => close()} disabled={busy}>cancel</Control>
     </div>
   </form>
 </dialog>

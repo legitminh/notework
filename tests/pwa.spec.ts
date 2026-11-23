@@ -21,7 +21,7 @@ test('installed app shell and browser documents work offline', async ({ page, co
   await page.getByLabel('name', { exact: true }).fill('offline.txt');
   await action('create text file').click();
   await action('open').click();
-  const editor = page.getByRole('textbox', { name: 'Edit offline.txt', exact: true });
+  const editor = page.getByRole('textbox', { name: 'edit offline.txt', exact: true });
   await expect(editor).toBeVisible();
   await editor.click(); await page.keyboard.insertText('Notes survive offline.');
   await page.keyboard.press('ControlOrMeta+s');
@@ -31,7 +31,7 @@ test('installed app shell and browser documents work offline', async ({ page, co
   await expect(action('offline.txt')).toBeVisible();
   // The worker must load from the offline app shell before it has ever been started.
   await page.keyboard.press('ControlOrMeta+Shift+f');
-  const search = page.getByRole('dialog', { name: 'Find in contents', exact: true });
+  const search = page.getByRole('dialog', { name: 'find in contents', exact: true });
   await search.getByRole('searchbox').fill('SURVIVE OFFLINE');
   await expect(search.locator('.content-search-status')).toContainText('1 matching file');
   await search.locator('.content-match button').click();
@@ -41,11 +41,11 @@ test('installed app shell and browser documents work offline', async ({ page, co
   await expect(page.getByText('saved in browser storage', { exact: true })).toBeVisible();
   await page.reload(); await action('offline.txt').click(); await action('open').click();
   await expect(editor).toHaveText('Notes survive offline. Still writing.');
-  await page.getByRole('group', { name: 'Editor toolbar' }).getByRole('button', { name: 'Export', exact: true }).click();
-  const exportDialog = page.getByRole('dialog', { name: 'Export', exact: true });
-  await expect(exportDialog.getByRole('button', { name: 'Download PDF', exact: true })).toBeEnabled();
+  await page.getByRole('group', { name: 'editor toolbar' }).getByRole('button', { name: 'export', exact: true }).click();
+  const exportDialog = page.getByRole('dialog', { name: 'export', exact: true });
+  await expect(exportDialog.getByRole('button', { name: 'download PDF', exact: true })).toBeEnabled();
   const download = page.waitForEvent('download');
-  await exportDialog.getByRole('button', { name: 'Download PDF', exact: true }).click();
+  await exportDialog.getByRole('button', { name: 'download PDF', exact: true }).click();
   expect((await download).suggestedFilename()).toBe('offline.pdf');
 });
 
@@ -65,11 +65,11 @@ test('bundled HEIC codec creates and edits images offline', async ({ page, conte
   await sizeCanvas(page);
   const row = page.locator('.file-navigation-row').filter({ has: page.getByRole('button', { name: 'offline.visual', exact: true }) });
   await row.locator('[data-action="open"] button').click();
-  const canvas = page.getByRole('img', { name: 'Drawing canvas for offline.visual' });
+  const canvas = page.getByRole('img', { name: 'drawing canvas for offline.visual' });
   await expect(canvas).toBeVisible();
   const box = (await canvas.boundingBox())!;
   await page.mouse.click(box.x + 50, box.y + 50);
-  await page.getByRole('group', { name: 'Drawing toolbar' }).getByRole('button', { name: 'Exit', exact: true }).click();
+  await page.getByRole('group', { name: 'drawing toolbar' }).getByRole('button', { name: 'exit', exact: true }).click();
   await page.reload(); await row.locator('[data-action="open"] button').click();
   await expect(canvas).toBeVisible();
 });

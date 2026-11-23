@@ -11,10 +11,10 @@
   }
 </script>
 <form bind:this={form} onsubmit={create}>
-  <h2>Canvas size</h2>
-  <label class="field"><span>Width in pixels</span><input bind:this={input} type="number" onkeydown={enter} bind:value={width} min="1" max="16384" step="1" required disabled={busy} /></label>
-  <label class="field"><span>Height in pixels</span><input type="number" onkeydown={enter} bind:value={height} min="1" max="16384" step="1" required disabled={busy} /></label>
-  <p class="muted">Up to 32 megapixels, 16,384 pixels per side.</p>
-  <Control onclick={() => form.requestSubmit()} disabled={busy || !validCanvasSize({width,height})}>Create canvas</Control>
-  <Control onclick={onCancel} disabled={busy}>Cancel</Control>
+  <h2>canvas size</h2>
+  <label class="field"><span>width in pixels</span><input bind:this={input} type="number" onkeydown={enter} bind:value={width} min="1" max="16384" step="1" required disabled={busy} /></label>
+  <label class="field"><span>height in pixels</span><input type="number" onkeydown={enter} bind:value={height} min="1" max="16384" step="1" required disabled={busy} /></label>
+  <p class="muted">up to 32 megapixels, 16,384 pixels per side.</p>
+  <Control onclick={() => form.requestSubmit()} disabled={busy || !validCanvasSize({width,height})}>create canvas</Control>
+  <Control onclick={onCancel} disabled={busy}>cancel</Control>
 </form>

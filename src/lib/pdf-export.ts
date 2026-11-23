@@ -126,7 +126,7 @@ export async function createPdf(source: PdfSource, signal: AbortSignal): Promise
   const height = content.height + top + margins.bottom * minBox;
   // PDF's UserUnit keeps very tall notes on one page without truncation or distortion.
   const userUnit = Math.max(1, Math.ceil(Math.max(width, height) * .75 / 14400));
-  if (userUnit > 75000) throw new Error('This document exceeds the single-page PDF size limit.');
+  if (userUnit > 75000) throw new Error('this document exceeds the single-page PDF size limit.');
   const scale = .75 / userUnit;
   const page = pdf.addPage([width * scale, height * scale]);
   if (userUnit > 1) page.node.set(PDFName.of('UserUnit'), PDFNumber.of(userUnit));
@@ -156,14 +156,14 @@ export async function createPdf(source: PdfSource, signal: AbortSignal): Promise
       const canvas = document.createElement('canvas');
       canvas.width = Math.ceil(w * 2); canvas.height = Math.ceil(h * 2);
       const context = canvas.getContext('2d');
-      if (!context) throw new Error('The browser could not create the PDF drawing surface.');
+      if (!context) throw new Error('the browser could not create the PDF drawing surface.');
       context.scale(2, 2); context.font = source.style.font; context.textBaseline = 'alphabetic';
       for (const item of visible) {
         context.fillStyle = item.color;
         context.fillText(item.text, item.x - x, item.baseline - y);
       }
       const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob((blob) =>
-        blob ? resolve(blob) : reject(new Error('The PDF text could not be rendered.')), 'image/png'));
+        blob ? resolve(blob) : reject(new Error('the PDF text could not be rendered.')), 'image/png'));
       const image = await pdf.embedPng(await blob.arrayBuffer());
       await image.embed();
       page.drawImage(image, { x: (left + x) * scale, y: page.getHeight() - (top + y + h) * scale, width: w * scale, height: h * scale });
@@ -221,12 +221,12 @@ export async function createRaster(source: PdfSource, format: 'png' | 'jpeg', si
   const pageHeight = content.height + top + margins.bottom * minBox;
   const scale = Math.min(1, RASTER_MAX_SIDE / pageWidth, RASTER_MAX_SIDE / pageHeight,
     Math.sqrt(RASTER_MAX_PIXELS / (pageWidth * pageHeight)));
-  if (!Number.isFinite(scale) || scale <= 0) throw new Error('This document exceeds the single-image export size limit.');
+  if (!Number.isFinite(scale) || scale <= 0) throw new Error('this document exceeds the single-image export size limit.');
   const canvas = document.createElement('canvas');
   canvas.width = Math.max(1, Math.floor(pageWidth * scale));
   canvas.height = Math.max(1, Math.floor(pageHeight * scale));
   const context = canvas.getContext('2d');
-  if (!context) throw new Error('The browser could not create the image drawing surface.');
+  if (!context) throw new Error('the browser could not create the image drawing surface.');
   context.fillStyle = source.style.background;
   context.fillRect(0, 0, canvas.width, canvas.height);
   context.scale(scale, scale);
@@ -270,7 +270,7 @@ export async function createRaster(source: PdfSource, format: 'png' | 'jpeg', si
   signal.throwIfAborted();
   const type = format === 'png' ? 'image/png' : 'image/jpeg';
   const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob((result) =>
-    result && result.type === type ? resolve(result) : reject(new Error(`The browser could not encode a ${format.toUpperCase()} image.`)),
+    result && result.type === type ? resolve(result) : reject(new Error(`the browser could not encode a ${format.toUpperCase()} image.`)),
   type, format === 'jpeg' ? .95 : undefined));
   canvas.width = canvas.height = 0;
   signal.throwIfAborted();

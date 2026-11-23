@@ -551,41 +551,41 @@
 </script>
 
 <div class="drawing-bar">
-  <div class="editor-controls drawing-controls drawing-tools" role="group" aria-label="Drawing toolbar" tabindex="-1" bind:this={toolbar}
+  <div class="editor-controls drawing-controls drawing-tools" role="group" aria-label="drawing toolbar" tabindex="-1" bind:this={toolbar}
     use:preserveContentFocus={() => !usingTools && document.activeElement === canvas}>
-    {#if onExit}<Control onclick={exit} disabled={saving || publishing}>Exit<span class="shortcut-hint" aria-hidden="true">Ctrl+Esc</span></Control>{/if}
-    <Control onclick={() => chooseTool('brush')} aria-pressed={tool === 'brush'}><span class="tool-color" class:ink={!penColor} style:--pen={penColor} style:opacity={penOpacity / 100} aria-hidden="true"></span>Brush<span class="shortcut-hint" aria-hidden="true">Command+B</span></Control>
-    <Control onclick={() => chooseTool('eraser')} aria-pressed={tool === 'eraser'}>Eraser</Control>
-    <Control onclick={() => chooseTool('lasso')} aria-pressed={tool === 'lasso'}>Lasso</Control>
+    {#if onExit}<Control onclick={exit} disabled={saving || publishing}>exit<span class="shortcut-hint" aria-hidden="true">Ctrl+Esc</span></Control>{/if}
+    <Control onclick={() => chooseTool('brush')} aria-pressed={tool === 'brush'}><span class="tool-color" class:ink={!penColor} style:--pen={penColor} style:opacity={penOpacity / 100} aria-hidden="true"></span>brush<span class="shortcut-hint" aria-hidden="true">Command+B</span></Control>
+    <Control onclick={() => chooseTool('eraser')} aria-pressed={tool === 'eraser'}>eraser</Control>
+    <Control onclick={() => chooseTool('lasso')} aria-pressed={tool === 'lasso'}>lasso</Control>
     {#if selection?.indices.size && !tracing}
-      <Control onclick={clearSelection} disabled={saving || publishing || !!gesture} aria-label="Clear selected strokes">Clear</Control>
-      <Control onclick={deselect} disabled={!!gesture}>Deselect</Control>
+      <Control onclick={clearSelection} disabled={saving || publishing || !!gesture} aria-label="clear selected strokes">clear</Control>
+      <Control onclick={deselect} disabled={!!gesture}>deselect</Control>
     {/if}
-    <Control onclick={undo} disabled={!undoStack.length || saving || publishing}>Undo<span class="shortcut-hint" aria-hidden="true">Command+Z</span></Control>
-    <Control onclick={redo} disabled={!redoStack.length || saving || publishing}>Redo<span class="shortcut-hint" aria-hidden="true">Command+Shift+Z</span></Control>
-    {#if onDelete}<Control onclick={() => { cancelGesture(); void onDelete?.(); }} disabled={saving || publishing}>Delete drawing</Control>{/if}
-    {#if onExport}<Control onclick={() => onExport?.(strokes)} disabled={saving || publishing || !!gesture}>Export</Control>{/if}
+    <Control onclick={undo} disabled={!undoStack.length || saving || publishing}>undo<span class="shortcut-hint" aria-hidden="true">Command+Z</span></Control>
+    <Control onclick={redo} disabled={!redoStack.length || saving || publishing}>redo<span class="shortcut-hint" aria-hidden="true">Command+Shift+Z</span></Control>
+    {#if onDelete}<Control onclick={() => { cancelGesture(); void onDelete?.(); }} disabled={saving || publishing}>delete drawing</Control>{/if}
+    {#if onExport}<Control onclick={() => onExport?.(strokes)} disabled={saving || publishing || !!gesture}>export</Control>{/if}
   </div>
   <!-- The same settings panels as visual documents: size and opacity streams, color wheel and palette. -->
-  <SubKeyframe label="Brush settings" showTrigger={false} enterTrigger={null} bind:this={brushMenu} class="drawing-menu persistent-menu" closeOnOutside={false}
+  <SubKeyframe label="brush settings" showTrigger={false} enterTrigger={null} bind:this={brushMenu} class="drawing-menu persistent-menu" closeOnOutside={false}
     disabled={saving || publishing || (!!shortcutScope.dialog && toolbar?.closest('dialog') !== shortcutScope.dialog)} onclose={closeMenu}>
     {#snippet children()}
       <div class="tool-stream">
-        <span class="pair"><span class="stream-label">Pen size</span><NumberBox bind:value={penSize} min={1} max={300} step={1} width="4ch" label="Pen size value" /></span>
-        <HorizontalSlider bind:value={penSize} min={1} max={300} step={1} speed={40} label="Pen size" />
-        <span class="pair"><span class="stream-label">Opacity</span><NumberBox bind:value={penOpacity} min={1} max={100} step={1} width="4ch" label="Brush opacity value" format={(value: number) => `${value}%`} /></span>
-        <HorizontalSlider bind:value={penOpacity} min={1} max={100} step={1} speed={50} label="Brush opacity" />
+        <span class="pair"><span class="stream-label">pen size</span><NumberBox bind:value={penSize} min={1} max={300} step={1} width="4ch" label="pen size value" /></span>
+        <HorizontalSlider bind:value={penSize} min={1} max={300} step={1} speed={40} label="pen size" />
+        <span class="pair"><span class="stream-label">opacity</span><NumberBox bind:value={penOpacity} min={1} max={100} step={1} width="4ch" label="brush opacity value" format={(value: number) => `${value}%`} /></span>
+        <HorizontalSlider bind:value={penOpacity} min={1} max={100} step={1} speed={50} label="brush opacity" />
         <span class="stream-break" aria-hidden="true"></span>
         <ColorPalette value={penColor} {palette} recent={recentColors} ink inkPreview={INK_COLOR} onchange={chooseColor} onpalettechange={changePalette} />
       </div>
     {/snippet}
   </SubKeyframe>
-  <SubKeyframe label="Eraser settings" showTrigger={false} enterTrigger={null} bind:this={eraserMenu} class="drawing-menu persistent-menu" closeOnOutside={false}
+  <SubKeyframe label="eraser settings" showTrigger={false} enterTrigger={null} bind:this={eraserMenu} class="drawing-menu persistent-menu" closeOnOutside={false}
     disabled={saving || publishing || (!!shortcutScope.dialog && toolbar?.closest('dialog') !== shortcutScope.dialog)} onclose={closeMenu}>
     {#snippet children()}
       <div class="tool-stream">
-        <span class="pair"><span class="stream-label">Eraser size</span><NumberBox bind:value={eraserSize} min={1} max={500} step={1} width="4ch" label="Eraser size value" /></span>
-        <HorizontalSlider bind:value={eraserSize} min={1} max={500} step={1} speed={60} label="Eraser size" />
+        <span class="pair"><span class="stream-label">eraser size</span><NumberBox bind:value={eraserSize} min={1} max={500} step={1} width="4ch" label="eraser size value" /></span>
+        <HorizontalSlider bind:value={eraserSize} min={1} max={500} step={1} speed={60} label="eraser size" />
       </div>
     {/snippet}
   </SubKeyframe>
@@ -593,11 +593,11 @@
 
 <div class="drawing-surface" use:portal={surfaceTarget}>
   {#if !surfaceTarget}<EditorTitle {name} onEdit={usingTools ? resumeEditing : undefined} />{/if}
-  <p class="muted" role="status" style:visibility={publishing ? 'hidden' : undefined}>{saving ? 'saving drawing…' : waitingForPermission ? 'autosave is waiting for write permission; exit to save' : dirty ? 'unsaved drawing changes' : githubPending ? 'drawing draft saved in this browser · Exit to sync to GitHub' : 'drawing saved'}</p>
+  <p class="muted" role="status" style:visibility={publishing ? 'hidden' : undefined}>{saving ? 'saving drawing…' : waitingForPermission ? 'autosave is waiting for write permission; exit to save' : dirty ? 'unsaved drawing changes' : githubPending ? 'drawing draft saved in this browser · exit to sync to GitHub' : 'drawing saved'}</p>
   {#if error}<StorageNotice {error} />{/if}
   <div class="drawing-page-viewport" bind:this={pageViewport}>
     <div class="drawing-canvas-layer" bind:this={canvasLayer}>
-      <svg bind:this={canvas} class:image-canvas={!!backgroundHref} class:eraser={tool === 'eraser'} class:moving class="drawing-canvas" role="img" aria-label={`Drawing canvas for ${name}`} tabindex="-1"
+      <svg bind:this={canvas} class:image-canvas={!!backgroundHref} class:eraser={tool === 'eraser'} class:moving class="drawing-canvas" role="img" aria-label={`drawing canvas for ${name}`} tabindex="-1"
         viewBox={`0 0 ${DRAWING_WIDTH} ${canvasHeight}`} preserveAspectRatio="xMinYMin meet"
         width={DRAWING_WIDTH} height={canvasHeight}
         style:touch-action={penOnly ? 'pan-x pan-y' : 'none'} onpointerdown={begin}
@@ -664,9 +664,9 @@
         <div class="lasso-actions" class:inside={selection.box.top * scale < 48} class:moving
           style:left={`clamp(72px, ${(selection.box.left + selection.box.right) / 2 / DRAWING_WIDTH * 100}%, calc(100% - 72px))`}
           style:top={`${selection.box.top / canvasHeight * 100}%`}>
-          <span class="lasso-move" use:dragFromButton title="Hold and drag, or hold M and move the mouse">
+          <span class="lasso-move" use:dragFromButton title="hold and drag, or hold M and move the mouse">
             <Control keys={moveKey} onclick={resumeEditing} disabled={saving || publishing}
-              aria-label="Move selected strokes" aria-keyshortcuts="M">Move</Control>
+              aria-label="move selected strokes" aria-keyshortcuts="M">move</Control>
           </span>
         </div>
       {/if}

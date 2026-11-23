@@ -82,7 +82,7 @@ export class Workspace {
 
   private remember(sourceId: string, path: string[], handle: LocalHandle): StateNode {
     const source = this.data.sources.find((source) => source.id === sourceId);
-    if (!source) throw new DOMException('Resource is no longer in the graph.', 'NotFoundError');
+    if (!source) throw new DOMException('resource is no longer in the graph.', 'NotFoundError');
     const node: StateNode = {
       id: nodeId(sourceId, path), sourceId, path, name: handle.name, kind: handle.kind,
       drawing: this.drawings.has(nodeId(sourceId, path)),
@@ -97,16 +97,16 @@ export class Workspace {
   private async locate(id: string): Promise<LocatedResource> {
     const [sourceId, ...path] = JSON.parse(id) as string[];
     const source = this.data.sources.find((source) => source.id === sourceId);
-    if (!source) throw new DOMException('Resource is no longer in the graph.', 'NotFoundError');
-    if ([source.handle.name, ...path].includes('.git')) throw new HiddenResource('Git metadata is hidden.');
+    if (!source) throw new DOMException('resource is no longer in the graph.', 'NotFoundError');
+    if ([source.handle.name, ...path].includes('.git')) throw new HiddenResource('git metadata is hidden.');
     let handle = source.handle;
     this.handles.set(nodeId(sourceId), handle);
     for (const [i, name] of path.entries()) {
-      if (handle.kind !== 'directory') throw new DOMException('The resource parent no longer exists as a folder.', 'NotFoundError');
+      if (handle.kind !== 'directory') throw new DOMException('the resource parent no longer exists as a folder.', 'NotFoundError');
       if (i < path.length - 1) {
         try { handle = await handle.getDirectoryHandle(name); }
         catch (error) {
-          if (error instanceof DOMException && error.name === 'TypeMismatchError') throw new DOMException('The resource parent was replaced.', 'NotFoundError');
+          if (error instanceof DOMException && error.name === 'TypeMismatchError') throw new DOMException('the resource parent was replaced.', 'NotFoundError');
           throw error;
         }
       } else {
@@ -133,7 +133,7 @@ export class Workspace {
   }
 
   private async validate(id: string, handle: LocalHandle) {
-    if (handle.name === '.git') { this.known.delete(id); this.handles.delete(id); throw new HiddenResource('Git metadata is hidden.'); }
+    if (handle.name === '.git') { this.known.delete(id); this.handles.delete(id); throw new HiddenResource('git metadata is hidden.'); }
     if (handle.kind === 'file') {
       if (imageFormat(handle.name) || isVisualDocumentName(handle.name) || (handle.name.toLowerCase().endsWith('.svg') && await isDrawingFile(await handle.getFile()))) {
         this.drawings.add(id);
@@ -141,7 +141,7 @@ export class Workspace {
       }
       this.drawings.delete(id);
       const format = await inspectText(handle, this.formats.get(id) ?? this.data.formats?.[id]);
-      if (!format) { this.known.delete(id); this.handles.delete(id); throw new HiddenResource('Not a decodable text resource.'); }
+      if (!format) { this.known.delete(id); this.handles.delete(id); throw new HiddenResource('not a decodable text resource.'); }
       this.setFormat(id, format);
     } else {
       const iterator = handle.values();
@@ -329,11 +329,11 @@ export class Workspace {
         for (const child of await this.children(id)) {
           if (!this.data.hidden[id]?.includes(child.id)) nodes.set(child.id, child);
         }
-      } catch (error) { if (!(error instanceof HiddenResource) && !isMissing(error)) errors.push(error instanceof Error ? error.message : 'Cannot read folder.'); }
+      } catch (error) { if (!(error instanceof HiddenResource) && !isMissing(error)) errors.push(error instanceof Error ? error.message : 'cannot read folder.'); }
     }
     for (const target of id === ROOT ? this.data.rootIds : this.data.links[id] ?? []) {
       try { nodes.set(target, await this.node(target)); }
-      catch (error) { if (!(error instanceof HiddenResource) && !isMissing(error)) errors.push(error instanceof Error ? error.message : 'Cannot read linked state.'); }
+      catch (error) { if (!(error instanceof HiddenResource) && !isMissing(error)) errors.push(error instanceof Error ? error.message : 'cannot read linked state.'); }
     }
     return { nodes: [...nodes.values()], errors };
   }

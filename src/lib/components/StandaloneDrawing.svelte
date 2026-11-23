@@ -51,7 +51,7 @@
     void (async () => {
       try {
         const handle = await workspace.handle(node.id);
-        if (handle.kind !== 'file') throw new Error('The drawing is no longer a file.');
+        if (handle.kind !== 'file') throw new Error('the drawing is no longer a file.');
         if (handle instanceof GitHubFile) {
           const file = await handle.getFile();
           if (!active) return;
@@ -84,7 +84,7 @@
   </div>
   {/if}
 {:else if error}
-  <Control onclick={onExit}>Exit</Control>
+  <Control onclick={onExit}>exit</Control>
   <StorageNotice {error} />
 {:else}
   <ImageLoading />

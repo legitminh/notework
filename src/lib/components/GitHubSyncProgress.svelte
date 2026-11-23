@@ -8,12 +8,12 @@
 {#if sync.pending}
 <div class="sync-progress">
   {#if sync.running}
-    <p role="status">Syncing to GitHub in the background · {sync.pending} pending</p>
-    <progress aria-label="Syncing to GitHub"></progress>
+    <p role="status">syncing to GitHub in the background · {sync.pending} pending</p>
+    <progress aria-label="syncing to GitHub"></progress>
   {:else}
     <p role="status">{sync.conflict ? 'GitHub sync needs review' : 'GitHub sync paused'} · {sync.pending} pending · resumes when available</p>
     {#if sync.problem}<StorageNotice error={sync.problem} role="status" />{/if}
-    <Control onclick={() => sync.retry(sync.conflict)}>{sync.conflict ? 'Review GitHub conflict' : 'Retry GitHub sync'}</Control>
+    <Control onclick={() => sync.retry(sync.conflict)}>{sync.conflict ? 'review GitHub conflict' : 'retry GitHub sync'}</Control>
   {/if}
 </div>
 {/if}

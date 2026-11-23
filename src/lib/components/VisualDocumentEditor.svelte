@@ -67,7 +67,7 @@
       initialDraft={github && context.pendingGitHub.size > 0} {stylusOnly} {autosaveMs} {surfaceTarget} {initialPoint}
       onSave={persist} onCommit={github ? () => publishVisualDocument(context, (node, file) => sync.enqueue(node, file)) : undefined}
       {onExit} {onDelete} {onRawText} onExport={() => { void exportImage().catch((cause) => error = cause); }} />
-  {:else if error}<Control onclick={onExit}>Exit</Control><StorageNotice {error} />
+  {:else if error}<Control onclick={onExit}>exit</Control><StorageNotice {error} />
   {:else}<ImageLoading />{/if}
 </div>
 

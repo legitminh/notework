@@ -7,9 +7,9 @@ import { zipSync, strToU8 } from 'fflate';
 
 const api = 'https://api.github.com/repos/example/notebook';
 const action = (page: Page, name: string) => page.locator(`[data-action=${JSON.stringify(name)}] button, button[data-action=${JSON.stringify(name)}]`);
-const editor = (page: Page, file: string) => page.getByRole('textbox', { name: `Edit ${file}`, exact: true });
-const exit = (page: Page, group = 'Editor toolbar') => page.getByRole('group', { name: group }).getByRole('button', { name: 'Exit', exact: true });
-const syncProgress = (page: Page) => page.getByRole('progressbar', { name: 'Syncing to GitHub' });
+const editor = (page: Page, file: string) => page.getByRole('textbox', { name: `edit ${file}`, exact: true });
+const exit = (page: Page, group = 'editor toolbar') => page.getByRole('group', { name: group }).getByRole('button', { name: 'exit', exact: true });
+const syncProgress = (page: Page) => page.getByRole('progressbar', { name: 'syncing to GitHub' });
 const sha = (buffer: Buffer) => createHash('sha1').update(`blob ${buffer.length}\0`).update(buffer).digest('hex');
 const binaryImage = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 type FixtureFiles = Record<string, string | Buffer | null>;
@@ -169,9 +169,9 @@ async function connect(page: Page, keyboard = false) {
   await page.goto('/');
   await action(page, 'app settings').click(); await action(page, 'sources and storage').click();
   await action(page, 'GitHub repositories').click();
-  await page.getByLabel('Repository', { exact: true }).fill('https://github.com/example/notebook');
-  const token = page.getByLabel('Personal access token', { exact: true });
-  const connect = page.getByRole('button', { name: 'Connect repository', exact: true });
+  await page.getByLabel('repository', { exact: true }).fill('https://github.com/example/notebook');
+  const token = page.getByLabel('personal access token', { exact: true });
+  const connect = page.getByRole('button', { name: 'connect repository', exact: true });
   await token.fill('test-token');
   if (keyboard) {
     await token.press('Tab');
@@ -204,10 +204,10 @@ test('setup instructions fit a narrow screen and GitHub form actions have keyboa
   })).toBe(true);
 
   repo.rotateToken('test-token-settings');
-  await page.getByRole('button', { name: 'Update token', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'Reconnect GitHub' });
-  const token = dialog.getByLabel('New personal access token');
-  const save = dialog.getByRole('button', { name: 'Save token' });
+  await page.getByRole('button', { name: 'update token', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'reconnect GitHub' });
+  const token = dialog.getByLabel('new personal access token');
+  const save = dialog.getByRole('button', { name: 'save token' });
   await token.fill('test-token-settings');
   await token.press('Tab');
   await expect(save).toBeFocused();
@@ -225,19 +225,19 @@ test('an expired token can be replaced from the error without losing the open dr
   await editor(page, 'note.txt').fill('Unpublished edit');
   repo.rotateToken('test-token-renewed');
   await exit(page).click();
-  const notice = page.locator('.notice').filter({ hasText: 'The GitHub token is missing, expired, or was rejected.' });
-  const reconnect = notice.getByRole('button', { name: 'Reconnect GitHub' });
+  const notice = page.locator('.notice').filter({ hasText: 'the GitHub token is missing, expired, or was rejected.' });
+  const reconnect = notice.getByRole('button', { name: 'reconnect GitHub' });
   await expect(reconnect).toBeVisible();
   await reconnect.focus();
   await pressShortcut(page, reconnect);
-  const dialog = page.getByRole('dialog', { name: 'Reconnect GitHub' });
+  const dialog = page.getByRole('dialog', { name: 'reconnect GitHub' });
   await expect(dialog).toContainText('example/notebook · main');
-  const token = dialog.getByLabel('New personal access token');
+  const token = dialog.getByLabel('new personal access token');
   await token.fill('test-token-renewed');
   await token.press('Enter');
   await expect(dialog).toHaveCount(0);
   await expect(action(page, 'open')).toBeVisible();
-  await page.getByRole('button', { name: 'Retry GitHub sync', exact: true }).click();
+  await page.getByRole('button', { name: 'retry GitHub sync', exact: true }).click();
   await expect(action(page, 'open')).toBeVisible();
   await expect.poll(() => repo.messages).toEqual(['edit: note.txt']);
   await expect.poll(() => repo.content('note.txt')).toBe('Unpublished edit');
@@ -246,7 +246,7 @@ test('an expired token can be replaced from the error without losing the open dr
   await page.reload();
   await expect(reconnect).toBeVisible();
   await reconnect.click();
-  await expect(dialog.getByLabel('New personal access token')).toBeFocused();
+  await expect(dialog.getByLabel('new personal access token')).toBeFocused();
 });
 
 test('repository syncs on startup and Exit commits only the edit onto the latest branch', async ({ page }) => {
@@ -329,13 +329,13 @@ test('Vietnamese filenames ignore pasted Backspace artifacts and preserve GitHub
   await action(page, '..').click();
   await action(page, 'original.txt').click();
   await action(page, 'configure file').click(); await action(page, 'rename').click();
-  const dialog = page.getByRole('dialog', { name: 'Rename file', exact: true });
+  const dialog = page.getByRole('dialog', { name: 'rename file', exact: true });
   const field = dialog.getByRole('textbox', { name: 'new name', exact: true });
   // Keep decomposed Vietnamese accents as entered; remove only the hidden editing artifact.
   const name = 'viet.outputmode.siêu.việt'.normalize('NFD');
   await field.fill('viet.outputmode.siêu\b.việt'.normalize('NFD'));
   await expect(field).toHaveValue(name);
-  await dialog.getByRole('button', { name: 'Rename and update links', exact: true }).click();
+  await dialog.getByRole('button', { name: 'rename and update links', exact: true }).click();
   await expect(dialog).not.toBeVisible();
   await expect(page.getByRole('heading', { name, exact: true })).toBeVisible();
   await expect.poll(() => repo.content(name)).toBe(content);
@@ -354,7 +354,7 @@ test('name search across a GitHub tree reads only matching blobs and normalizes 
   await expect(action(page, 'app settings')).toBeVisible();
   repo.requests.length = 0;
   await action(page, 'search').click();
-  await page.getByRole('dialog', { name: 'Search', exact: true }).getByRole('button', { name: 'search file in all files', exact: true }).click();
+  await page.getByRole('dialog', { name: 'search', exact: true }).getByRole('button', { name: 'search file in all files', exact: true }).click();
   await page.getByRole('searchbox').fill('VIỆT'.normalize('NFD'));
   await expect(page.locator('.search-status')).toHaveText('2 results found');
   await expect(page.locator('.search-result-row').getByRole('button', { name: new RegExp(name) })).toBeVisible();
@@ -370,16 +370,16 @@ test('same-file branch race opens two editable versions and publishes the select
   await editor(page, 'note.txt').fill('My version');
   repo.advance({ 'note.txt': 'Upstream version' });
   await exit(page).click();
-  await page.getByRole('button', { name: 'Review GitHub conflict', exact: true }).click();
+  await page.getByRole('button', { name: 'review GitHub conflict', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'GitHub conflict' });
-  const local = dialog.getByRole('textbox', { name: 'Your version' });
+  const local = dialog.getByRole('textbox', { name: 'your version' });
   const remote = dialog.getByRole('textbox', { name: 'GitHub version' });
   await expect(local).toHaveValue('My version');
   await expect(remote).toHaveValue('Upstream version');
   await local.fill('Edited local option');
   await remote.fill('Edited upstream option');
   await expect.poll(() => repo.content('note.txt')).toBe('Upstream version');
-  await dialog.getByRole('button', { name: 'Keep GitHub version', exact: true }).click();
+  await dialog.getByRole('button', { name: 'keep GitHub version', exact: true }).click();
   await expect(action(page, 'open')).toBeVisible();
   await expect.poll(() => repo.content('note.txt')).toBe('Edited upstream option');
   await expect.poll(() => repo.messages).toEqual(['edit: note.txt']);
@@ -421,15 +421,15 @@ for (const format of ['png', 'jpeg', 'ora']) {
     const [original, upstream] = await conflictImages(page, format);
     const repo = await github(page, { [name]: original });
     await connect(page); await openNote(page, name);
-    await drawVersion(page, page.getByRole('img', { name: `Drawing canvas for ${name}` }));
+    await drawVersion(page, page.getByRole('img', { name: `drawing canvas for ${name}` }));
     repo.advance({ [name]: upstream });
-    await exit(page, 'Drawing toolbar').click();
-    await page.getByRole('button', { name: 'Review GitHub conflict', exact: true }).click();
+    await exit(page, 'drawing toolbar').click();
+    await page.getByRole('button', { name: 'review GitHub conflict', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: 'GitHub conflict' });
-    const local = dialog.getByRole('region', { name: 'Your version', exact: true });
+    const local = dialog.getByRole('region', { name: 'your version', exact: true });
     const remote = dialog.getByRole('region', { name: 'GitHub version', exact: true });
-    const localCanvas = local.getByRole('img', { name: `Drawing canvas for ${name}` });
-    const remoteCanvas = remote.getByRole('img', { name: `Drawing canvas for ${name}` });
+    const localCanvas = local.getByRole('img', { name: `drawing canvas for ${name}` });
+    const remoteCanvas = remote.getByRole('img', { name: `drawing canvas for ${name}` });
     await expect(localCanvas).toBeVisible(); await expect(remoteCanvas).toBeVisible();
     await expect(dialog.getByRole('textbox')).toHaveCount(0);
     for (const [side, color] of [[localCanvas, [255, 0, 0, 255]], [remoteCanvas, [0, 0, 255, 255]]] as const) {
@@ -438,19 +438,19 @@ for (const format of ['png', 'jpeg', 'ora']) {
       pixel.forEach((channel, index) => expect(Math.abs(channel - color[index])).toBeLessThanOrEqual(1));
     }
     if (format === 'ora') {
-      await remote.getByRole('button', { name: 'Layer', exact: true }).click();
-      await remote.getByRole('button', { name: 'Add layer', exact: true }).click();
+      await remote.getByRole('button', { name: 'layer', exact: true }).click();
+      await remote.getByRole('button', { name: 'add layer', exact: true }).click();
       await expectChoiceCount(remote, 'active layer', 2);
       await page.keyboard.press('Escape');
-      await local.getByRole('button', { name: 'Layer', exact: true }).click();
+      await local.getByRole('button', { name: 'layer', exact: true }).click();
       await expectChoiceCount(local, 'active layer', 1);
       await page.keyboard.press('Escape');
     }
-    await remote.getByRole('button', { name: 'Brush', exact: true }).click();
-    const size = remote.getByRole('slider', { name: 'Pen size', exact: true });
+    await remote.getByRole('button', { name: 'brush', exact: true }).click();
+    const size = remote.getByRole('slider', { name: 'pen size', exact: true });
     await expect(size).toBeVisible();
     await expect(local.getByRole('slider')).toHaveCount(0);
-    await remote.getByRole('button', { name: /Increase Pen size$/ }).click();
+    await remote.getByRole('button', { name: /Increase pen size$/ }).click();
     await expect(size).toHaveAttribute('aria-valuenow', '4');
     await page.keyboard.press('Escape');
     await expect(size).toHaveCount(0);
@@ -464,13 +464,13 @@ for (const format of ['png', 'jpeg', 'ora']) {
     await remoteCanvas.press('ControlOrMeta+Shift+z');
     await expect.poll(pixel).toEqual([32,39,51,255]);
     // Keeping a version must flush the unsaved strokes without an extra Save action.
-    await remote.getByRole('button', { name: 'Keep GitHub version', exact: true }).click();
+    await remote.getByRole('button', { name: 'keep GitHub version', exact: true }).click();
     await expect(dialog).toHaveCount(0);
     await expect.poll(() => repo.messages).toEqual([`edit: ${name}`]);
     expect(repo.bytes(name)).not.toEqual(upstream);
     await action(page, 'open').click();
-    await expect(page.getByRole('img', { name: `Drawing canvas for ${name}` })).toBeVisible();
-    if (format === 'ora') { await page.getByRole('button', { name: 'Layer', exact: true }).click(); await expectChoiceCount(page, 'active layer', 2); }
+    await expect(page.getByRole('img', { name: `drawing canvas for ${name}` })).toBeVisible();
+    if (format === 'ora') { await page.getByRole('button', { name: 'layer', exact: true }).click(); await expectChoiceCount(page, 'active layer', 2); }
   });
 }
 
@@ -479,20 +479,20 @@ test('cancel discards conflict image edits and keeping an untouched image preser
   const [original, upstream] = await conflictImages(page, 'png');
   const repo = await github(page, { [name]: original });
   await connect(page); await openNote(page, name);
-  await drawVersion(page, page.getByRole('img', { name: `Drawing canvas for ${name}` }));
+  await drawVersion(page, page.getByRole('img', { name: `drawing canvas for ${name}` }));
   repo.advance({ [name]: upstream });
-  await exit(page, 'Drawing toolbar').click();
-  const review = page.getByRole('button', { name: 'Review GitHub conflict', exact: true });
+  await exit(page, 'drawing toolbar').click();
+  const review = page.getByRole('button', { name: 'review GitHub conflict', exact: true });
   await review.click();
   const dialog = page.getByRole('dialog', { name: 'GitHub conflict' });
   const remote = dialog.getByRole('region', { name: 'GitHub version', exact: true });
   await drawVersion(page, remote.getByRole('img'));
-  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await dialog.getByRole('button', { name: 'cancel', exact: true }).click();
   expect(repo.bytes(name)).toEqual(upstream);
   await review.click();
   await expect(remote.getByRole('img')).toBeVisible();
   await expect(remote.locator('polyline')).toHaveCount(0);
-  await remote.getByRole('button', { name: 'Keep GitHub version', exact: true }).click();
+  await remote.getByRole('button', { name: 'keep GitHub version', exact: true }).click();
   await expect(dialog).toHaveCount(0);
   await expect(page.locator('.sync-progress')).toHaveCount(0);
   expect(repo.bytes(name)).toEqual(upstream);
@@ -503,18 +503,18 @@ test('SVG drawing conflicts use drawing editors and keep the selected edited str
   const name = 'ink.svg';
   const repo = await github(page, { [name]: serializeDrawing([]) });
   await connect(page); await openNote(page, name);
-  await drawVersion(page, page.getByRole('img', { name: `Drawing canvas for ${name}` }));
+  await drawVersion(page, page.getByRole('img', { name: `drawing canvas for ${name}` }));
   repo.advance({ [name]: serializeDrawing([[[500, 300], [600, 350]]]) });
-  await exit(page, 'Drawing toolbar').click();
-  await page.getByRole('button', { name: 'Review GitHub conflict', exact: true }).click();
+  await exit(page, 'drawing toolbar').click();
+  await page.getByRole('button', { name: 'review GitHub conflict', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'GitHub conflict' });
-  const local = dialog.getByRole('region', { name: 'Your version', exact: true });
+  const local = dialog.getByRole('region', { name: 'your version', exact: true });
   const remote = dialog.getByRole('region', { name: 'GitHub version', exact: true });
   await expect(local.getByRole('img')).toBeVisible();
   await expect(remote.locator('polyline')).toHaveAttribute('points', '500,300 600,350');
   await expect(dialog.getByRole('textbox')).toHaveCount(0);
   await drawVersion(page, local.getByRole('img'));
-  await local.getByRole('button', { name: 'Keep your version', exact: true }).click();
+  await local.getByRole('button', { name: 'keep your version', exact: true }).click();
   await expect(dialog).toHaveCount(0);
   await expect.poll(() => repo.messages).toEqual([`edit: ${name}`]);
   expect(repo.content(name)?.match(/<polyline/g)).toHaveLength(2);
@@ -598,7 +598,7 @@ test('retry after an unconfirmed GitHub response does not duplicate the commit',
   await expect(page.locator('.sync-progress')).toContainText('GitHub did not confirm');
   await expect(syncProgress(page)).toHaveCount(0);
   await expect(action(page, 'open')).toBeVisible();
-  await page.getByRole('button', { name: 'Retry GitHub sync', exact: true }).click();
+  await page.getByRole('button', { name: 'retry GitHub sync', exact: true }).click();
   await expect(action(page, 'open')).toBeVisible();
   await expect.poll(() => repo.content('note.txt')).toBe('Published once');
   await expect.poll(() => repo.messages).toEqual(['edit: note.txt']);
@@ -609,7 +609,7 @@ test('drawing saves stay local until Exit publishes all strokes in one commit', 
   const repo = await github(page, { 'ink.svg': serializeDrawing([]) });
   await connect(page);
   await openNote(page, 'ink.svg');
-  const canvas = page.getByRole('img', { name: 'Drawing canvas for ink.svg' });
+  const canvas = page.getByRole('img', { name: 'drawing canvas for ink.svg' });
   await expect(canvas).toBeVisible();
   const box = (await canvas.boundingBox())!;
   async function stroke(offset: number) {
@@ -625,7 +625,7 @@ test('drawing saves stay local until Exit publishes all strokes in one commit', 
   await expect(draft).toBeVisible();
   await expect.poll(() => repo.messages).toEqual([]);
   const held = repo.holdPublish();
-  await exit(page, 'Drawing toolbar').click();
+  await exit(page, 'drawing toolbar').click();
   try {
     await held.started;
     await expect(syncProgress(page)).toBeVisible();
@@ -646,8 +646,8 @@ test('exiting an inline drawing publishes the asset while the note stays in edit
   const note = editor(page, 'note.txt');
   await note.press('ControlOrMeta+End');
   await page.keyboard.insertText(' with edits');
-  await page.getByRole('button', { name: 'Edit drawing ink.svg' }).click();
-  const canvas = page.getByRole('img', { name: 'Drawing canvas for ink.svg' });
+  await page.getByRole('button', { name: 'edit drawing ink.svg' }).click();
+  const canvas = page.getByRole('img', { name: 'drawing canvas for ink.svg' });
   await expect(canvas).toBeVisible();
   const box = (await canvas.boundingBox())!;
   await page.mouse.move(box.x + 25, box.y + 30); await page.mouse.down();
@@ -655,7 +655,7 @@ test('exiting an inline drawing publishes the asset while the note stays in edit
   await page.keyboard.press('Control+s');
   await expect(page.getByText(/drawing draft saved in this browser/)).toBeVisible();
   await expect.poll(() => repo.messages).toEqual([]);
-  await exit(page, 'Drawing toolbar').click();
+  await exit(page, 'drawing toolbar').click();
   await expect(note).toBeEditable();
   await expect.poll(() => repo.messages).toEqual(['edit: ink.svg']);
   await expect.poll(() => repo.content('ink.svg')).toContain('<polyline');
@@ -663,15 +663,15 @@ test('exiting an inline drawing publishes the asset while the note stays in edit
   await expect(syncProgress(page)).toHaveCount(0);
   // The note caches this drawing resource across separate edits. Its earlier
   // publication must become the base for another edit on this same device.
-  await page.getByRole('button', { name: 'Edit drawing ink.svg' }).click();
+  await page.getByRole('button', { name: 'edit drawing ink.svg' }).click();
   await expect(canvas).toBeVisible();
   const second = (await canvas.boundingBox())!;
   await page.mouse.move(second.x + 25, second.y + 100); await page.mouse.down();
   await page.mouse.move(second.x + 90, second.y + 130, { steps: 4 }); await page.mouse.up();
-  await exit(page, 'Drawing toolbar').click();
+  await exit(page, 'drawing toolbar').click();
   await expect.poll(() => repo.content('ink.svg')?.match(/<polyline/g)).toHaveLength(2);
   await expect(syncProgress(page)).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Review GitHub conflict', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'review GitHub conflict', exact: true })).toHaveCount(0);
   await exit(page).click();
   await expect(action(page, 'open')).toBeVisible();
   await expect.poll(() => repo.content('note.txt')).toBe(original + ' with edits');
@@ -692,13 +692,13 @@ test('failed writes retain the draft across reload and accept an upstream deleti
 
   await page.reload();
   await expect(action(page, 'notebook/')).toBeVisible();
-  await page.getByRole('button', { name: 'Review GitHub conflict', exact: true }).click();
+  await page.getByRole('button', { name: 'review GitHub conflict', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'GitHub conflict' });
-  await expect(dialog.getByText('This file was deleted on GitHub.')).toBeVisible();
-  await dialog.getByRole('button', { name: 'Cancel' }).click();
+  await expect(dialog.getByText('this file was deleted on GitHub.')).toBeVisible();
+  await dialog.getByRole('button', { name: 'cancel' }).click();
   await expect(action(page, 'notebook/')).toBeVisible();
-  await page.getByRole('button', { name: 'Review GitHub conflict', exact: true }).click();
-  await dialog.getByRole('button', { name: 'Keep GitHub deletion' }).click();
+  await page.getByRole('button', { name: 'review GitHub conflict', exact: true }).click();
+  await dialog.getByRole('button', { name: 'keep GitHub deletion' }).click();
   await expect(action(page, 'notebook/')).toBeVisible();
   await expect.poll(() => repo.content('note.txt')).toBeUndefined();
   await expect.poll(() => repo.messages).toEqual([]);
@@ -716,10 +716,10 @@ test('keeping an unreadable GitHub version hides the file without removing its g
   await editor(page, 'note.txt').fill('Local edit');
   repo.upstream({ 'note.txt': binaryImage });
   await exit(page).click();
-  await page.getByRole('button', { name: 'Review GitHub conflict', exact: true }).click();
+  await page.getByRole('button', { name: 'review GitHub conflict', exact: true }).click();
   const conflict = page.getByRole('dialog', { name: 'GitHub conflict' });
-  await expect(conflict.getByText('The GitHub version cannot be edited as text.')).toBeVisible();
-  await conflict.getByRole('button', { name: 'Keep GitHub version' }).click();
+  await expect(conflict.getByText('the GitHub version cannot be edited as text.')).toBeVisible();
+  await conflict.getByRole('button', { name: 'keep GitHub version' }).click();
   await expect(page.locator('.sync-progress')).toHaveCount(0);
   await expect.poll(() => repo.messages).toEqual(['edit: note.txt']);
   await action(page, 'notebook/').click();
@@ -761,25 +761,25 @@ test('normal folder actions and drawing editing publish to GitHub', async ({ pag
   await action(page, 'create text file').click();
   await action(page, 'configure file').click();
   await action(page, 'rename').click();
-  const rename = page.getByRole('dialog', { name: 'Rename file' });
+  const rename = page.getByRole('dialog', { name: 'rename file' });
   await rename.getByRole('textbox').fill('renamed.txt');
-  await rename.getByRole('button', { name: 'Rename and update links' }).click();
+  await rename.getByRole('button', { name: 'rename and update links' }).click();
   await expect(page.getByRole('heading', { name: 'renamed.txt', exact: true })).toBeVisible();
   await expect.poll(() => repo.content('Sketches/idea.txt')).toBeUndefined();
   await expect.poll(() => repo.content('Sketches/renamed.txt')).toBe('');
   await action(page, 'configure file').click();
   await action(page, 'delete this file').click();
-  await page.getByRole('dialog', { name: 'Delete renamed.txt?' }).getByRole('button', { name: 'Delete file' }).click();
+  await page.getByRole('dialog', { name: 'delete renamed.txt?' }).getByRole('button', { name: 'delete file' }).click();
   await expect(page.getByRole('heading', { name: 'Sketches/', exact: true })).toBeVisible();
   await expect.poll(() => repo.content('Sketches/renamed.txt')).toBeUndefined();
   await action(page, '..').click();
   await openNote(page, 'ink.svg');
-  const canvas = page.getByRole('img', { name: 'Drawing canvas for ink.svg' });
+  const canvas = page.getByRole('img', { name: 'drawing canvas for ink.svg' });
   await expect(canvas).toBeVisible();
   const box = (await canvas.boundingBox())!;
   await page.mouse.move(box.x + 25, box.y + 30); await page.mouse.down();
   await page.mouse.move(box.x + 90, box.y + 75, { steps: 6 }); await page.mouse.up();
-  await exit(page, 'Drawing toolbar').click();
+  await exit(page, 'drawing toolbar').click();
   await expect(action(page, 'open')).toBeVisible();
   await expect.poll(() => repo.content('ink.svg')).toContain('<polyline');
   await expect.poll(() => repo.messages.at(-1)).toBe('edit: ink.svg');
@@ -809,8 +809,8 @@ test('relocating a GitHub note to Home preserves the file before deleting the re
   await action(page, 'relocate this file').click();
   await action(page, 'home').click();
   await page.getByRole('region', { name: 'current state' }).locator('[data-action="choose"] button').click();
-  const confirm = page.getByRole('dialog', { name: 'Relocate file to browser storage?' });
-  await confirm.getByRole('button', { name: 'Yes', exact: true }).click();
+  const confirm = page.getByRole('dialog', { name: 'relocate file to browser storage?' });
+  await confirm.getByRole('button', { name: 'yes', exact: true }).click();
   await expect(action(page, 'open')).toBeVisible();
   await expect.poll(() => repo.content('note.txt')).toBeUndefined();
   await expect.poll(() => repo.messages).toEqual(['move: note.txt']);
@@ -826,7 +826,7 @@ test('queued Exit sync resumes after reload without reopening the draft', async 
   repo.refuse(true);
   await exit(page).click();
   await expect(action(page, 'open')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Retry GitHub sync', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'retry GitHub sync', exact: true })).toBeVisible();
   repo.refuse(false);
   await page.reload();
   await expect.poll(() => repo.content('note.txt')).toBe('Resume this snapshot');
@@ -846,7 +846,7 @@ test('a newer autosave survives publication of the earlier Exit snapshot', async
     await action(page, 'open').click();
     await editor(page, 'note.txt').fill('Newer autosave');
     await editor(page, 'note.txt').press('Control+s');
-    await expect(page.getByText('draft saved in this browser · Exit to sync to GitHub', { exact: true })).toBeVisible();
+    await expect(page.getByText('draft saved in this browser · exit to sync to GitHub', { exact: true })).toBeVisible();
   } finally { held.resume(); }
   await expect.poll(() => repo.content('note.txt')).toBe('First snapshot');
   await expect(syncProgress(page)).toHaveCount(0);
@@ -854,7 +854,7 @@ test('a newer autosave survives publication of the earlier Exit snapshot', async
   await exit(page).click();
   await expect.poll(() => repo.content('note.txt')).toBe('Newer autosave');
   expect(repo.messages).toEqual(['edit: note.txt', 'edit: note.txt']);
-  await expect(page.getByRole('button', { name: 'Review GitHub conflict', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'review GitHub conflict', exact: true })).toHaveCount(0);
 });
 
 test('an editor reopened during publication can save after acknowledgement without a false conflict', async ({ page }) => {
@@ -872,7 +872,7 @@ test('an editor reopened during publication can save after acknowledgement witho
   await editor(page, 'note.txt').fill('First snapshot plus further edits');
   await exit(page).click();
   await expect.poll(() => repo.content('note.txt')).toBe('First snapshot plus further edits');
-  await expect(page.getByRole('button', { name: 'Review GitHub conflict', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'review GitHub conflict', exact: true })).toHaveCount(0);
   expect(repo.messages).toEqual(['edit: note.txt', 'edit: note.txt']);
 });
 
@@ -894,10 +894,10 @@ test('a delayed branch read cannot roll back a successfully published snapshot',
     await expect(syncProgress(page)).toHaveCount(0);
   } finally { publish.resume(); read.resume(); }
   await action(page, 'note.txt').click();
-  await expect(page.getByRole('document', { name: 'Preview of note.txt', exact: true })).toHaveText('Published snapshot');
+  await expect(page.getByRole('document', { name: 'preview of note.txt', exact: true })).toHaveText('Published snapshot');
   await page.reload();
   await action(page, 'notebook/').click(); await action(page, 'note.txt').click();
-  await expect(page.getByRole('document', { name: 'Preview of note.txt', exact: true })).toHaveText('Published snapshot');
+  await expect(page.getByRole('document', { name: 'preview of note.txt', exact: true })).toHaveText('Published snapshot');
 });
 
 
@@ -907,23 +907,23 @@ test('choosing upstream during conflict review preserves a newer draft’s origi
   await editor(page, 'note.txt').fill('First local snapshot');
   repo.upstream({ 'note.txt': 'Chosen upstream' });
   await exit(page).click();
-  const review = page.getByRole('button', { name: 'Review GitHub conflict', exact: true });
+  const review = page.getByRole('button', { name: 'review GitHub conflict', exact: true });
   await expect(review).toBeVisible();
   await action(page, 'open').click();
   await editor(page, 'note.txt').fill('Newer local draft');
   await editor(page, 'note.txt').press('Control+s');
-  await expect(page.getByText('draft saved in this browser · Exit to sync to GitHub', { exact: true })).toBeVisible();
+  await expect(page.getByText('draft saved in this browser · exit to sync to GitHub', { exact: true })).toBeVisible();
   await review.click();
   const dialog = page.getByRole('dialog', { name: 'GitHub conflict' });
-  await dialog.getByRole('button', { name: 'Keep GitHub version', exact: true }).click();
+  await dialog.getByRole('button', { name: 'keep GitHub version', exact: true }).click();
   await expect(page.locator('.sync-progress')).toHaveCount(0);
   await expect(editor(page, 'note.txt')).toHaveText('Newer local draft');
   await exit(page).click();
   await expect(review).toBeVisible();
   expect(repo.content('note.txt')).toBe('Chosen upstream');
   await review.click();
-  await expect(dialog.getByRole('textbox', { name: 'Your version' })).toHaveValue('Newer local draft');
-  await dialog.getByRole('button', { name: 'Keep your version', exact: true }).click();
+  await expect(dialog.getByRole('textbox', { name: 'your version' })).toHaveValue('Newer local draft');
+  await dialog.getByRole('button', { name: 'keep your version', exact: true }).click();
   await expect.poll(() => repo.content('note.txt')).toBe('Newer local draft');
 });
 
@@ -938,7 +938,7 @@ test('search orders GitHub files by actual edit dates instead of blob identities
   });
   await connect(page);
   await action(page, 'search').click();
-  await page.getByRole('dialog', { name: 'Search', exact: true }).getByRole('button', { name: 'search file in all files', exact: true }).click();
+  await page.getByRole('dialog', { name: 'search', exact: true }).getByRole('button', { name: 'search file in all files', exact: true }).click();
   await page.getByRole('searchbox').fill('.txt');
   await expect(page.locator('.search-status')).toHaveText('2 results found');
   await expect(page.locator('.search-result-row .resource-hint')).toHaveText(['notebook/z-new.txt', 'notebook/a-old.txt']);
@@ -964,7 +964,7 @@ test('GitHub polling defaults to four seconds, persists the interval, and pulls 
   await expect.poll(() => repo.refChecks.length).toBeGreaterThan(beforeDelete + 1);
   await expect(editor(page, 'note.txt')).toHaveText('Local draft');
   await editor(page, 'note.txt').press('ControlOrMeta+s');
-  await expect(page.getByText('draft saved in this browser · Exit to sync to GitHub', { exact: true })).toBeVisible();
+  await expect(page.getByText('draft saved in this browser · exit to sync to GitHub', { exact: true })).toBeVisible();
   expect(repo.messages).toEqual([]);
 });
 
@@ -994,8 +994,8 @@ test('removing a GitHub root forgets credentials, caches and failed sync jobs ac
   await exit(page).click();
   await expect(page.locator('.sync-progress')).toContainText('GitHub refused');
   await action(page, 'home').click(); await action(page, 'app settings').click(); await action(page, 'sources and storage').click();
-  await page.getByRole('button', { name: 'Remove notebook from root', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Remove notebook from root', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'remove notebook from root', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'remove notebook from root', exact: true })).toHaveCount(0);
   await expect(page.locator('.sync-progress')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'add notebook to root', exact: true })).toHaveCount(0);
   const stored = async () => page.evaluate(async () => {
@@ -1034,12 +1034,12 @@ test('root removal aborts an in-flight sync read and does not recreate its queue
   const gate = new Promise<void>(resolve => { release = resolve; });
   await page.route('**/git/ref/heads/main', async route => { arrived(); await gate; await route.fallback(); });
   repo.refuse(false);
-  await page.getByRole('button', { name: 'Retry GitHub sync', exact: true }).click();
+  await page.getByRole('button', { name: 'retry GitHub sync', exact: true }).click();
   await started;
   try {
     await action(page, 'home').click(); await action(page, 'app settings').click(); await action(page, 'sources and storage').click();
-    await page.getByRole('button', { name: 'Remove notebook from root', exact: true }).click();
-    await expect(page.getByRole('button', { name: 'Remove notebook from root', exact: true })).toHaveCount(0);
+    await page.getByRole('button', { name: 'remove notebook from root', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'remove notebook from root', exact: true })).toHaveCount(0);
     await expect(page.locator('.sync-progress')).toHaveCount(0);
   } finally { release(); }
   await page.reload();

@@ -4,7 +4,7 @@
   import { shortcutScope } from '../shortcut-scope.svelte';
 
   let { label, children, items = [], disabled = false, open = $bindable(false), showTrigger = true,
-    backLabel = 'Back', itemDisplay, onopen, onclose }: {
+    backLabel = 'back', itemDisplay, onopen, onclose }: {
     label: string;
     children?: Snippet<[SubKeyframeContext]>;
     items?: readonly SubKeyframeItem[];

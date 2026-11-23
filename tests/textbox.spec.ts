@@ -36,7 +36,7 @@ test('Enter confirms a new name and restores shortcuts without creating until ex
   await expect(page.getByRole('dialog')).not.toBeVisible();
   await expect(page.getByRole('heading', { name: 'confirmed.txt', exact: true })).toBeVisible();
   await button(page, 'open').click();
-  const editor = page.getByRole('textbox', { name: 'Edit confirmed.txt', exact: true });
+  const editor = page.getByRole('textbox', { name: 'edit confirmed.txt', exact: true });
   await editor.fill('first');
   await editor.press('End');
   await editor.press('Enter');
@@ -52,7 +52,7 @@ test('Enter preserves the search query and restores navigation shortcuts', async
   await button(page, 'create text file').click();
   await button(page, 'home').click();
   await button(page, 'search').click();
-  await page.getByRole('dialog', { name: 'Search', exact: true }).getByRole('button', { name: 'search file in all files', exact: true }).click();
+  await page.getByRole('dialog', { name: 'search', exact: true }).getByRole('button', { name: 'search file in all files', exact: true }).click();
   const field = page.getByRole('searchbox');
   await field.fill('find-me');
   await field.press('Enter');
