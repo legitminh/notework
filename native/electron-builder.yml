@@ -1,6 +1,5 @@
 appId: io.github.legitminh.notework
 productName: Notework
-executableName: notework
 copyright: Copyright © legitminh
 directories:
   output: dist
@@ -23,6 +22,9 @@ mac:
   # Ad hoc signed so Apple silicon runs it. For distribution, override with a Developer ID
   # identity (-c.mac.identity=...) and notarize.
   identity: '-'
+  hardenedRuntime: true
+  entitlements: resources/entitlements.mac.plist
+  entitlementsInherit: resources/entitlements.mac.plist
 win:
   target:
     - target: nsis
@@ -31,6 +33,7 @@ nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
 linux:
+  executableName: notework
   category: Office
   target:
     - target: AppImage
