@@ -106,3 +106,40 @@ jobs:
           path: notework-ios-simulator.zip
           if-no-files-found: error
           retention-days: 14
+
+  # A v* tag publishes the desktop builds as a GitHub release.
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: desktop
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { path: artifacts }
+      - name: Name release files
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          mkdir release
+          find artifacts/notework-mac -name 'Notework-mac-universal.app.zip' -exec cp {} "release/notework-$v-macos-universal.app.zip" \;
+          find artifacts/notework-mac -name '*.dmg' -exec cp {} "release/notework-$v-macos-universal.dmg" \;
+          find artifacts/notework-win -name '*.exe' -exec cp {} "release/notework-$v-windows-x64-setup.exe" \;
+          find artifacts/notework-linux -name '*.deb' -exec cp {} "release/notework-$v-ubuntu-amd64.deb" \;
+          find artifacts/notework-linux -name '*.AppImage' -exec cp {} "release/notework-$v-linux-x86_64.AppImage" \;
+          ls -la release
+          test "$(ls release | wc -l)" -eq 5
+      - name: Write release notes
+        run: |
+          cat > notes.md <<'NOTES'
+          native notework apps built with Tauri from the same web app as the PWA.
+
+          - **macos** (universal, macOS 11+): open the .dmg and drag notework into applications. the app is ad hoc signed, not notarized, so on first launch right-click it and choose open, or run `xattr -dr com.apple.quarantine /Applications/Notework.app`.
+          - **windows** (x64): run the setup .exe. it is not code signed yet, so SmartScreen may ask you to choose more info → run anyway. WebView2 is installed if missing.
+          - **ubuntu** (amd64): `sudo apt install ./notework-*-ubuntu-amd64.deb`, or make the .AppImage executable and run it.
+
+          add existing folder/file opens notework's own folder browser to connect folders on your computer. each app keeps its own browser storage, separate from the PWA. the web app and PWA stay available at https://legitminh.github.io/notework/.
+          NOTES
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" release/* --repo "$GITHUB_REPOSITORY" --title "notework $GITHUB_REF_NAME" --notes-file notes.md --verify-tag
