@@ -431,6 +431,27 @@ test('pen size uses a nested Keyflow slider, remains scoped, and survives SVG sa
   await expect(page.locator('.drawing-canvas > polyline')).toHaveAttribute('stroke-width', String(size));
 });
 
+test('editor toolbars are one button row tall on an iPad, with no space below', async ({ page }) => {
+  await page.setViewportSize({ width: 820, height: 1180 });
+  const minBox = () => page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--min-box')));
+  const measure = (toolbar: string, below: string) => page.evaluate(([toolbar, below]) => {
+    const bar = document.querySelector<HTMLElement>(toolbar)!.getBoundingClientRect();
+    const next = document.querySelector<HTMLElement>(below)!.getBoundingClientRect();
+    return { height: bar.height, gap: next.top - bar.bottom };
+  }, [toolbar, below]);
+  await create(page, 'row.svg', 'svg file'); await action(page, 'open').click();
+  await expect(drawTools(page)).toBeVisible();
+  const svg = await measure('.standalone-drawing-editor > .drawing-bar', '.standalone-drawing-editor > .drawing-surface');
+  expect(svg.height).toBeLessThanOrEqual(await minBox() + 6);
+  expect(svg.gap).toBeLessThanOrEqual(2);
+  await drawTools(page).getByRole('button', { name: 'exit', exact: true }).click();
+  await home(page); await create(page, 'row.txt'); await action(page, 'open').click();
+  await expect(textTools(page)).toBeVisible();
+  const text = await measure('.editor-toolbar-slot', '.editor-scroll');
+  expect(text.height).toBeLessThanOrEqual(await minBox() + 6);
+  expect(text.gap).toBeLessThanOrEqual(2);
+});
+
 test('SVG drawings share the visual document color wheel, palette and recent colors, and keep stroke colors', async ({ page }) => {
   await create(page, 'colors.svg', 'svg file'); await action(page, 'open').click();
   const tools = drawTools(page);
