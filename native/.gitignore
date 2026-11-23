@@ -1,9 +1,2 @@
 node_modules/
 dist/
-# Regenerated from ../build by `cap sync ios`.
-ios/App/App/public/
-ios/App/App/capacitor.config.json
-ios/App/App/config.xml
-ios/DerivedData/
-ios/App/build/
-xcuserdata/

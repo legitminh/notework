@@ -122,7 +122,7 @@ OPFS supports streamed text/binary storage. The UI exposes decodable text, Notew
 
 ## Native apps
 
-Notework also builds as a native app for macOS, Windows, Linux (Electron) and iOS (Capacitor). The shells live in [`native/`](native/README.md) as a separate pnpm workspace that wraps the same `pnpm build` output, so the web app, PWA, and GitHub Pages deploy are unchanged. See [native/README.md](native/README.md) for build commands, platform differences, and signing.
+Notework also builds as a native app for macOS, Windows, Linux and iOS with [Tauri v2](https://v2.tauri.app). The app lives in [`native/`](native/README.md) as a separate pnpm workspace and Rust crate that wraps the same `pnpm build` output, so the web app, PWA, and GitHub Pages deploy are unchanged. See [native/README.md](native/README.md) for build commands, platform differences, and signing.
 
 ## Keyflow dependency
 
