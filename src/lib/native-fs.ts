@@ -140,3 +140,7 @@ export function reviveNative<T>(value: T): T {
 
 /** One GitHub device-flow login request, sent by the app because GitHub's login pages refuse browser requests. Returns GitHub's JSON. */
 export const githubLogin = (step: 'code' | 'token', params: Record<string, string>) => call<string>('github_login', { step, params });
+/** Open a GitHub login page in the system browser. The app accepts only https://github.com/login/ pages. */
+export const openGitHubLogin = (url: string) => call<void>('github_open', { url });
+/** Bring the Notework window to the front, such as after GitHub approves a login. */
+export const focusApp = () => call<void>('app_focus');

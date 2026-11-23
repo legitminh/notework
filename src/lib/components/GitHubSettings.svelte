@@ -4,8 +4,9 @@
   import StorageNotice from './StorageNotice.svelte';
   import { submitOnEnter } from '../form-shortcuts';
   import type { Source } from '../workspace';
-  import { accessibleRepositories, finishDeviceLogin, forgetAccount, githubLoginUnavailable, installUrl, savedAccount, startDeviceLogin,
-    type AccessibleRepository, type DeviceCode, type GitHubAccount } from '../github/app';
+  import { isNativeApp } from '../native-fs';
+  import { accessibleRepositories, copyLater, finishDeviceLogin, forgetAccount, githubLoginUnavailable, installUrl, openDeviceLogin, savedAccount,
+    startDeviceLogin, startRedirectLogin, type AccessibleRepository, type DeviceCode, type GitHubAccount } from '../github/app';
 
   let { sources, busy, error, onConnect, onLink, onUpdate, onDisconnect }: {
     sources: Source[]; busy: boolean; error: unknown;
@@ -45,10 +46,19 @@
   async function logIn() {
     if (working) return;
     working = true; loginError = undefined;
+    if (!isNativeApp()) {
+      // The browser goes to GitHub and comes back to Notework with the login.
+      try { await startRedirectLogin(); }
+      catch (cause) { loginError = cause; working = false; }
+      return;
+    }
     login = new AbortController();
     try {
-      code = await startDeviceLogin();
-      void navigator.clipboard?.writeText(code.user_code).catch(() => {});
+      const started = startDeviceLogin();
+      // Copy while this click still counts as the person's action; the code arrives shortly.
+      copyLater(started.then((value) => value.user_code));
+      code = await started;
+      await openDeviceLogin(code).catch(() => {});
       account = await finishDeviceLogin(code, login.signal);
       code = undefined;
       working = false;
@@ -100,7 +110,7 @@
   {:else if !account}
     {#if code}
       <p>enter this code on GitHub: <strong class="device-code">{code.user_code}</strong></p>
-      <p class="muted">the code is copied when your browser allows it. <a href={code.verification_uri} target="_blank" rel="noreferrer">open GitHub to enter the code</a>, approve Notework, then come back. Notework is waiting for the approval.</p>
+      <p class="muted">the code is copied and GitHub is open in your browser. paste the code there and approve Notework. Notework comes back to the front once GitHub approves it. <a href={code.verification_uri} target="_blank" rel="noreferrer">open GitHub again</a>.</p>
       <Control onclick={cancelLogin}>cancel login</Control>
     {:else}
       <p class="muted">log in once with the Notework GitHub App. Notework can reach only the repositories you allow, and you stay logged in until you log out or revoke the app on GitHub.</p>
@@ -116,10 +126,12 @@
       <div class="repository-list" role="group" aria-label="repositories Notework can reach">
         {#each repositories as item (keyOf(item))}
           {@const key = keyOf(item)}
-          <label class="repository">
-            <input type="checkbox" value={key} bind:group={chosen} disabled={busy || linked.has(key) || !item.canPush} />
-            <span>{item.owner}/{item.repo}{item.private ? ' · private' : ''}{linked.has(key) ? ' · linked' : !item.canPush ? ' · read-only' : ''}</span>
-          </label>
+          {@const selected = chosen.includes(key)}
+          {@const name = `${item.owner}/${item.repo}${item.private ? ' · private' : ''}${linked.has(key) ? ' · linked' : !item.canPush ? ' · read-only' : ''}`}
+          <Control class="repository" aria-label={name} aria-pressed={selected} disabled={busy || linked.has(key) || !item.canPush}
+            onclick={() => { chosen = selected ? chosen.filter((other) => other !== key) : [...chosen, key]; }}>
+            {selected ? '✓ ' : ''}{name}
+          </Control>
         {/each}
       </div>
       <Control onclick={() => { void link(); }} disabled={busy || working || !chosen.length}>
@@ -171,5 +183,4 @@
   ol { padding-inline-start: 2.25em; font-size: .55em; line-height: 1.65; overflow-wrap: anywhere; }
   .device-code { font-family: ui-monospace, monospace; letter-spacing: .1em; user-select: all; }
   .repository-list { display: grid; gap: .25em; margin-block: .5em; }
-  .repository { display: flex; gap: .5em; align-items: center; overflow-wrap: anywhere; }
 </style>

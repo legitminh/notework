@@ -45,6 +45,7 @@
   import { GitHubApiError, type GitHubConnection } from '../lib/github/api';
   import { setGitHubRecovery } from '../lib/github/recovery';
   import { clearRepository } from '../lib/github/storage';
+  import { finishRedirectLogin } from '../lib/github/app';
   import { loadWorkspace, saveWorkspace } from '../lib/persistence';
   import { supportsBrowserDocuments, storageInfo, storageError } from '../lib/browser-documents';
   import { canDeleteResource, deleteResource } from '../lib/delete-resource';
@@ -270,6 +271,11 @@
     browserDocuments = supportsBrowserDocuments();
     if (browserDocuments) void updateStorage();
     void (async () => {
+      // Returning from GitHub's login page: start finishing the login before the address loses its code.
+      // GitHub's app install page also returns here (setup URL) after repositories are allowed.
+      const githubInstalled = new URLSearchParams(location.search).has('setup_action');
+      const githubReturn = isNativeApp() ? Promise.resolve({ account: undefined }) : finishRedirectLogin()
+        .then((account) => ({ account, error: undefined as unknown }), (error: unknown) => ({ account: undefined, error }));
       try { workspace = new Workspace(await loadWorkspace()); }
       catch { storageMessage = 'browser storage is unavailable. connections and settings will last only for this tab.'; }
       const synced = await Promise.allSettled(workspace.data.sources.map((item) => workspace.github(item.id)?.sync()));
@@ -283,6 +289,10 @@
       await refresh();
       await goto(location.pathname, { state: { notework: ROOT }, shallow: true, replace: true, reset: false });
       loading = false;
+      // Show the repositories to link after a GitHub login, or why it failed.
+      const returned = await githubReturn;
+      if ('error' in returned && returned.error) githubError = returned.error;
+      if (returned.account || githubInstalled || ('error' in returned && returned.error)) await showGitHubSettings();
       await sync.restore();
     })();
     const poll = () => { if (!document.hidden && !loading && !picking && !busy) void refresh(); };

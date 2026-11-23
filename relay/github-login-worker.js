@@ -1,18 +1,21 @@
 // Login relay for the Notework web app (a Cloudflare Worker).
 //
-// GitHub's device-flow login endpoints do not send CORS headers, so a web page cannot
-// call them. This Worker forwards exactly those two requests and nothing else. It holds
-// no secret: the device flow needs only the GitHub App's public client ID. It stores
-// nothing and never sees file contents. The native app does not use it.
+// GitHub's login endpoints do not send CORS headers, so a web page cannot call them.
+// This Worker forwards only GitHub's login requests. The web app logs in with GitHub's
+// redirect flow, and exchanging its one-time code needs the GitHub App's client secret,
+// which lives here as a Worker secret and never reaches the browser. The exchange also
+// requires the PKCE verifier only the page that started the login holds. The Worker
+// stores nothing and never sees file contents. The native app does not use it.
 //
-// Deploy: create a Worker, paste this file, and set two variables:
-//   ALLOWED_ORIGINS  comma-separated web app origins, e.g. https://notework.example
-//   CLIENT_ID        the Notework GitHub App's client ID
+// Deploy: create a Worker, paste this file, and set:
+//   ALLOWED_ORIGINS  variable: comma-separated web app origins, e.g. https://legitminh.github.io
+//   CLIENT_ID        variable: the Notework GitHub App's client ID
+//   CLIENT_SECRET    secret (encrypted): a client secret generated on the GitHub App's page
 // Then put the Worker's URL in GITHUB_APP.relay (src/lib/github/app.ts).
 
 const routes = {
   '/login/device/code': ['client_id'],
-  '/login/oauth/access_token': ['client_id', 'device_code', 'grant_type']
+  '/login/oauth/access_token': ['client_id', 'device_code', 'grant_type', 'code', 'code_verifier']
 };
 
 export default {
@@ -37,6 +40,10 @@ export default {
     if (input.get('client_id') !== env.CLIENT_ID) return new Response('unknown client', { status: 403, headers: cors });
     const body = new URLSearchParams();
     for (const field of fields) if (input.has(field)) body.set(field, input.get(field));
+    if (body.has('code')) {
+      if (!body.get('code_verifier')) return new Response('missing code_verifier', { status: 400, headers: cors });
+      if (env.CLIENT_SECRET) body.set('client_secret', env.CLIENT_SECRET);
+    }
 
     const reply = await fetch('https://github.com' + path, {
       method: 'POST', redirect: 'manual',

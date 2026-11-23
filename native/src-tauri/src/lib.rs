@@ -129,6 +129,8 @@ pub fn run() {
             fs::fs_create,
             fs::fs_remove,
             github::github_login,
+            github::github_open,
+            github::app_focus,
         ])
         .setup(|app| {
             app.manage(fs::Grants::load(app.handle()));

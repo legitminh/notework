@@ -28,3 +28,27 @@ pub async fn github_login(step: String, params: HashMap<String, String>) -> Resu
     .await
     .map_err(|_| "UnknownError: the GitHub login request stopped.".to_string())?
 }
+
+/// Open GitHub's device-code page in the system browser. Only GitHub login pages are allowed.
+#[tauri::command]
+pub fn github_open(url: String) -> Result<(), String> {
+    let allowed = tauri::Url::parse(&url)
+        .map(|url| url.scheme() == "https" && url.host_str() == Some("github.com") && url.path().starts_with("/login/"))
+        .unwrap_or(false);
+    if !allowed {
+        return Err("TypeError: only GitHub login pages can be opened.".into());
+    }
+    tauri_plugin_opener::open_url(url, None::<&str>).map_err(|_| "UnknownError: could not open the browser.".to_string())
+}
+
+/// Bring Notework back to the front once GitHub approves the login, standing in for a redirect.
+#[tauri::command]
+pub fn app_focus<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> Result<(), String> {
+    use tauri::Manager;
+    if let Some(window) = app.get_webview_window("main") {
+        #[cfg(desktop)]
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
+    Ok(())
+}

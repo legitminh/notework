@@ -1,11 +1,12 @@
-// Log in with the Notework GitHub App through GitHub's device flow. The flow needs
-// only the app's public client ID, so no secret ships in the web or native app.
-// GitHub's login endpoints do not allow browser (CORS) requests: the native app
-// sends them from Rust, and the web app sends them through a small relay that
-// forwards only those two requests (see relay/github-login-worker.js).
+// Log in with the Notework GitHub App. No secret ships in the web or native app.
+// The web app uses GitHub's redirect flow: GitHub returns to Notework with a one-time
+// code, and the login relay (relay/github-login-worker.js) adds the app's client secret
+// to exchange it, with PKCE so an intercepted code is useless. The native app uses the
+// device flow, which needs only the public client ID, and sends its two requests from
+// Rust because GitHub's login endpoints refuse browser (CORS) requests.
 // The app is set to issue user tokens that do not expire, so one login lasts until
 // the person revokes it on GitHub. Tokens stay in IndexedDB and go only to GitHub.
-import { githubLogin, isNativeApp } from '../native-fs';
+import { focusApp, githubLogin, isNativeApp, openGitHubLogin } from '../native-fs';
 import { readAccount, storeAccount } from './storage';
 
 /** Values from the GitHub App's settings page. Empty until the app exists. */
@@ -50,6 +51,63 @@ async function loginRequest<T>(step: Step, params: Record<string, string>): Prom
   return await response.json() as T;
 }
 
+const LOGIN_KEY = 'notework:github-login';
+const base64url = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+/** Web app: leave for GitHub's approval page. GitHub sends the person back to this app's callback URL. */
+export async function startRedirectLogin() {
+  const unavailable = githubLoginUnavailable();
+  if (unavailable) throw new Error(unavailable);
+  const state = base64url(crypto.getRandomValues(new Uint8Array(16)));
+  const verifier = base64url(crypto.getRandomValues(new Uint8Array(32)));
+  const challenge = base64url(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))));
+  // The page reloads on return, so the check values must outlive it. They are single use.
+  try { sessionStorage.setItem(LOGIN_KEY, JSON.stringify({ state, verifier })); }
+  catch { throw new Error('this browser blocked session storage, which GitHub login needs.'); }
+  const url = new URL('https://github.com/login/oauth/authorize');
+  url.search = new URLSearchParams({ client_id: GITHUB_APP.clientId, state, code_challenge: challenge, code_challenge_method: 'S256' }).toString();
+  location.assign(url);
+}
+
+/** Web app: finish a login GitHub just returned from, if any. The app's start-up navigation then clears the address bar. */
+export async function finishRedirectLogin(): Promise<GitHubAccount | undefined> {
+  const params = new URLSearchParams(location.search);
+  const code = params.get('code'), state = params.get('state'), denied = params.get('error');
+  if (!state || (!code && !denied)) return undefined;
+  let saved: { state?: string; verifier?: string } = {};
+  try { saved = JSON.parse(sessionStorage.getItem(LOGIN_KEY) ?? '{}'); sessionStorage.removeItem(LOGIN_KEY); } catch { /* Treated as unknown below. */ }
+  if (saved.state !== state || !saved.verifier) throw new Error('this GitHub login did not start here or has expired. log in again.');
+  if (denied) throw new Error('the GitHub login was cancelled on GitHub.');
+  const result = await loginRequest<{ access_token?: string; error?: string }>('token', {
+    client_id: GITHUB_APP.clientId, code: code!, code_verifier: saved.verifier
+  });
+  if (!result.access_token) throw new Error(result.error === 'incorrect_client_credentials'
+    ? 'the login relay is missing the GitHub App client secret.' : 'GitHub did not finish the login. log in again.');
+  return saveAccount(result.access_token);
+}
+
+async function saveAccount(token: string) {
+  const login = (await githubGet<{ login: string }>('/user', token)).login;
+  const account = { token, login };
+  await storeAccount(account);
+  return account;
+}
+
+/** Copy text from a click handler even when the text arrives later (Safari and WebKit allow this form). */
+export function copyLater(text: Promise<string>) {
+  try {
+    if (typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
+      void navigator.clipboard.write([new ClipboardItem({ 'text/plain': text.then((value) => new Blob([value], { type: 'text/plain' })) })])
+        .catch(() => text.then((value) => navigator.clipboard?.writeText(value)).catch(() => {}));
+      return;
+    }
+  } catch { /* Fall back to a plain write below. */ }
+  void text.then((value) => navigator.clipboard?.writeText(value)).catch(() => {});
+}
+
+/** Native app: open GitHub's code page in the system browser. */
+export const openDeviceLogin = (code: DeviceCode) => openGitHubLogin(code.verification_uri);
+
 export async function startDeviceLogin() {
   const unavailable = githubLoginUnavailable();
   if (unavailable) throw new Error(unavailable);
@@ -75,9 +133,8 @@ export async function finishDeviceLogin(code: DeviceCode, signal: AbortSignal): 
     });
     signal.throwIfAborted();
     if (result.access_token) {
-      const login = (await githubGet<{ login: string }>('/user', result.access_token)).login;
-      const account = { token: result.access_token, login };
-      await storeAccount(account);
+      const account = await saveAccount(result.access_token);
+      if (isNativeApp()) void focusApp().catch(() => {});
       return account;
     }
     if (result.error === 'authorization_pending') continue;
