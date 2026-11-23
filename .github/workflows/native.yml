@@ -9,6 +9,11 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      release:
+        description: 'publish a GitHub release with this tag (e.g. v0.1.0); leave empty to only build'
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -109,17 +114,19 @@ jobs:
 
   # A v* tag publishes the desktop builds as a GitHub release.
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || startsWith(inputs.release, 'v')
     needs: desktop
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      TAG: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || inputs.release }}
     steps:
       - uses: actions/download-artifact@v4
         with: { path: artifacts }
       - name: Name release files
         run: |
-          v="${GITHUB_REF_NAME#v}"
+          v="${TAG#v}"
           mkdir release
           find artifacts/notework-mac -name 'Notework-mac-universal.app.zip' -exec cp {} "release/notework-$v-macos-universal.app.zip" \;
           find artifacts/notework-mac -name '*.dmg' -exec cp {} "release/notework-$v-macos-universal.dmg" \;
@@ -142,4 +149,4 @@ jobs:
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" release/* --repo "$GITHUB_REPOSITORY" --title "notework $GITHUB_REF_NAME" --notes-file notes.md --verify-tag
+        run: gh release create "$TAG" release/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "notework $TAG" --notes-file notes.md
