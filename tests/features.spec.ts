@@ -452,6 +452,46 @@ test('editor toolbars are one button row tall on an iPad, with no space below', 
   expect(text.gap).toBeLessThanOrEqual(2);
 });
 
+test('page and inline drawing tools take their font size from the min-box setting', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const measure = (selector: string) => page.locator(selector).first().evaluate((button) => {
+    const style = getComputedStyle(button), minBox = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--min-box'));
+    return { font: parseFloat(style.fontSize) / minBox, height: button.getBoundingClientRect().height / minBox };
+  });
+  await action(page, 'app settings').click(); await action(page, 'appearance').click();
+  await action(page, 'larger type').click(); await action(page, 'larger type').click();
+  await action(page, 'back to app settings').click(); await action(page, 'create new file/folder').click();
+  await page.getByLabel('name', { exact: true }).fill('sizes.txt'); await action(page, 'create text file').click();
+  await action(page, 'open').click();
+  await expect(textTools(page)).toBeVisible();
+  const pageTools = await measure('.editor-toolbar-slot .editor-controls button');
+  await textTools(page).getByRole('button', { name: 'draw…', exact: true }).click();
+  await page.getByRole('dialog', { name: 'choose drawing format' }).getByRole('button', { name: 'SVG', exact: true }).click();
+  await expect(drawTools(page)).toBeVisible();
+  const inlineTools = await measure('.drawing-bar .editor-controls button');
+  expect(inlineTools).toEqual(pageTools);
+  expect(pageTools.font).toBeCloseTo(.44, 2);
+  expect(pageTools.height).toBeCloseTo(1, 2);
+});
+
+test('line numbers label an image display as one tall line at its top left', async ({ page }) => {
+  await create(page, 'numbered.txt'); await action(page, 'open').click();
+  const text = page.getByRole('textbox', { name: 'edit numbered.txt' });
+  await text.fill('first\nsecond\n'); await text.press('Control+End');
+  await textTools(page).getByRole('button', { name: 'draw…', exact: true }).click();
+  await page.getByRole('dialog', { name: 'choose drawing format' }).getByRole('button', { name: 'SVG', exact: true }).click();
+  await drawTools(page).getByRole('button', { name: 'exit', exact: true }).click();
+  await text.press('Control+Home');
+  const preview = page.getByRole('button', { name: /^edit drawing / });
+  await expect(preview).toBeVisible();
+  const number = page.locator('.cm-lineNumbers .cm-gutterElement').filter({ hasText: /^3$/ });
+  await expect(number).toBeVisible();
+  const [gutter, image] = [(await number.boundingBox())!, (await preview.boundingBox())!];
+  expect(Math.abs(gutter.y - image.y)).toBeLessThanOrEqual(1);
+  expect(gutter.height).toBeGreaterThan(image.height - 2);
+  expect(gutter.x + gutter.width).toBeLessThanOrEqual(image.x + 1);
+});
+
 test('SVG drawings share the visual document color wheel, palette and recent colors, and keep stroke colors', async ({ page }) => {
   await create(page, 'colors.svg', 'svg file'); await action(page, 'open').click();
   const tools = drawTools(page);

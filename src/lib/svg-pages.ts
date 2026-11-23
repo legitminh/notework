@@ -1,6 +1,6 @@
 import { imageLoadingIndicator } from './image-loading';
 import { StateEffect, StateField, type EditorState, type Text } from '@codemirror/state';
-import { Decoration, EditorView, WidgetType } from '@codemirror/view';
+import { BlockType, Decoration, EditorView, GutterMarker, WidgetType, lineNumberWidgetMarker } from '@codemirror/view';
 import { foldsChanged, insideFold } from './indent-folding';
 import { DRAWING_WIDTH, DRAWING_PAGE_HEIGHT, strokeWidth, drawingBottom, strokePoints, svgPagePattern, type Drawing } from './drawing';
 
@@ -59,6 +59,18 @@ class DrawingHost extends WidgetType {
   toDOM() { return this.host; }
 }
 
+/** A line number for an image display, drawn at the top of its gutter cell: the display is one tall line. */
+class ImageLineNumber extends GutterMarker {
+  constructor(readonly number: number) { super(); }
+  eq(other: ImageLineNumber) { return this.number === other.number; }
+  toDOM() { return document.createTextNode(String(this.number)); }
+}
+
+// Line numbers skip block widgets that replace a line; image displays keep their line's number.
+const imageLineNumbers = lineNumberWidgetMarker.of((view, widget, block) =>
+  block.type === BlockType.WidgetRange && (widget instanceof SvgPageWidget || widget instanceof DrawingHost)
+    ? new ImageLineNumber(view.state.doc.lineAt(block.from).number) : null);
+
 function scan(doc: Text): SvgPage[] {
   const pages: SvgPage[] = [];
   let from = 0;
@@ -116,7 +128,7 @@ export function svgPages(open: (page: SvgPage) => void, vimMode: () => boolean, 
       }
       return changed ? { pages, drawings, active, loading, decorations: decorate(transaction.state, pages, drawings, active, loading) } : value;
     },
-    provide: (field) => EditorView.decorations.from(field, (value) => value.decorations)
+    provide: (field) => [EditorView.decorations.from(field, (value) => value.decorations), imageLineNumbers]
   });
   return { field, setPreview, setActive, setLoading };
 }

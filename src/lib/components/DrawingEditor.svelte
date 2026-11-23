@@ -699,12 +699,12 @@
   .lasso-resize[data-lasso-drag="nw"], .lasso-resize[data-lasso-drag="se"] { cursor: nwse-resize; }
   .lasso-resize[data-lasso-drag="ne"], .lasso-resize[data-lasso-drag="sw"] { cursor: nesw-resize; }
   .lasso-actions {
-    position: absolute; translate: -50% calc(-100% - 4px); font-size: 14px; display: flex; gap: 4px;
+    position: absolute; translate: -50% calc(-100% - 4px); font-size: var(--tool-font-size); display: flex; gap: 4px;
   }
   .lasso-actions.inside { translate: -50% 4px; }
   .lasso-actions :global(button) {
     background: var(--background); color: var(--primary); border: 1px solid var(--tertiary);
-    padding: 0 8px; line-height: 36px; white-space: nowrap;
+    padding: 0 8px; font-size: inherit; line-height: var(--tool-line-height); white-space: nowrap;
   }
   .lasso-move { display: inline-flex; touch-action: none; }
   .lasso-move :global(button) { cursor: grab; }
