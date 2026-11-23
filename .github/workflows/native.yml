@@ -94,8 +94,12 @@ jobs:
         working-directory: notework/native
         run: pnpm build:ios
       - name: Package simulator app
-        working-directory: notework/native/dist/ios/Build/Products
-        run: ditto -c -k --keepParent "$(ls -d Release-iphonesimulator/*.app | head -1)" "$GITHUB_WORKSPACE/notework-ios-simulator.zip"
+        working-directory: notework/native/src-tauri/gen/apple
+        run: |
+          app="$(find . -path '*iphonesimulator*' -name '*.app' -type d -prune | head -1)"
+          [ -n "$app" ] || app="$(find . -name '*.app' -type d -prune | head -1)"
+          echo "packaging $app"
+          ditto -c -k --keepParent "$app" "$GITHUB_WORKSPACE/notework-ios-simulator.zip"
       - uses: actions/upload-artifact@v4
         with:
           name: notework-ios-simulator

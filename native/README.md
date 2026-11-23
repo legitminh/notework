@@ -51,7 +51,7 @@ Run from `native/` on a Mac:
 ```sh
 pnpm ios:init       # generate the Xcode project in src-tauri/gen/apple (once)
 pnpm ios:dev        # run on a simulator against the Vite dev server
-pnpm build:ios      # unsigned simulator build with xcodebuild (into dist/ios)
+pnpm build:ios      # unsigned simulator build (.app under src-tauri/gen/apple)
 NOTEWORK_IOS_DEVICE=1 pnpm build:ios   # signed device build (.ipa)
 ```
 
