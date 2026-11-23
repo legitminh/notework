@@ -324,7 +324,11 @@
   }
 
   async function closeInlineDrawing() {
-    view?.dispatch({ effects: [pageWidgets.setActive.of(undefined), textLock.reconfigure([])] });
+    // Return to the text with the cursor at the end of the page command (e.g. \svgpage[name]).
+    const page = inlineDrawing && view?.state.field(pageWidgets.field).pages
+      .find((item) => item.from === inlineDrawing!.page.from && item.name === inlineDrawing!.page.name);
+    view?.dispatch({ effects: [pageWidgets.setActive.of(undefined), textLock.reconfigure([])],
+      ...(page ? { selection: { anchor: page.to }, scrollIntoView: true } : {}) });
     const resource = inlineDrawing?.resource, name = inlineDrawing?.page.name;
     if (resource?.image && name) view?.dispatch({ effects: pageWidgets.setPreview.of({ name, strokes: [],
       image: resource.preview ? { src: resource.preview, height: resource.image.height / resource.image.width * 1024 } : undefined }) });

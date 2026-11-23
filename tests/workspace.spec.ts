@@ -1726,6 +1726,12 @@ test('brush inserts a movable SVG page, swaps the inline toolbar, and saves an e
   await expect(toolbar(page, 'Brush').getByText('Command+B · SVG', { exact: true })).toBeVisible();
   await page.keyboard.press('Meta+b');
   await page.getByRole('group', { name: 'Drawing toolbar' }).getByRole('button', { name: 'Exit', exact: true }).click();
+  // Exiting puts the cursor at the end of the page command, which shows its source while selected.
+  await expect(editor.locator('.cm-line', { hasText: /^\\svgpage\[drawing-[^\]]+\]$/ })).toBeVisible();
+  await page.keyboard.insertText('|');
+  await expect(editor.locator('.cm-line', { hasText: /^\\svgpage\[drawing-[^\]]+\]\|$/ })).toBeVisible();
+  await page.keyboard.press('Backspace');
+  await page.keyboard.press('Enter');
   await page.keyboard.insertText('after');
   const preview = page.getByRole('button', { name: /^Edit drawing drawing-/ });
   await expect(preview).toBeVisible();
