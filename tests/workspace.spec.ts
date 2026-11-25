@@ -1066,6 +1066,16 @@ test('Vim physical navigation keeps commands stable and character targets symbol
   await native(2);  // physical D
   await expect(editor).toHaveText('');
 
+  // A direct Insert command releases the following symbolic input, while the
+  // same physical I remains a text-object prefix after an operator.
+  await native(34); // physical I
+  await page.keyboard.insertText('word');
+  await page.keyboard.press('Escape');
+  await native(2);  // physical D
+  await native(34); // physical I
+  await native(13); // physical W
+  await expect(editor).toHaveText('');
+
   // Search text remains symbolic after the physical Slash command.
   await physical('.', 'Slash');
   const prompt = page.locator('.cm-vim-panel input');

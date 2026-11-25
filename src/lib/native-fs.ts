@@ -24,9 +24,11 @@ async function call<T>(command: string, args?: unknown, options?: { headers?: Re
   }
 }
 
-/** Tell the macOS shell whether the focused Vim editor currently owns physical command keys. */
-export const setNativeVimAtextual = (active: boolean) =>
-  isNativeApp() ? call<void>('vim_atextual', { active }) : Promise.resolve();
+let vimModeRevision = 0;
+
+/** Tell the macOS shell which physical commands the focused Vim editor currently owns. */
+export const setNativeVimAtextual = (active: boolean, entry = 0) =>
+  isNativeApp() ? call<void>('vim_atextual', { active, entry, revision: ++vimModeRevision }) : Promise.resolve();
 
 export interface NativePlace { name: string; path: string }
 export interface NativeEntry { name: string; path: string; kind: 'file' | 'directory'; text: boolean }

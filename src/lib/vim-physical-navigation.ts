@@ -106,20 +106,25 @@ export function vimPhysicalNavigation(): Extension {
     ViewPlugin.define((view) => {
       const document = view.dom.ownerDocument;
       let nativeActive = false;
+      let nativeEntry = 0;
       let destroyed = false;
       const exField = () => {
         const field = document.activeElement;
         return (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) &&
           !!field.closest('.cm-vim-panel') && field.parentElement?.firstChild?.textContent === ':' ? field : undefined;
       };
-      const syncNativeMode = () => {
+      const syncNativeMode = (force = false) => {
         if (destroyed) return;
         const vim = getCM(view)?.state.vim;
-        const active = !!vim && (exField() !== undefined ||
+        const field = exField();
+        const active = !!vim && (field !== undefined ||
           (view.hasFocus && !vim.insertMode && !vim.exMode && !vim.expectLiteralNext));
-        if (active === nativeActive) return;
+        const pending = !!vim && (!!vim.inputState.operator || vim.inputState.keyBuffer.length > 0);
+        const entry = active && !field && !pending ? (vim?.visualMode ? 2 : 1) : 0;
+        if (!force && active === nativeActive && entry === nativeEntry) return;
         nativeActive = active;
-        void setNativeVimAtextual(active).catch(() => {});
+        nativeEntry = entry;
+        void setNativeVimAtextual(active, entry).catch(() => {});
       };
       const syncSoon = () => queueMicrotask(syncNativeMode);
       const handler = (event: KeyboardEvent) => {
@@ -142,7 +147,9 @@ export function vimPhysicalNavigation(): Extension {
         } else {
           (field ?? view.contentDOM).dispatchEvent(new KeyboardEvent('keydown', init));
         }
-        syncSoon();
+        // Native interception consumes the previously confirmed state. Publish
+        // the result immediately, even when Vim remains in the same broad mode.
+        syncNativeMode(true);
       };
       // CodeMirror mounts its command/search panel outside the scrolling editor.
       document.addEventListener('keydown', handler, true);

@@ -8,18 +8,30 @@ mod fs;
 mod github;
 
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc,
+    Arc, Mutex,
 };
 use tauri::webview::NewWindowResponse;
 use tauri::{Manager, State, Url, WebviewUrl, WebviewWindowBuilder};
 
+#[derive(Default)]
+struct VimMode {
+    active: bool,
+    entry: u8,
+    revision: u32,
+}
+
 #[derive(Clone, Default)]
-struct VimAtextual(Arc<AtomicBool>);
+struct VimAtextual(Arc<Mutex<VimMode>>);
 
 #[tauri::command]
-fn vim_atextual(active: bool, state: State<'_, VimAtextual>) {
-    state.0.store(active, Ordering::Release);
+fn vim_atextual(active: bool, entry: u8, revision: u32, state: State<'_, VimAtextual>) {
+    let mut mode = state.0.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    if revision <= mode.revision {
+        return;
+    }
+    mode.active = active;
+    mode.entry = if active { entry.min(2) } else { 0 };
+    mode.revision = revision;
 }
 
 /// Pages served by the app itself: the bundled build, or the Vite dev server in debug builds.
@@ -81,10 +93,54 @@ fn macos_vim_key(key: u16) -> bool {
         0..=9 | 11..=51 | 53 | 115 | 116 | 117 | 119 | 121 | 123..=126)
 }
 
+/// Commands that immediately leave a plain Normal/Visual state for text entry.
+/// Release native interception before WebKit processes the synthetic command so
+/// the first rapidly typed IME key cannot race the asynchronous state update.
+#[cfg(target_os = "macos")]
+fn macos_vim_enters_text(key: u16, upper: bool, entry: u8) -> bool {
+    match entry {
+        // Normal: a/A, s/S, o/O, i/I, C, and R.
+        1 => matches!(key, 0 | 1 | 31 | 34) || (upper && matches!(key, 8 | 15)),
+        // Visual: A, I, c/C, s/S, and R replace or extend the selection with text.
+        2 => matches!(key, 1 | 8) || (upper && matches!(key, 0 | 15 | 34)),
+        _ => false,
+    }
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod macos_vim_key_tests {
+    use super::macos_vim_enters_text;
+
+    #[test]
+    fn immediate_insert_commands_release_ime_input_before_dispatch() {
+        for key in [0, 1, 31, 34] {
+            assert!(macos_vim_enters_text(key, false, 1));
+            assert!(macos_vim_enters_text(key, true, 1));
+        }
+        assert!(macos_vim_enters_text(8, true, 1));
+        assert!(macos_vim_enters_text(15, true, 1));
+        assert!(!macos_vim_enters_text(8, false, 1));
+        assert!(!macos_vim_enters_text(2, false, 1));
+        assert!(!macos_vim_enters_text(38, false, 1));
+
+        for key in [1, 8] {
+            assert!(macos_vim_enters_text(key, false, 2));
+            assert!(macos_vim_enters_text(key, true, 2));
+        }
+        for key in [0, 15, 34] {
+            assert!(!macos_vim_enters_text(key, false, 2));
+            assert!(macos_vim_enters_text(key, true, 2));
+        }
+        assert!(!macos_vim_enters_text(31, false, 2));
+        assert!(!macos_vim_enters_text(31, true, 2));
+        assert!(!macos_vim_enters_text(34, false, 0));
+    }
+}
+
 /// Capture physical Vim commands before the active input method can turn them into
 /// composed text. Escape is also kept away from AppKit's fullscreen cancellation.
 #[cfg(target_os = "macos")]
-fn keep_macos_editor_keys(webview: tauri::WebviewWindow, vim_atextual: Arc<AtomicBool>) {
+fn keep_macos_editor_keys(webview: tauri::WebviewWindow, vim_atextual: Arc<Mutex<VimMode>>) {
     use block2::RcBlock;
     use objc2_app_kit::{NSEvent, NSEventMask, NSEventModifierFlags, NSWindow, NSWindowStyleMask};
     use std::{ptr, ptr::NonNull};
@@ -101,10 +157,30 @@ fn keep_macos_editor_keys(webview: tauri::WebviewWindow, vim_atextual: Arc<Atomi
             }
         }
         let flags = event.modifierFlags();
-        if vim_atextual.load(Ordering::Acquire)
-            && macos_vim_key(event.keyCode())
-            && !flags.contains(NSEventModifierFlags::Command)
-        {
+        let intercepted = {
+            let mut mode = vim_atextual.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            if mode.active
+                && macos_vim_key(event.keyCode())
+                && !flags.contains(NSEventModifierFlags::Command)
+            {
+                let entry = mode.entry;
+                // Every physical command consumes the browser-confirmed state. The
+                // browser publishes the resulting Vim state after handling it.
+                mode.entry = 0;
+                let upper = flags.contains(NSEventModifierFlags::Shift)
+                    != flags.contains(NSEventModifierFlags::CapsLock);
+                let modified = flags.intersects(
+                    NSEventModifierFlags::Control | NSEventModifierFlags::Option,
+                );
+                if !modified && macos_vim_enters_text(event.keyCode(), upper, entry) {
+                    mode.active = false;
+                }
+                true
+            } else {
+                false
+            }
+        };
+        if intercepted {
             let script = format!(
                 "document.dispatchEvent(new CustomEvent('notework-native-keydown', {{ detail: {{ keyCode: {}, shiftKey: {}, ctrlKey: {}, altKey: {}, metaKey: {}, capsLock: {}, repeat: {} }} }}));",
                 event.keyCode(),
