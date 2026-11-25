@@ -87,16 +87,17 @@ Press **Esc** in an inline or standalone drawing to cancel any stroke in progres
 
 Home exposes **create new file/folder** inside app settings. Computer, browser, and GitHub folders expose it directly in the folder view. Home is a virtual parent that holds items from multiple sources, with no filesystem folder of its own. App settings manages connected sources and preferences. The separate creation screen accepts a name and previews the path for each available type: page folder, visual document, folder, text file, or SVG drawing. New raster drawings are visual documents; existing PNG/JPEG/HEIC/ORA images still open and edit in their own format. The first option, **create page folder**, creates the named folder with an empty `[foldername].main` text file inside it: `math.2999/math.2999.main`. Creation finishes in the folder view, where the file's **open** action enters its editor. Choose any other creation action to open that new state in navigation mode. Existing names are rejected without changing their contents.
 
-New assets inherit the parent folder’s storage. Inside a selected machine folder, Create requests write permission and writes directly into that folder. Inside a browser folder, Create writes an actual OPFS child. Root has no backing folder, so new root assets use OPFS. Denied local write access never falls back to browser storage. Directed links may point across storage sources; they do not create child or parent relationships. Older browser-backed virtual children are preserved as explicit links without moving their files. The available actions come from `src/lib/asset-types.ts`; adding a supported type there adds its creation action and initializer.
+New assets inherit the parent folder’s storage. Inside a selected machine folder, Create requests write permission and writes directly into that folder. Inside a browser folder, Create writes an actual OPFS child. Root has no backing folder, so new root assets use **native storage**, the app's default storage: in the native app it is the app's own documents folder on disk, and in the PWA it is app-owned browser storage (OPFS). Notework detects which one it runs as. Denied local write access never falls back to browser storage. Directed links may point across storage sources; they do not create child or parent relationships. Older browser-backed virtual children are preserved as explicit links without moving their files. The available actions come from `src/lib/asset-types.ts`; adding a supported type there adds its creation action and initializer.
 
 ## Graph and storage
 
 IndexedDB stores machine source handles, resource locations, root edges, and directed-link metadata. Browser resources are stored as OPFS paths and types, then reopened from those paths on startup; their handles are never structured-cloned or stored in IndexedDB. Older handle-based browser records are migrated on the next save. Files/folders are identified by a source ID and a path inside that source. Folder edges are resolved lazily from the live filesystem. Each node has an app-managed resource URI:
 
 - `notework-local://SOURCE_ID/name/path` identifies a user-selected machine handle. It is an opaque app identifier, not an invented `file://` path; browsers do not expose arbitrary absolute machine paths.
-- `opfs://notework/documents/DOCUMENT_ID/name` identifies an app-created document in browser-owned OPFS storage.
+- `opfs://notework/documents/DOCUMENT_ID/name` identifies an app-created document in native storage in the PWA (browser-owned OPFS).
+- `native://notework/documents/DOCUMENT_ID/name` identifies an app-created document in native storage in the native app: the `documents` folder in the app's data folder. The location is saved rather than the path, because the app's data folder can move (iOS app updates).
 
-Creating a resource at home allocates its contents in OPFS before committing a child node under the virtual root. Failed metadata commits roll the new resource back. Existing machine files are tracked by handle. Text classification reads bytes in the browser to hide binary resources. Files on your computer and in browser storage stay there unless you explicitly move them into a GitHub folder.
+Creating a resource at home allocates its contents in native storage before committing a child node under the virtual root. Failed metadata commits roll the new resource back. Existing machine files are tracked by handle. Text classification reads bytes in the browser to hide binary resources. Files on your computer and in browser storage stay there unless you explicitly move them into a GitHub folder.
 
 ## GitHub folders
 
@@ -118,7 +119,7 @@ Missing resources are checked on startup, navigation/refresh, window focus, and 
 
 The production build includes a web manifest and service worker for an installable offline app shell. After its first successful online load, browser documents can be opened, created, edited, and saved offline. The service worker caches only app assets, not user file contents. Development mode does not build a service worker.
 
-App settings shows estimated usage/quota and a **keep browser storage** action using `navigator.storage.persist()`. Persistence may be denied. Installing a PWA does not create unlimited storage or protect against manual clearing. Keep exported backups of important notes. Writes report quota errors without discarding the open buffer.
+In the PWA, app settings shows native storage's estimated usage/quota, and creating an item at home asks the browser to keep it with `navigator.storage.persist()`. Persistence may be denied. Installing a PWA does not create unlimited storage or protect against manual clearing. Keep exported backups of important notes. Writes report quota errors without discarding the open buffer.
 
 OPFS supports streamed text/binary storage. The UI exposes decodable text, Notework SVG drawings, and PNG/JPEG/HEIC/ORA images.
 
@@ -232,7 +233,7 @@ When you open a document you get one toolbar above the canvas. It holds the **ti
   * If content ends up outside the canvas, leaving the tool asks whether to keep it outside, crop it to the canvas, or keep transforming.
   * The whole transform is one undo step.
 * **Layer**: active layer, add raster or vector layers, delete, show/hide, raise/lower, an opacity slider, and rename. Layer changes are undoable along with painting. Undo stores only the 128 px tiles each operation touched, capped by `history` frames and `history_mb`.
-* **Brush library:** `app.asset/editor.visual/brushes` is created in browser storage at Home the first time you open a visual document, and it's filled with the Krita basic pack. **Import brush…** converts Krita `.kpp`, GIMP `.vbr`, MyPaint `.myb` and `.vbrush` files into the library. Brush references are ordinary file references, so you can move brushes into a cloud folder or a GitHub folder and point documents at them.
+* **Brush library:** `app.asset/editor.visual/brushes` is created in native storage at Home the first time you open a visual document, and it's filled with the Krita basic pack. **Import brush…** converts Krita `.kpp`, GIMP `.vbr`, MyPaint `.myb` and `.vbrush` files into the library. Brush references are ordinary file references, so you can move brushes into a cloud folder or a GitHub folder and point documents at them.
 * **Raw text** saves your work, then opens `sketch.visual` in the text editor. **Visual editor** in that toolbar saves the text and returns to the canvas.
 
 Navigation previews show SVG files, including vector layers, as pictures rather than code.

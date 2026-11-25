@@ -692,7 +692,7 @@ test('nested page references stop cycles and missing references do not create fi
   await expect(page.getByText('circular page reference: cycle.txt', { exact: true })).toBeVisible();
   await expect(page.getByText('referenced file “missing.txt” is unavailable.', { exact: true })).toBeVisible();
   await page.keyboard.press('ControlOrMeta+s');
-  await expect(page.getByText('saved in browser storage', { exact: true })).toBeVisible();
+  await expect(page.getByText('saved in native storage', { exact: true })).toBeVisible();
   expect(await bytes(page, 'missing.txt')).toBeNull();
 });
 

@@ -902,7 +902,7 @@
       {:else if dirty}unsaved changes
       {:else if githubPending}draft saved in this browser · exit to sync to GitHub
       {:else if !error && node.storage === 'github'}saved on GitHub
-      {:else if !error}saved {node.storage === 'browser' ? 'in browser storage' : 'on your computer'}{/if}
+      {:else if !error}saved {node.storage === 'browser' || node.storage === 'native' ? 'in native storage' : 'on your computer'}{/if}
     </p>
     {#if error}<StorageNotice {error} />{/if}
     <div class="raster-inline-slot" hidden={!inlineDrawing?.resource?.image} bind:this={rasterHost}></div>

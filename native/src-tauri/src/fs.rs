@@ -4,7 +4,9 @@
 //! computer (`fs_places`, `fs_browse`, `fs_search`) so the person can choose what
 //! to connect. File contents are read and written only below paths the person
 //! chose with an explicit action (`fs_grant`); grants are kept in the app's data
-//! folder. Errors start with the DOMException name the web app expects.
+//! folder. Native storage, the app's own `documents` folder inside its data folder,
+//! is always allowed: it holds what the person creates at home in the native app.
+//! Errors start with the DOMException name the web app expects.
 use serde::Serialize;
 use std::fs;
 use std::io::{ErrorKind, Read};
@@ -16,6 +18,8 @@ use tauri::{AppHandle, Manager, Runtime, State};
 
 pub struct Grants {
     file: Option<PathBuf>,
+    /// Native storage: the app-owned documents folder, resolved through symbolic links.
+    documents: Option<PathBuf>,
     roots: Mutex<Vec<PathBuf>>,
 }
 
@@ -27,14 +31,29 @@ impl Grants {
             .and_then(|file| fs::read(file).ok())
             .and_then(|bytes| serde_json::from_slice::<Vec<PathBuf>>(&bytes).ok())
             .unwrap_or_default();
-        Grants { file, roots: Mutex::new(roots) }
+        let documents = app.path().app_data_dir().ok().map(|dir| dir.join("documents")).and_then(|dir| {
+            fs::create_dir_all(&dir).ok()?;
+            fs::canonicalize(&dir).ok()
+        });
+        Grants { file, documents, roots: Mutex::new(roots) }
+    }
+
+    /// Native storage is always allowed and never needs a saved grant.
+    fn native_storage(&self, path: &Path) -> bool {
+        self.documents.as_ref().is_some_and(|documents| path.starts_with(documents))
     }
 
     fn covers(&self, path: &Path) -> bool {
+        if self.native_storage(path) {
+            return true;
+        }
         self.roots.lock().map(|roots| roots.iter().any(|root| path.starts_with(root))).unwrap_or(false)
     }
 
     fn add(&self, path: PathBuf) -> Result<(), String> {
+        if self.native_storage(&path) {
+            return Ok(());
+        }
         let mut roots = self.roots.lock().map_err(|_| "UnknownError: folder access is unavailable.".to_string())?;
         if roots.iter().any(|root| path.starts_with(root)) {
             return Ok(());
@@ -247,6 +266,14 @@ pub async fn fs_search(path: String, query: String) -> Result<Vec<Entry>, String
         }
     }
     Ok(results)
+}
+
+/// The native storage folder, where new resources at home are created.
+#[tauri::command]
+pub fn fs_documents(grants: State<Grants>) -> Result<String, String> {
+    let documents = grants.documents.as_ref().ok_or("NotSupportedError: native storage is unavailable on this device.")?;
+    fs::create_dir_all(documents).map_err(|cause| error(cause, documents))?;
+    Ok(documents.to_string_lossy().into_owned())
 }
 
 #[tauri::command]

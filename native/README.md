@@ -62,8 +62,8 @@ NOTEWORK_IOS_DEVICE=1 pnpm build:ios   # signed device build (.ipa)
 Tauri uses each platform's own web engine, so features depend on it:
 
 - **Machine folders** work on every platform. The app has no system folder dialog: **link resource → local filesystem** opens Notework's own folder browser, which lists the computer's places (home, desktop, documents, downloads, drives or volumes), navigates with `..` like Notework itself, works with keyboard navigation, and searches names below the current folder. Notework reads and saves files only below the folders and files you select there; the grants are kept in the app's data folder. On iOS the browser shows the app's own documents folder, which is also visible in the Files app.
-- **Browser documents (OPFS)** work everywhere. WebKitGTK ships the Storage API and OPFS turned off, so the Linux app turns them on before the page loads. On macOS and iOS, saving needs WebKit's writable file streams, so use macOS 26 / iOS 26 or newer.
-- **Storage is per app.** Each native app has its own browser storage, separate from the PWA in your browser. Browser documents made in the PWA do not appear in the app; export them or keep them in a GitHub folder to share them.
+- **Native storage** is the default storage. What you create at home is saved as ordinary files in the app's own `documents` folder inside its data folder (for example `~/Library/Application Support/io.github.legitminh.notework/documents` on macOS), not in the web view's browser storage. Notes an earlier version kept in the app's browser storage are moved there on the next start, keeping their links; the browser copy is removed only after the move is saved. WebKitGTK ships the Storage API and OPFS turned off, so the Linux app still turns them on before the page loads for that move.
+- **Storage is per app.** The PWA in your browser keeps its native storage in browser storage instead, separate from the app. Notes made in the PWA do not appear in the app; export them or keep them in a GitHub folder to share them.
 - **Offline**: every file is bundled in the app, so it works offline without the service worker.
 
 ## Signing and distribution

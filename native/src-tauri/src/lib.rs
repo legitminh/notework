@@ -3,7 +3,8 @@
 //! The window loads the same static build the PWA ships, from Tauri's own app
 //! origin. Besides the GitHub login requests in `github`, the commands are the machine folder ones in `fs`: the page lists
 //! names to choose folders in Notework's own folder browser, and reads and writes
-//! contents only below folders the person chose.
+//! contents only below folders the person chose and in native storage, the app's
+//! own documents folder.
 mod fs;
 mod github;
 
@@ -185,6 +186,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             vim_atextual,
             fs::fs_places,
+            fs::fs_documents,
             fs::fs_browse,
             fs::fs_parent,
             fs::fs_search,

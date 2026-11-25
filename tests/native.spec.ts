@@ -17,6 +17,8 @@ test.beforeEach(async ({ page }) => {
   test.info().annotations.push({ type: 'errors', description: '' });
   (page as Page & { errors?: string[] }).errors = errors;
   await page.addInitScript(() => {
+    // Tests can start as the PWA, then reload as the native app.
+    if (localStorage.getItem('as-pwa')) return;
     type Item = { kind: 'file' | 'directory'; content?: string };
     const seed: Record<string, Item> = {
       '/home/test': { kind: 'directory' },
@@ -33,7 +35,8 @@ test.beforeEach(async ({ page }) => {
     const grants = (): string[] => JSON.parse(localStorage.getItem('native-grants') ?? '[]');
     const name = (path: string) => path.split('/').at(-1)!;
     const parent = (path: string) => path.slice(0, path.lastIndexOf('/')) || '/';
-    const covered = (path: string) => grants().some((root) => path === root || path.startsWith(root + '/'));
+    const documents = '/app data/documents';
+    const covered = (path: string) => path === documents || path.startsWith(documents + '/') || grants().some((root) => path === root || path.startsWith(root + '/'));
     const fail = (kind: string, message: string) => { throw `${kind}: ${message}`; };
     const need = (path: string) => { if (!covered(path)) fail('NotAllowedError', 'not granted'); };
     const entry = (fs: Record<string, Item>, path: string) => ({
@@ -51,6 +54,7 @@ test.beforeEach(async ({ page }) => {
         const path = args instanceof Uint8Array ? decodeURIComponent(options!.headers!['notework-path']) : args?.path as string;
         switch (command) {
           case 'fs_places': return [{ name: 'home', path: '/home/test' }];
+          case 'fs_documents': fs[documents] = { kind: 'directory' }; save(fs); return documents;
           case 'fs_browse': return children(fs, path);
           case 'fs_parent': return path === '/' ? null : parent(path);
           case 'fs_search': {
@@ -145,4 +149,83 @@ test('native folders create and save machine files through the app', async ({ pa
   await page.keyboard.type('saved on this computer');
   await page.keyboard.press('ControlOrMeta+s');
   await expect.poll(async () => (await file())?.content).toContain('saved on this computer');
+});
+
+const nativeFs = (page: Page) => page.evaluate(() => JSON.parse(localStorage.getItem('native-fs') ?? '{}') as Record<string, { kind: string; content?: string }>);
+
+test('new items at home go to native storage, the app’s own folder on disk', async ({ page }) => {
+  await page.goto('/');
+  await expect(button(page, 'app settings')).toBeEnabled();
+  await button(page, 'app settings').click();
+  // Native storage replaces the browser storage controls.
+  await expect(button(page, 'keep browser storage')).toHaveCount(0);
+  await button(page, 'create new file/folder').click();
+  await expect(page.getByText('new assets are saved inside this folder in native storage.')).toBeVisible();
+  await page.getByLabel('name', { exact: true }).fill('home note.txt');
+  await button(page, 'create text file').click();
+  await expect.poll(async () => Object.keys(await nativeFs(page)).filter((path) => path.endsWith('/home note.txt')))
+    .toEqual([expect.stringMatching(/^\/app data\/documents\/[0-9a-f-]{36}\/home note\.txt$/)]);
+  await expect(page.locator('.path').first()).toContainText('native storage');
+  await button(page, 'open').click();
+  const editor = page.getByRole('textbox', { name: 'edit home note.txt', exact: true });
+  await editor.click();
+  await page.keyboard.insertText('kept on disk');
+  await page.keyboard.press('ControlOrMeta+s');
+  await expect(page.getByText('saved in native storage', { exact: true })).toBeVisible();
+  const saved = async () => Object.entries(await nativeFs(page)).find(([path]) => path.endsWith('/home note.txt'))?.[1].content;
+  await expect.poll(saved).toBe('kept on disk');
+  // Nothing went to browser storage.
+  expect(await page.evaluate(async () => {
+    const names: string[] = [];
+    try {
+      const documents = await (await (await navigator.storage.getDirectory()).getDirectoryHandle('notework')).getDirectoryHandle('documents');
+      for await (const name of (documents as unknown as { keys(): AsyncIterable<string> }).keys()) names.push(name);
+    } catch { /* No browser documents folder at all. */ }
+    return names;
+  })).toEqual([]);
+
+  // The location is saved, not the path, and restores after a reload.
+  await page.reload();
+  await button(page, 'home note.txt').click();
+  await button(page, 'open').click();
+  await expect(editor).toHaveText('kept on disk');
+});
+
+test('the native app moves notes from browser storage into native storage', async ({ page }) => {
+  await page.goto('/');
+  await page.evaluate(() => localStorage.setItem('as-pwa', '1'));
+  await page.reload();
+  await expect(button(page, 'app settings')).toBeEnabled();
+  await button(page, 'app settings').click();
+  await button(page, 'create new file/folder').click();
+  await page.getByLabel('name', { exact: true }).fill('old notes');
+  await button(page, 'create folder').click();
+  await expect(page.getByRole('heading', { name: 'old notes/' })).toBeVisible();
+  await button(page, 'create new file/folder').click();
+  await page.getByLabel('name', { exact: true }).fill('kept.txt');
+  await button(page, 'create text file').click();
+  await button(page, 'open').click();
+  const editor = page.getByRole('textbox', { name: 'edit kept.txt', exact: true });
+  await editor.click();
+  await page.keyboard.insertText('written in the browser');
+  await page.keyboard.press('ControlOrMeta+s');
+  await expect(page.getByText('saved in native storage', { exact: true })).toBeVisible();
+
+  // The same origin now runs as the native app.
+  await page.evaluate(() => localStorage.removeItem('as-pwa'));
+  await page.goto('/');
+  await button(page, 'old notes/').click();
+  await button(page, 'kept.txt').click();
+  await button(page, 'open').click();
+  await expect(editor).toHaveText('written in the browser');
+  const files = await nativeFs(page);
+  expect(Object.entries(files).filter(([path]) => path.startsWith('/app data/documents/')).map(([path, item]) => [path.replace(/[0-9a-f-]{36}/, 'id'), item]))
+    .toEqual(expect.arrayContaining([['/app data/documents/id/old notes/kept.txt', { kind: 'file', content: 'written in the browser' }]]));
+  // The browser copy is removed once the native copy is saved.
+  expect(await page.evaluate(async () => {
+    const names: string[] = [];
+    const documents = await (await (await navigator.storage.getDirectory()).getDirectoryHandle('notework')).getDirectoryHandle('documents');
+    for await (const name of (documents as unknown as { keys(): AsyncIterable<string> }).keys()) names.push(name);
+    return names;
+  })).toEqual([]);
 });

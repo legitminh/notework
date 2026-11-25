@@ -38,7 +38,7 @@ test('WebKit persistent storage creates folders, text, and drawings without clon
     await editor.fill('Written on iPad');
     const toolbar = page.getByRole('group', { name: 'editor toolbar' });
     await page.keyboard.press('ControlOrMeta+s');
-    await expect(page.getByText('saved in browser storage', { exact: true })).toBeVisible();
+    await expect(page.getByText('saved in native storage', { exact: true })).toBeVisible();
     await toolbar.getByRole('button', { name: 'export', exact: true }).click();
     const exportDialog = page.getByRole('dialog', { name: 'export', exact: true });
     await expect(exportDialog.getByRole('button', { name: 'share PDF', exact: true })).toBeEnabled();

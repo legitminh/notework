@@ -7,8 +7,16 @@ import { GitHubFile, GitHubDirectory, type GitHubRepository } from './github/rep
 import type { GitHubConnection } from './github/api';
 
 export const ROOT = 'root';
-export type Storage = 'local' | 'browser' | 'github';
-export const storageLabel = (storage: Storage) => storage === 'github' ? 'GitHub' : storage === 'browser' ? 'browser storage' : 'computer storage';
+/**
+ * `native` is native storage in the native app: the app's own documents folder on disk.
+ * `browser` is native storage in the PWA: app-owned OPFS. Both are app-owned and hold
+ * what the person creates at home; `local` is a machine folder the person selected.
+ */
+export type Storage = 'local' | 'browser' | 'native' | 'github';
+/** Storage kinds whose resources live in Notework's own app storage. */
+export const appOwned = (storage: Storage | undefined) => storage === 'browser' || storage === 'native';
+export const storageLabel = (storage: Storage) => storage === 'github' ? 'GitHub' : appOwned(storage) ? 'native storage' : 'computer storage';
+export type AppLocation = { id: string; uri: string; storage: 'browser' | 'native' };
 export interface Source {
   id: string;
   handle: LocalHandle;
@@ -501,13 +509,13 @@ export class Workspace {
   }
 
   async connect(handle: LocalHandle, from: string | null = ROOT,
-    location?: { id: string; uri: string; storage: 'browser' }, physicalParent?: LocalDirectory): Promise<StateNode> {
+    location?: AppLocation, physicalParent?: LocalDirectory): Promise<StateNode> {
     let node: StateNode | undefined;
     // Canonicalize picker selections inside existing grants to prevent duplicate states/cycles.
     for (const source of this.data.sources) {
       try {
         if (await source.handle.isSameEntry(handle)) {
-          if (physicalParent && source.storage !== 'browser') source.physicalParent = physicalParent;
+          if (physicalParent && !appOwned(source.storage)) source.physicalParent = physicalParent;
           node = this.remember(source.id, [], handle); break;
         }
         if (source.handle.kind === 'directory') {
