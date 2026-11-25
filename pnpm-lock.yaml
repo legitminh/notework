@@ -27,8 +27,8 @@ importers:
         specifier: ^6.43.15
         version: 6.43.15
       '@legitminh/keyflow':
-        specifier: github:legitminh/keyflow#d5aad1715c3e5b8e7a39140f81e0394bc008315d
-        version: https://codeload.github.com/legitminh/keyflow/tar.gz/d5aad1715c3e5b8e7a39140f81e0394bc008315d(svelte@5.57.3(@typescript-eslint/types@8.71.0))
+        specifier: github:legitminh/keyflow#f8700ccf954c0d15606177d5b20c2160c94254c8
+        version: https://codeload.github.com/legitminh/keyflow/tar.gz/f8700ccf954c0d15606177d5b20c2160c94254c8(svelte@5.57.3(@typescript-eslint/types@8.71.0))
       '@replit/codemirror-vim':
         specifier: ^6.4.0
         version: 6.4.0(@codemirror/commands@6.11.1)(@codemirror/language@6.13.1)(@codemirror/search@6.7.2)(@codemirror/state@6.7.6)(@codemirror/view@6.43.15)
@@ -115,9 +115,9 @@ packages:
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
 
-  '@legitminh/keyflow@https://codeload.github.com/legitminh/keyflow/tar.gz/d5aad1715c3e5b8e7a39140f81e0394bc008315d':
-    resolution: {gitHosted: true, integrity: sha512-VdFiz7686LqivtQ+XIE14C+zXuVnVzvdwIjk5jbx06LsgmBGbLNlEr8OKJjzi3AlyHLOFdLAqTH/BV6ajmOa5Q==, tarball: https://codeload.github.com/legitminh/keyflow/tar.gz/d5aad1715c3e5b8e7a39140f81e0394bc008315d}
-    version: 0.15.0
+  '@legitminh/keyflow@https://codeload.github.com/legitminh/keyflow/tar.gz/f8700ccf954c0d15606177d5b20c2160c94254c8':
+    resolution: {gitHosted: true, integrity: sha512-dDOPPoTx6u0ys/XRRtsM/jcQIGFVtOdIqqyUcAxtNPPUCzv8w9Vv37RHjTUzinb/+ChdRHJlT0Ghdyqv0KfGFw==, tarball: https://codeload.github.com/legitminh/keyflow/tar.gz/f8700ccf954c0d15606177d5b20c2160c94254c8}
+    version: 0.16.0
     engines: {node: '>=22'}
     peerDependencies:
       svelte: ^5.56.10
@@ -701,7 +701,7 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.6.0
 
-  '@legitminh/keyflow@https://codeload.github.com/legitminh/keyflow/tar.gz/d5aad1715c3e5b8e7a39140f81e0394bc008315d(svelte@5.57.3(@typescript-eslint/types@8.71.0))':
+  '@legitminh/keyflow@https://codeload.github.com/legitminh/keyflow/tar.gz/f8700ccf954c0d15606177d5b20c2160c94254c8(svelte@5.57.3(@typescript-eslint/types@8.71.0))':
     dependencies:
       svelte: 5.57.3(@typescript-eslint/types@8.71.0)
 

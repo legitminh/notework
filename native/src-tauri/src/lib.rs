@@ -62,26 +62,24 @@ fn menu<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> tauri::Result<tauri::me
     ])
 }
 
-/// macOS normally treats Escape as a request to leave native fullscreen before the
-/// webview can use it. Route that key straight to the active responder instead, so
-/// Notework's editor, menus and shortcuts keep their usual Escape behavior.
+/// macOS normally treats Escape as a request to leave native fullscreen. Swallow
+/// that AppKit event and deliver an equivalent DOM event straight to Notework, so
+/// an unhandled webview key can never bubble back to NSWindow and leave fullscreen.
 #[cfg(target_os = "macos")]
-fn keep_escape_in_fullscreen() {
+fn keep_escape_in_fullscreen(webview: tauri::WebviewWindow) {
     use block2::RcBlock;
-    use objc2::MainThreadMarker;
-    use objc2_app_kit::{NSEvent, NSEventMask, NSWindowStyleMask};
+    use objc2_app_kit::{NSEvent, NSEventMask, NSWindow, NSWindowStyleMask};
     use std::{ptr, ptr::NonNull};
 
-    let handler = RcBlock::new(|event: NonNull<NSEvent>| {
+    let handler = RcBlock::new(move |event: NonNull<NSEvent>| {
         let event = unsafe { event.as_ref() };
         if event.keyCode() == 53 {
-            if let Some(window) = MainThreadMarker::new().and_then(|mtm| event.window(mtm)) {
-                if window.styleMask().contains(NSWindowStyleMask::FullScreen) {
-                    if let Some(responder) = window.firstResponder() {
-                        responder.keyDown(event);
-                    }
-                    return ptr::null_mut();
-                }
+            let fullscreen = webview.ns_window().ok().and_then(|window| unsafe {
+                window.cast::<NSWindow>().as_ref()
+            }).is_some_and(|window| window.styleMask().contains(NSWindowStyleMask::FullScreen));
+            if fullscreen {
+                let _ = webview.eval("(document.activeElement || document.body).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true, composed: true }));");
+                return ptr::null_mut();
             }
         }
         event as *const NSEvent as *mut NSEvent
@@ -193,7 +191,7 @@ pub fn run() {
                 .min_inner_size(480.0, 360.0);
             let window = window.build()?;
             #[cfg(target_os = "macos")]
-            keep_escape_in_fullscreen();
+            keep_escape_in_fullscreen(window.clone());
             #[cfg(target_os = "linux")]
             window.with_webview(|webview| {
                 use webkit2gtk::WebViewExt;

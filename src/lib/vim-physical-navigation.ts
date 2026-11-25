@@ -75,9 +75,14 @@ export function vimPhysicalNavigation(): Extension {
         const vim = getCM(view)?.state.vim;
         // Inserted text and a pending literal character are symbolic. Search and
         // Ex fields are outside contentDOM; the capture listener handles only Ex.
-        if (!vim || (vim.insertMode && !event.ctrlKey) || vim.exMode || vim.expectLiteralNext || event.isComposing) return false;
+        if (!vim || (vim.insertMode && !event.ctrlKey) || vim.exMode || vim.expectLiteralNext) return false;
         const key = physicalVimKey(event);
-        if (!key || key === event.key) return false;
+        if (!key) return false;
+        // Always replace the original printable key, even when its symbol already
+        // matches. Input methods may emit text after that original event unless it
+        // is explicitly cancelled, causing commands such as j/k to also type.
+        event.preventDefault();
+        event.stopImmediatePropagation();
         const replacement = new KeyboardEvent('keydown', {
           key,
           bubbles: true,

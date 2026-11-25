@@ -1044,6 +1044,14 @@ test('Vim physical navigation keeps commands stable and character targets symbol
   await physical('ч', 'KeyX');
   await expect(editor).toHaveText('ab');
 
+  // An input method may mark a command key as composing. Normal mode still
+  // consumes the physical command and cancels its text-producing default.
+  const commandWasCanceled = await editor.evaluate((element) => !element.dispatchEvent(new KeyboardEvent('keydown', {
+    key: 'j', code: 'KeyJ', isComposing: true, bubbles: true, cancelable: true
+  })));
+  expect(commandWasCanceled).toBe(true);
+  await expect(editor).toHaveText('ab');
+
   // Search text remains symbolic after the physical Slash command.
   await physical('.', 'Slash');
   const prompt = page.locator('.cm-vim-panel input');
