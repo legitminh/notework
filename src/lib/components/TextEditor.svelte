@@ -73,8 +73,9 @@
   import Menu from './Menu.svelte';
   import { GitHubFile, gitBlobSha } from '../github/repository';
   import { draftQueue } from '../github/storage';
+  import { vimPhysicalNavigation } from '../vim-physical-navigation';
 
-  let { workspace, node, wrapLines, prettyFontSize, prettyMargin, vimMode, stylusOnly, showLineNumbers, showLineIndex, pdfMargins, autosaveMs, onExit, onMissing, onOpenLink, initialLocation, onVisualEditor }: {
+  let { workspace, node, wrapLines, prettyFontSize, prettyMargin, vimMode, vimNavigatePhysical, stylusOnly, showLineNumbers, showLineIndex, pdfMargins, autosaveMs, onExit, onMissing, onOpenLink, initialLocation, onVisualEditor }: {
     /** Shown for a visual document's plaintext main file: save and return to the visual editor. */
     onVisualEditor?: () => void;
     workspace: Workspace; node: StateNode; initialLocation?: PreviewLocation;
@@ -84,6 +85,7 @@
     prettyFontSize: boolean;
     prettyMargin: boolean;
     vimMode: boolean;
+    vimNavigatePhysical: boolean;
     stylusOnly: boolean;
     autosaveMs: number;
     pdfMargins: PdfMargins;
@@ -771,6 +773,7 @@
               }
             })))),
             vimMode ? vim() : [],
+            vimMode && vimNavigatePhysical ? vimPhysicalNavigation() : [],
             indentFolding, wikiDisplay(leaveEditor), symbolDisplay(), pageWidgets.field, prettyDisplay(prettyFontSize, prettyMargin),
             pageReferences({ workspace, source: node, wrapLines, prettyFontSize, prettyMargin, catalog, ancestors: [node.id], context: pageContext,
               onOpen: (id, location) => { void followPage(id, location); } }), textLock.of([]),

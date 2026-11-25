@@ -888,6 +888,10 @@ test('editor toolbar stays in view: only the area below it scrolls and page zoom
 
 test('optional Vim mode persists, handles normal commands, and saves with :w', async ({ page }) => {
   await button(page, 'app settings').click(); await button(page, 'text editor').click();
+  await expect(button(page, 'navigate with physical key: on')).toBeVisible();
+  await button(page, 'navigate with physical key: on').click();
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('notework:vim-navigate-physical'))).toBe('false');
+  await button(page, 'navigate with physical key: off').click();
   const setting = button(page, 'Vim mode: off');
   await setting.scrollIntoViewIfNeeded();
   const shortcut = setting.locator('.pending_route');
@@ -905,7 +909,7 @@ test('optional Vim mode persists, handles normal commands, and saves with :w', a
   await expect(editor).toHaveText('keep me');
   await page.keyboard.press('Control+f');
   await expect(page.locator('.cm-search')).toHaveCount(0);
-  await page.keyboard.type(':w');
+  await page.keyboard.press('Shift+;'); await page.keyboard.type('w');
   await page.keyboard.press('Enter');
   await expect(page.getByText('saved in browser storage', { exact: true })).toBeVisible();
   await toolbar(page, 'find and replace').click();
@@ -922,7 +926,7 @@ test('optional Vim mode persists, handles normal commands, and saves with :w', a
   await page.keyboard.press('Enter');
   await expect(editor.locator('.cm-line').last()).toHaveText('[[vim sibling.txt]]');
   await page.keyboard.press('Escape');
-  await page.keyboard.type(':w');
+  await page.keyboard.press('Shift+;'); await page.keyboard.type('w');
   await page.keyboard.press('Enter');
   await expect(page.getByText('saved in browser storage', { exact: true })).toBeVisible();
   await toolbar(page, 'exit').click();
@@ -1018,6 +1022,47 @@ test('Vim Escape returns Insert and Visual to Normal, and leaves Normal for tool
   await expect(editor).toBeFocused();
   await page.keyboard.type('ggdd');
   await expect(editor).toHaveText('second line');
+});
+
+test('Vim physical navigation keeps commands stable and character targets symbolic', async ({ page }) => {
+  await page.evaluate(() => localStorage.setItem('notework:vim-mode', 'true'));
+  await page.reload();
+  await createNote(page, 'international.txt');
+  const editor = page.getByRole('textbox', { name: 'edit international.txt' });
+  const physical = (key: string, code: string, shiftKey = false) => editor.dispatchEvent('keydown', { key, code, shiftKey, bubbles: true, cancelable: true });
+
+  // A non-Latin symbol on the physical I position still enters Insert mode.
+  await physical('ш', 'KeyI');
+  await page.keyboard.insertText('aêb');
+  await page.keyboard.press('Escape');
+  await expect(editor).toHaveText('aêb');
+
+  // 0 and f are physical commands, while ê is the committed symbolic target.
+  await physical('à', 'Digit0');
+  await physical('а', 'KeyF');
+  await physical('ê', 'KeyE');
+  await physical('ч', 'KeyX');
+  await expect(editor).toHaveText('ab');
+
+  // Search text remains symbolic after the physical Slash command.
+  await physical('.', 'Slash');
+  const prompt = page.locator('.cm-vim-panel input');
+  await expect(prompt).toBeFocused();
+  await page.keyboard.insertText('ê');
+  await expect(prompt).toHaveValue('ê');
+  await page.keyboard.press('Escape');
+
+  // Ex command words are atextual too, so physical :w works across layouts.
+  await physical('Ж', 'Semicolon', true);
+  await expect(prompt).toBeFocused();
+  await prompt.dispatchEvent('keydown', { key: 'ц', code: 'KeyW', bubbles: true, cancelable: true });
+  await expect(prompt).toHaveValue('w');
+  await page.keyboard.press('Enter');
+  await expect(page.getByText('saved in browser storage', { exact: true })).toBeVisible();
+
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('group', { name: 'editor toolbar' })).toBeFocused();
+  expect(errors.get(page)).toEqual([]);
 });
 
 for (const action of ['click', 'tap'] as const) {

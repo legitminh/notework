@@ -142,6 +142,7 @@
   let prettyFontSize = $state(true);
   let prettyMargin = $state(true);
   let vimMode = $state(false);
+  let vimNavigatePhysical = $state(true);
   let stylusOnly = $state(false);
   let autosaveSeconds = $state(DEFAULT_AUTOSAVE_SECONDS);
   let pdfMargins = $state(defaultPdfMargins());
@@ -253,6 +254,8 @@
     catch { /* Use the default when storage is unavailable. */ }
     try { vimMode = localStorage.getItem('notework:vim-mode') === 'true'; }
     catch { /* Use the default when storage is unavailable. */ }
+    try { vimNavigatePhysical = localStorage.getItem('notework:vim-navigate-physical') !== 'false'; }
+    catch { /* Physical Vim navigation is the default when storage is unavailable. */ }
     try { stylusOnly = localStorage.getItem('notework:stylus-only') === 'true'; }
     catch { /* Finger drawing remains available when storage is unavailable. */ }
     try {
@@ -914,7 +917,7 @@
             <StandaloneDrawing initialPoint={previewLocation?.id === id && previewLocation.location.kind === 'drawing' ? previewLocation.location.point : undefined} bind:this={activeEditor} {pdfMargins} {stylusOnly} autosaveMs={autosaveSeconds * 1000} {workspace} node={current} onExit={exitEditor} onMissing={() => { void unavailableCurrent(id, 'missing'); }}
               onRawText={isVisualName(current.name) ? () => { rawTextId = id; } : undefined} />
           {:else}
-            <TextEditor initialLocation={previewLocation?.id === id ? previewLocation.location : undefined} bind:this={activeEditor} {showLineNumbers} {showLineIndex} {workspace} node={current} {wrapLines} {prettyFontSize} {prettyMargin} {vimMode} {stylusOnly} {pdfMargins} autosaveMs={autosaveSeconds * 1000} onExit={exitEditor}
+            <TextEditor initialLocation={previewLocation?.id === id ? previewLocation.location : undefined} bind:this={activeEditor} {showLineNumbers} {showLineIndex} {workspace} node={current} {wrapLines} {prettyFontSize} {prettyMargin} {vimMode} {vimNavigatePhysical} {stylusOnly} {pdfMargins} autosaveMs={autosaveSeconds * 1000} onExit={exitEditor}
               onMissing={() => { void unavailableCurrent(id, 'missing'); }} onOpenLink={openLinkedFile}
               onVisualEditor={rawTextId === id ? () => { rawTextId = undefined; } : undefined} />
           {/if}
@@ -1176,6 +1179,11 @@
           vimMode = !vimMode;
           saveAppearancePreference('notework:vim-mode', vimMode);
         }} />
+        <Action label={`navigate with physical key: ${vimNavigatePhysical ? 'on' : 'off'}`} onSelect={() => {
+          vimNavigatePhysical = !vimNavigatePhysical;
+          saveAppearancePreference('notework:vim-navigate-physical', vimNavigatePhysical);
+        }} />
+        <p class="muted">on by default. Vim commands follow their familiar physical key positions; inserted text, searches, and character targets such as f + ê use committed text from the active language or input method.</p>
         <Action label={`wrap long lines: ${wrapLines ? 'on' : 'off'}`} onSelect={() => {
           wrapLines = !wrapLines;
           saveAppearancePreference('notework:wrap-lines', wrapLines);

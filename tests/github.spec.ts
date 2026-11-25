@@ -579,7 +579,7 @@ test('Vim :w saves a browser draft without publishing', async ({ page }) => {
   await page.keyboard.press('A');
   await page.keyboard.insertText(' plus Vim edits');
   await page.keyboard.press('Escape');
-  await page.keyboard.type(':w');
+  await page.keyboard.press('Shift+;'); await page.keyboard.type('w');
   await page.keyboard.press('Enter');
   await expect(page.getByText(/draft saved in this browser/)).toBeVisible();
   await expect.poll(() => repo.messages).toEqual([]);
