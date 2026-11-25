@@ -31,3 +31,9 @@ strip = true
 # Linux only: turn on WebKitGTK's storage features (OPFS) before the page loads.
 [target.'cfg(target_os = "linux")'.dependencies]
 webkit2gtk = "2.0"
+
+# Keep Escape available to Notework while its macOS window is fullscreen.
+[target.'cfg(target_os = "macos")'.dependencies]
+block2 = "0.6"
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", features = ["block2", "NSEvent", "NSResponder", "NSWindow"] }

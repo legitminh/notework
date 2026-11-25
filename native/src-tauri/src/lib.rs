@@ -62,6 +62,39 @@ fn menu<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> tauri::Result<tauri::me
     ])
 }
 
+/// macOS normally treats Escape as a request to leave native fullscreen before the
+/// webview can use it. Route that key straight to the active responder instead, so
+/// Notework's editor, menus and shortcuts keep their usual Escape behavior.
+#[cfg(target_os = "macos")]
+fn keep_escape_in_fullscreen() {
+    use block2::RcBlock;
+    use objc2::MainThreadMarker;
+    use objc2_app_kit::{NSEvent, NSEventMask, NSWindowStyleMask};
+    use std::{ptr, ptr::NonNull};
+
+    let handler = RcBlock::new(|event: NonNull<NSEvent>| {
+        let event = unsafe { event.as_ref() };
+        if event.keyCode() == 53 {
+            if let Some(window) = MainThreadMarker::new().and_then(|mtm| event.window(mtm)) {
+                if window.styleMask().contains(NSWindowStyleMask::FullScreen) {
+                    if let Some(responder) = window.firstResponder() {
+                        responder.keyDown(event);
+                    }
+                    return ptr::null_mut();
+                }
+            }
+        }
+        event as *const NSEvent as *mut NSEvent
+    });
+
+    // The monitor intentionally lives for the process lifetime; Notework creates one
+    // main window and installs this once during setup.
+    let monitor = unsafe {
+        NSEvent::addLocalMonitorForEventsMatchingMask_handler(NSEventMask::KeyDown, &handler)
+    };
+    std::mem::forget(monitor);
+}
+
 /// WebKitGTK ships the Storage API and the origin private file system (OPFS) turned off.
 /// Notework keeps browser documents in OPFS, so the Linux app turns them on, then loads
 /// the app. The bindings are declared here because the webkit2gtk crate predates them.
@@ -159,6 +192,8 @@ pub fn run() {
                 .inner_size(1280.0, 860.0)
                 .min_inner_size(480.0, 360.0);
             let window = window.build()?;
+            #[cfg(target_os = "macos")]
+            keep_escape_in_fullscreen();
             #[cfg(target_os = "linux")]
             window.with_webview(|webview| {
                 use webkit2gtk::WebViewExt;

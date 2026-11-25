@@ -32,6 +32,9 @@ async function insertDrawing(page: Page) {
   await toolbar(page, 'brush').click();
   await page.getByRole('dialog', { name: 'choose drawing format' }).getByRole('button', { name: 'SVG', exact: true }).click();
   await page.getByRole('group', { name: 'drawing toolbar' }).getByRole('button', { name: 'exit', exact: true }).click();
+  // Exit intentionally puts the cursor at the end of the page directive so it
+  // can be edited. Move off that line when a test needs the rendered preview.
+  await page.keyboard.press('ArrowDown');
 }
 
 async function startCreate(page: Page, location: 'home' | 'folder' = 'home') {
@@ -879,7 +882,7 @@ test('editor toolbar stays in view: only the area below it scrolls and page zoom
   await expect(page.locator('main.editing-view')).toHaveCSS('touch-action', 'pan-x pan-y');
   expect(await meta()).toContain('maximum-scale=1');
   await toolbar(page, 'exit').click();
-  expect(await meta()).toBe(original);
+  await expect.poll(meta).toBe(original);
   await expect(page.locator('html')).not.toHaveClass(/editor-locked/);
 });
 
@@ -3370,8 +3373,8 @@ test('search menu and all four shortcuts select folder or whole-graph scope case
   await button(page, 'Documents/').click(); await button(page, 'Adobe/').click();
   await page.keyboard.down('Meta');
   const hints = page.getByLabel('Command and Control shortcuts');
-  await expect(hints).toContainText('F · Search text in folder children');
-  await expect(hints).toContainText('P · Search file in folder children');
+  await expect(hints).toContainText('F · search text in folder children');
+  await expect(hints).toContainText('P · search file in folder children');
   await expect(hints).toContainText('Shift+F · search text in all files');
   await expect(hints).toContainText('Shift+P · search file in all files');
   await page.keyboard.up('Meta');
