@@ -1052,6 +1052,16 @@ test('Vim physical navigation keeps commands stable and character targets symbol
   expect(commandWasCanceled).toBe(true);
   await expect(editor).toHaveText('ab');
 
+  // The macOS shell sees the hardware key before an input method such as siêu việt.
+  // Its native event must execute the physical command without committing đ/j text.
+  const native = (keyCode: number) => editor.evaluate((_element, code) => document.dispatchEvent(new CustomEvent('notework-native-keydown', {
+    detail: { keyCode: code, shiftKey: false, ctrlKey: false, altKey: false, metaKey: false, capsLock: false, repeat: false }
+  })), keyCode);
+  await native(38); // physical J
+  await native(2);  // physical D
+  await native(2);  // physical D
+  await expect(editor).toHaveText('');
+
   // Search text remains symbolic after the physical Slash command.
   await physical('.', 'Slash');
   const prompt = page.locator('.cm-vim-panel input');

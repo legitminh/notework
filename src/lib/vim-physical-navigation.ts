@@ -1,6 +1,38 @@
 import { Prec, type Extension } from '@codemirror/state';
 import { EditorView, ViewPlugin } from '@codemirror/view';
 import { getCM } from '@replit/codemirror-vim';
+import { setNativeVimAtextual } from './native-fs';
+
+interface NativePhysicalKey {
+  keyCode: number;
+  shiftKey: boolean;
+  ctrlKey: boolean;
+  altKey: boolean;
+  metaKey: boolean;
+  capsLock: boolean;
+  repeat: boolean;
+}
+
+const macCodes: Record<number, string> = {
+  0: 'KeyA', 1: 'KeyS', 2: 'KeyD', 3: 'KeyF', 4: 'KeyH', 5: 'KeyG',
+  6: 'KeyZ', 7: 'KeyX', 8: 'KeyC', 9: 'KeyV', 11: 'KeyB', 12: 'KeyQ',
+  13: 'KeyW', 14: 'KeyE', 15: 'KeyR', 16: 'KeyY', 17: 'KeyT',
+  18: 'Digit1', 19: 'Digit2', 20: 'Digit3', 21: 'Digit4', 22: 'Digit6',
+  23: 'Digit5', 24: 'Equal', 25: 'Digit9', 26: 'Digit7', 27: 'Minus',
+  28: 'Digit8', 29: 'Digit0', 30: 'BracketRight', 31: 'KeyO', 32: 'KeyU',
+  33: 'BracketLeft', 34: 'KeyI', 35: 'KeyP', 36: 'Enter', 37: 'KeyL',
+  38: 'KeyJ', 39: 'Quote', 40: 'KeyK', 41: 'Semicolon', 42: 'Backslash',
+  43: 'Comma', 44: 'Slash', 45: 'KeyN', 46: 'KeyM', 47: 'Period',
+  48: 'Tab', 49: 'Space', 50: 'Backquote', 51: 'Backspace', 53: 'Escape',
+  115: 'Home', 116: 'PageUp', 117: 'Delete', 119: 'End', 121: 'PageDown',
+  123: 'ArrowLeft', 124: 'ArrowRight', 125: 'ArrowDown', 126: 'ArrowUp'
+};
+
+const namedKeys: Record<string, string> = {
+  Enter: 'Enter', Tab: 'Tab', Space: ' ', Backspace: 'Backspace', Escape: 'Escape',
+  Home: 'Home', PageUp: 'PageUp', Delete: 'Delete', End: 'End', PageDown: 'PageDown',
+  ArrowLeft: 'ArrowLeft', ArrowRight: 'ArrowRight', ArrowDown: 'ArrowDown', ArrowUp: 'ArrowUp'
+};
 
 const unshifted: Record<string, string> = {
   Digit0: '0', Digit1: '1', Digit2: '2', Digit3: '3', Digit4: '4',
@@ -28,6 +60,16 @@ export function physicalVimKey(event: Pick<KeyboardEvent, 'key' | 'code' | 'shif
     return upper ? letter : letter.toLowerCase();
   }
   return (event.shiftKey ? shifted : unshifted)[event.code];
+}
+
+function nativePhysicalKey(detail: NativePhysicalKey) {
+  const code = macCodes[detail.keyCode];
+  if (!code) return;
+  const key = namedKeys[code] ?? physicalVimKey({
+    key: '', code, shiftKey: detail.shiftKey,
+    getModifierState: (name: string) => name === 'CapsLock' && detail.capsLock
+  });
+  return key ? { code, key } : undefined;
 }
 
 function composingLiteral(event: KeyboardEvent, view: EditorView) {
@@ -63,12 +105,64 @@ export function vimPhysicalNavigation(): Extension {
   return [
     ViewPlugin.define((view) => {
       const document = view.dom.ownerDocument;
+      let nativeActive = false;
+      let destroyed = false;
+      const exField = () => {
+        const field = document.activeElement;
+        return (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) &&
+          !!field.closest('.cm-vim-panel') && field.parentElement?.firstChild?.textContent === ':' ? field : undefined;
+      };
+      const syncNativeMode = () => {
+        if (destroyed) return;
+        const vim = getCM(view)?.state.vim;
+        const active = !!vim && (exField() !== undefined ||
+          (view.hasFocus && !vim.insertMode && !vim.exMode && !vim.expectLiteralNext));
+        if (active === nativeActive) return;
+        nativeActive = active;
+        void setNativeVimAtextual(active).catch(() => {});
+      };
+      const syncSoon = () => queueMicrotask(syncNativeMode);
       const handler = (event: KeyboardEvent) => {
         if (!physicalExInput(event) && view.contentDOM.contains(event.target as Node)) composingLiteral(event, view);
+        syncSoon();
+      };
+      const nativeHandler = (event: Event) => {
+        const detail = (event as CustomEvent<NativePhysicalKey>).detail;
+        if (!detail || !nativeActive) return;
+        const physical = nativePhysicalKey(detail);
+        if (!physical) return;
+        const init: KeyboardEventInit = {
+          key: physical.key, bubbles: true, cancelable: true, repeat: detail.repeat,
+          ctrlKey: detail.ctrlKey, altKey: detail.altKey, metaKey: detail.metaKey, shiftKey: detail.shiftKey
+        };
+        const field = exField();
+        if (field && physical.key.length === 1 && !detail.ctrlKey && !detail.altKey && !detail.metaKey) {
+          field.setRangeText(physical.key, field.selectionStart ?? field.value.length, field.selectionEnd ?? field.value.length, 'end');
+          field.dispatchEvent(new InputEvent('input', { data: physical.key, inputType: 'insertText', bubbles: true }));
+        } else {
+          (field ?? view.contentDOM).dispatchEvent(new KeyboardEvent('keydown', init));
+        }
+        syncSoon();
       };
       // CodeMirror mounts its command/search panel outside the scrolling editor.
       document.addEventListener('keydown', handler, true);
-      return { destroy: () => document.removeEventListener('keydown', handler, true) };
+      document.addEventListener('notework-native-keydown', nativeHandler);
+      view.contentDOM.addEventListener('focusin', syncSoon);
+      view.contentDOM.addEventListener('focusout', syncSoon);
+      view.contentDOM.addEventListener('compositionend', syncSoon);
+      syncSoon();
+      return {
+        update: syncSoon,
+        destroy: () => {
+          destroyed = true;
+          document.removeEventListener('keydown', handler, true);
+          document.removeEventListener('notework-native-keydown', nativeHandler);
+          view.contentDOM.removeEventListener('focusin', syncSoon);
+          view.contentDOM.removeEventListener('focusout', syncSoon);
+          view.contentDOM.removeEventListener('compositionend', syncSoon);
+          if (nativeActive) void setNativeVimAtextual(false).catch(() => {});
+        }
+      };
     }),
     Prec.highest(EditorView.domEventHandlers({
       keydown(event, view) {

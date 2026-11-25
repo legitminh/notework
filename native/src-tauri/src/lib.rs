@@ -7,8 +7,20 @@
 mod fs;
 mod github;
 
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 use tauri::webview::NewWindowResponse;
-use tauri::{Manager, Url, WebviewUrl, WebviewWindowBuilder};
+use tauri::{Manager, State, Url, WebviewUrl, WebviewWindowBuilder};
+
+#[derive(Clone, Default)]
+struct VimAtextual(Arc<AtomicBool>);
+
+#[tauri::command]
+fn vim_atextual(active: bool, state: State<'_, VimAtextual>) {
+    state.0.store(active, Ordering::Release);
+}
 
 /// Pages served by the app itself: the bundled build, or the Vite dev server in debug builds.
 fn is_app(url: &Url) -> bool {
@@ -62,13 +74,19 @@ fn menu<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> tauri::Result<tauri::me
     ])
 }
 
-/// macOS normally treats Escape as a request to leave native fullscreen. Swallow
-/// that AppKit event and deliver an equivalent DOM event straight to Notework, so
-/// an unhandled webview key can never bubble back to NSWindow and leave fullscreen.
+/// Mac virtual key codes whose physical positions can be routed directly to Vim.
 #[cfg(target_os = "macos")]
-fn keep_escape_in_fullscreen(webview: tauri::WebviewWindow) {
+fn macos_vim_key(key: u16) -> bool {
+    matches!(key,
+        0..=9 | 11..=51 | 53 | 115 | 116 | 117 | 119 | 121 | 123..=126)
+}
+
+/// Capture physical Vim commands before the active input method can turn them into
+/// composed text. Escape is also kept away from AppKit's fullscreen cancellation.
+#[cfg(target_os = "macos")]
+fn keep_macos_editor_keys(webview: tauri::WebviewWindow, vim_atextual: Arc<AtomicBool>) {
     use block2::RcBlock;
-    use objc2_app_kit::{NSEvent, NSEventMask, NSWindow, NSWindowStyleMask};
+    use objc2_app_kit::{NSEvent, NSEventMask, NSEventModifierFlags, NSWindow, NSWindowStyleMask};
     use std::{ptr, ptr::NonNull};
 
     let handler = RcBlock::new(move |event: NonNull<NSEvent>| {
@@ -81,6 +99,24 @@ fn keep_escape_in_fullscreen(webview: tauri::WebviewWindow) {
                 let _ = webview.eval("(document.activeElement || document.body).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true, composed: true }));");
                 return ptr::null_mut();
             }
+        }
+        let flags = event.modifierFlags();
+        if vim_atextual.load(Ordering::Acquire)
+            && macos_vim_key(event.keyCode())
+            && !flags.contains(NSEventModifierFlags::Command)
+        {
+            let script = format!(
+                "document.dispatchEvent(new CustomEvent('notework-native-keydown', {{ detail: {{ keyCode: {}, shiftKey: {}, ctrlKey: {}, altKey: {}, metaKey: {}, capsLock: {}, repeat: {} }} }}));",
+                event.keyCode(),
+                flags.contains(NSEventModifierFlags::Shift),
+                flags.contains(NSEventModifierFlags::Control),
+                flags.contains(NSEventModifierFlags::Option),
+                flags.contains(NSEventModifierFlags::Command),
+                flags.contains(NSEventModifierFlags::CapsLock),
+                event.isARepeat()
+            );
+            let _ = webview.eval(&script);
+            return ptr::null_mut();
         }
         event as *const NSEvent as *mut NSEvent
     });
@@ -145,7 +181,9 @@ pub fn run() {
     #[cfg(target_os = "macos")]
     let builder = builder.menu(menu);
     builder
+        .manage(VimAtextual::default())
         .invoke_handler(tauri::generate_handler![
+            vim_atextual,
             fs::fs_places,
             fs::fs_browse,
             fs::fs_parent,
@@ -191,7 +229,7 @@ pub fn run() {
                 .min_inner_size(480.0, 360.0);
             let window = window.build()?;
             #[cfg(target_os = "macos")]
-            keep_escape_in_fullscreen(window.clone());
+            keep_macos_editor_keys(window.clone(), app.state::<VimAtextual>().0.clone());
             #[cfg(target_os = "linux")]
             window.with_webview(|webview| {
                 use webkit2gtk::WebViewExt;
