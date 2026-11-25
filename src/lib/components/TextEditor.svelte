@@ -625,13 +625,12 @@
   function shortcuts(event: KeyboardEvent) {
     if (inlineDrawing || event.isComposing || event.altKey || !(event.ctrlKey || event.metaKey) || document.querySelector('dialog[open]')) return;
     const key = event.key.toLowerCase();
-    if (key !== 'escape' && key !== 's' && key !== 'f' && !(key === 'b' && event.metaKey)) return;
+    if (key !== 's' && key !== 'f' && !(key === 'b' && event.metaKey)) return;
     if (vimMode && key === 'f' && event.ctrlKey) return;
     event.preventDefault();
     event.stopImmediatePropagation();
     if (event.repeat || exportSource || githubPublishing) return;
     if (key === 'b') void insertDrawing();
-    else if (key === 'escape') requestExit();
     else if (key === 's') void save(false, true);
     else find();
   }
@@ -860,7 +859,7 @@
     {#if !inlineDrawing}
     <div class="editor-controls" role="group" aria-label="editor toolbar" tabindex="-1" bind:this={toolbar}
       use:preserveContentFocus={() => !usingTools && !!view?.hasFocus}>
-      <Control aria-keyshortcuts="Control+Escape" onclick={requestExit} disabled={saving || githubPublishing}>exit<span class="shortcut-hint" aria-hidden="true">Ctrl+Esc</span></Control>
+      <Control registered={false} onclick={requestExit} disabled={saving || githubPublishing}>exit</Control>
       {#if onVisualEditor}<Control onclick={() => { void saveForNavigation().then((saved) => { if (saved) onVisualEditor?.(); }); }} disabled={saving || githubPublishing}>visual editor</Control>{/if}
       <Control aria-keyshortcuts={vimMode ? undefined : 'Control+F'} onclick={find} disabled={loading || githubPublishing}><span class="visually-hidden">find and replace</span><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="10" cy="10" r="6" /><path d="m14.5 14.5 5 5" /></svg>{#if !vimMode}<span class="shortcut-hint" aria-hidden="true">Ctrl+F</span>{/if}</Control>
       <Control onclick={() => { choseDrawingFormat = false; rasterFormat = undefined; choosingDrawing = true; formatDialog.showModal(); }} disabled={loading || saving || githubPublishing}>draw…<span class="shortcut-hint" aria-hidden="true">Command+B · SVG</span></Control>

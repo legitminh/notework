@@ -3,11 +3,12 @@
   import { Button, ButtonPositional, StaticButton, type Shortcut } from '@legitminh/keyflow';
   import { shortcutScope } from '../shortcut-scope.svelte';
 
-  let { children, onclick, disabled = false, keys, class: className = '', 'aria-label': ariaLabel, 'aria-keyshortcuts': ariaKeys, 'aria-pressed': ariaPressed }: {
+  let { children, onclick, disabled = false, keys, registered = true, class: className = '', 'aria-label': ariaLabel, 'aria-keyshortcuts': ariaKeys, 'aria-pressed': ariaPressed }: {
     children?: Snippet;
     onclick: () => void;
     disabled?: boolean;
     keys?: Shortcut;
+    registered?: boolean;
     class?: string;
     'aria-label'?: string;
     'aria-keyshortcuts'?: string;
@@ -25,7 +26,7 @@
   $effect(() => {
     const element = host;
     const attributes = { 'aria-label': ariaLabel, 'aria-keyshortcuts': ariaKeys, 'aria-pressed': ariaPressed };
-    void available; void disabled; void keys;
+    void available; void disabled; void keys; void registered;
     let active = true;
     let observer: MutationObserver | undefined;
     void tick().then(() => {
@@ -54,9 +55,11 @@
 
 <span class={`control ${className}`} bind:this={host}>
   {#if keys}
-    <StaticButton {keys} disabled={disabled || !available} on_close={onclick}>{@render children?.()}</StaticButton>
+    <StaticButton {keys} {registered} disabled={disabled || !available} on_close={onclick}>{@render children?.()}</StaticButton>
   {:else if host?.closest('dialog')}
-    <Button disabled={disabled || !available} on_close={onclick}>{@render children?.()}</Button>
+    <Button {registered} disabled={disabled || !available} on_close={onclick}>{@render children?.()}</Button>
+  {:else if !registered}
+    <Button {registered} disabled={disabled || !available} on_close={onclick}>{@render children?.()}</Button>
   {:else}
     <ButtonPositional disabled={disabled || !available} on_close={onclick}>{@render children?.()}</ButtonPositional>
   {/if}

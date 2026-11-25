@@ -813,7 +813,7 @@ test('new notes have OPFS URIs, code-style tabs/brackets, save on exit, and relo
   await page.keyboard.press('Shift+Tab');
   await page.keyboard.press('Tab');
   await page.keyboard.type('nested');
-  await page.keyboard.press('Control+Escape');
+  await toolbar(page, 'exit').click();
   await expect(button(page, 'open')).toBeVisible();
   await button(page, '..').click();
   await expect(button(page, 'ideas.txt')).toBeVisible();
@@ -914,7 +914,7 @@ test('optional Vim mode persists, handles normal commands, and saves with :w', a
   await expect(page.getByText('saved in browser storage', { exact: true })).toBeVisible();
   await toolbar(page, 'find and replace').click();
   await expect(page.locator('.cm-search')).toBeVisible();
-  await page.keyboard.press('Control+Escape');
+  await toolbar(page, 'exit').click();
   await expect(button(page, 'open')).toBeVisible();
   await page.reload();
   await button(page, 'vim.txt').click();
@@ -933,11 +933,11 @@ test('optional Vim mode persists, handles normal commands, and saves with :w', a
   await expect(button(page, 'vim sibling.txt')).toBeVisible();
 });
 
-test('editor toolbar omits Save, isolates navigation, and supports find, replace, and saving exit', async ({ page }) => {
+test('editor toolbar omits Save, isolates navigation, and provides a regular saving exit button', async ({ page }) => {
   await createNote(page, 'toolbar.txt');
   await expect(page.getByRole('navigation', { name: 'state navigation' })).toHaveCount(0);
   await expect(toolbar(page, 'Save')).toHaveCount(0);
-  for (const [name, shortcut] of [['exit', 'Ctrl+Esc'], ['find and replace', 'Ctrl+F']]) {
+  for (const [name, shortcut] of [['find and replace', 'Ctrl+F']]) {
     const control = toolbar(page, name);
     const hint = control.getByText(shortcut, { exact: true });
     await expect(hint).toBeHidden();
@@ -956,6 +956,10 @@ test('editor toolbar omits Save, isolates navigation, and supports find, replace
   await page.keyboard.press('Control+s');
   await expect(page.getByText('saved in browser storage', { exact: true })).toBeVisible();
   await page.keyboard.press('Control+Escape');
+  await expect(page.getByRole('textbox', { name: 'edit toolbar.txt' })).toBeVisible();
+  await expect(toolbar(page, 'exit')).not.toHaveAttribute('aria-keyshortcuts');
+  await expect(toolbar(page, 'exit').locator('.pending_route')).toHaveCount(0);
+  await toolbar(page, 'exit').click();
   await expect(button(page, 'open')).toBeVisible();
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'toolbar.txt' })).toBeVisible();

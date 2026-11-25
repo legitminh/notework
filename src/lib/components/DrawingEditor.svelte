@@ -483,13 +483,12 @@
         }
         return;
       }
-      if (!['b', 's', 'z', 'y', 'escape'].includes(key)) return;
+      if (!['b', 's', 'z', 'y'].includes(key)) return;
       event.preventDefault();
       event.stopImmediatePropagation();
       if (event.repeat || document.querySelector('dialog[open][aria-labelledby="export-heading"]')) return;
       if (key === 's') void save(false, true);
       else if (key === 'b') chooseTool('brush');
-      else if (key === 'escape' && onExit) exit();
       else if (key === 'y' || event.shiftKey) redo();
       else undo();
     };
@@ -553,7 +552,7 @@
 <div class="drawing-bar">
   <div class="editor-controls drawing-controls drawing-tools" role="group" aria-label="drawing toolbar" tabindex="-1" bind:this={toolbar}
     use:preserveContentFocus={() => !usingTools && document.activeElement === canvas}>
-    {#if onExit}<Control onclick={exit} disabled={saving || publishing}>exit<span class="shortcut-hint" aria-hidden="true">Ctrl+Esc</span></Control>{/if}
+    {#if onExit}<Control registered={false} onclick={exit} disabled={saving || publishing}>exit</Control>{/if}
     <Control onclick={() => chooseTool('brush')} aria-pressed={tool === 'brush'}><span class="tool-color" class:ink={!penColor} style:--pen={penColor} style:opacity={penOpacity / 100} aria-hidden="true"></span>brush<span class="shortcut-hint" aria-hidden="true">Command+B</span></Control>
     <Control onclick={() => chooseTool('eraser')} aria-pressed={tool === 'eraser'}>eraser</Control>
     <Control onclick={() => chooseTool('lasso')} aria-pressed={tool === 'lasso'}>lasso</Control>

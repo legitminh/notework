@@ -418,9 +418,9 @@
       if (modal && (!modal.contains(toolbar!) || !(target instanceof Node) || !toolbar?.closest('.image-editor')?.contains(target))) return;
       if (event.isComposing || event.altKey || (target instanceof HTMLElement && (target.isContentEditable || target.matches('input,textarea,select')))) return;
       const key = event.key.toLowerCase(), primary = event.ctrlKey || event.metaKey;
-      if (primary && ['s', 'b', 'z', 'y', 'escape'].includes(key)) {
+      if (primary && ['s', 'b', 'z', 'y'].includes(key)) {
         event.preventDefault(); event.stopImmediatePropagation(); if (event.repeat) return;
-        if (key === 's') void save(); else if (key === 'b') void chooseTool('brush'); else if (key === 'escape') void save(true);
+        if (key === 's') void save(); else if (key === 'b') void chooseTool('brush');
         else if (key === 'y' || event.shiftKey) redo(); else undo();
       } else if (key === 'escape' && !usingTools) { event.preventDefault(); input.reset(); editor.deselect(); trace = []; focusToolbar(); }
       else if ((key === 'delete' || key === 'backspace') && editor.selection) { event.preventDefault(); clearSelection(); }
@@ -538,7 +538,7 @@
     use:preserveContentFocus={() => !usingTools && document.activeElement === viewport}>
     <span class="visual-title" class:unsaved={dirty} title={statusText}><BoundedText text={title} limit={16} label={`editing ${title}`} /></span>
     <Control onclick={() => { usingTools = true; void editorMenu?.enter(); }}>editor</Control>
-    {#if onExit}<Control onclick={() => { void save(true); }} disabled={saving || publishing}>exit<span class="shortcut-hint" aria-hidden="true">Ctrl+Esc</span></Control>{/if}
+    {#if onExit}<Control registered={false} onclick={() => { void save(true); }} disabled={saving || publishing}>exit</Control>{/if}
     <Control onclick={() => { void chooseTool('brush'); }} aria-pressed={tool === 'brush'}>brush</Control>
     <Control onclick={() => { void chooseTool('eraser'); }} aria-pressed={tool === 'eraser'}>eraser</Control>
     <Control onclick={() => { void chooseTool('lasso'); }} aria-pressed={tool === 'lasso'}>lasso</Control>
